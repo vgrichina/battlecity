@@ -172,7 +172,7 @@ Active:  $A0-$AF  MoveGridSnap — primary movement (16 states, dir in bits 1:0)
          $D0-$DF  DirTowardP1  — navigate to P1;    sets state $A0-$A3
          $90-$9F  RandomDirChange — decide direction then return to $A0-$A3
          $80-$8F  ShieldHandler — blink/pause (temporary blocked state)
-Death:   EntityState = $73 (set by HUDDraw on bullet hit)
+Death:   EntityState = $73 (set by EnemyBulletPlayerHit on bullet hit)
          $73 → countdown via StateCountdown → $00 → PlayerKilled/EnemyKilled
 ```
 
@@ -337,10 +337,10 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $E575 | MoveUpdateDispatch | 24×2 B ptr table: Y=(state>>3)&$FE → MoveUpdate position handler |
 | $E595 | BulletDispatch | 16×2 B ptr table: Y=(bulletState>>3)&$FE → bullet handler |
 | $E6A9 | SpeedTable | Difficulty/speed parameters: 2-byte entries indexed by ($85−1)×4 |
-| $E7A9 | ScoreDraw | (to be disassembled) |
-| $E8B1 | HUDDraw | (to be disassembled) |
-| $EAB5 | BonusDraw | (to be disassembled) |
-| $EB17 | LivesDraw | (to be disassembled) |
+| $E7A9 | BulletMoveCollision | (to be disassembled) |
+| $E8B1 | EnemyBulletPlayerHit | (to be disassembled) |
+| $EAB5 | BulletVsBulletCancel | (to be disassembled) |
+| $EB17 | PowerUpCollision | (to be disassembled) |
 | $EBF6 | GameOverHandler | Enable APU ($4015/$4017); zero $0300–$031B via X loop and $031C–$03F4 at stride 8 via pointer (clears entity/bullet tracking page) |
 | $EC23 | NMI_Sub3 | Stage-summary score/kill-count tabulator; reads $0300,X entries and $6D (ServiceMode); fills $F9–$FC counters for end-of-stage results display |
 # New routines (Sessions 3–4)
@@ -476,10 +476,10 @@ Each game frame invokes these 18 subsystems in order:
 9. `PlayerFireCheck` — players shoot on button press
 10. `EnemyFireCheck` — enemies fire with 1-in-32 random chance
 11. `EnemySpawnDispatch ($DBF6)` — spawn next enemy if slot free and delay elapsed
-12. `ScoreDraw ($E7A9)` — **bullet movement + tile collision**: for each active bullet, probe tile AHEAD and BEHIND (±4px along dir); if wall hit: destroy tile, stop bullet ($CC,X=$33)
-13. `BonusDraw ($EAB5)` — **bullet-vs-bullet cancel**: if player bullet (slots 0,1,8,9) within 6×6 px of any enemy bullet → clear both ($CC,X=$CC,Y=0)
-14. `HUDDraw ($E8B1)` — **enemy-bullet→player collision**: if enemy bullet (slots 1–7) within 10×10 px of player: shield → deflect bullet; no shield → EntityState=$73 (death), set $0307
-15. `LivesDraw ($EB17)` — check effect position ($86/$87) against entities; area-kill within 12px
+12. `BulletMoveCollision ($E7A9)` — **bullet movement + tile collision**: for each active bullet, probe tile AHEAD and BEHIND (±4px along dir); if wall hit: destroy tile, stop bullet ($CC,X=$33)
+13. `BulletVsBulletCancel ($EAB5)` — **bullet-vs-bullet cancel**: if player bullet (slots 0,1,8,9) within 6×6 px of any enemy bullet → clear both ($CC,X=$CC,Y=0)
+14. `EnemyBulletPlayerHit ($E8B1)` — **enemy-bullet→player collision**: if enemy bullet (slots 1–7) within 10×10 px of player: shield → deflect bullet; no shield → EntityState=$73 (death), set $0307
+15. `PowerUpCollision ($EB17)` — check effect position ($86/$87) against entities; area-kill within 12px
 16. `$C7F8` — (to be disassembled)
 17. `CheckPlayersMoving ($DBB9)` — update $0311 movement flag
 18. `StartGame ($C6C5)` — check game-start transition
@@ -523,7 +523,7 @@ RAM address = $0400 + tileY*32 + tileX
 | Address | Purpose |
 |---------|---------|
 | $0304-$030A | EntitySlotData — 7-byte entity fill data (copied from $0409–$040F by $8B69) |
-| $0307 | CriticalHitFlag — set by: (a) BulletTileCollision hitting eagle tile; (b) HUDDraw when enemy bullet hits unshielded player; (c) level-init bank 0 code; triggers game-over sequence |
+| $0307 | CriticalHitFlag — set by: (a) BulletTileCollision hitting eagle tile; (b) EnemyBulletPlayerHit when enemy bullet hits unshielded player; (c) level-init bank 0 code; triggers game-over sequence |
 | $030B | Eagle flash trigger |
 | $030C | Player bullet wall-penetration flag |
 | $030F | Player fired flag (set by FireBullet for player entities) |
@@ -1168,7 +1168,7 @@ All numbers are OAM sprite tile indices (sprite pattern table, PPU $0000–$0FFF
 
 ### Extra-life logic (LivesGrantCheck $CF44)
 
-Called from LivesDraw. Checks if `$68=$80` (game active):
+Called from PowerUpCollision. Checks if `$68=$80` (game active):
 - **P1**: if `$17 ≥ 2` (score tier) or `$66 ≥ 1`: `INC $51` (P1Lives), `INC $66`; set `$0304=$0305=1`
 - **P2**: same check with `$1F` / `$52` / `$67` (P2 score tier / lives / flag)
 - Sets `$0304=$0305=1` → triggers HUD lives display update
@@ -1204,7 +1204,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Identify and label CHR tiles by visual inspection — mapped tile numbers from code analysis
 - [x] Disassemble $E3BA dispatch full: eagle animation handlers $E3C6/$E3CB/$E3D0/$E3E2/$E3EA — decoded; $68 initialization traced ($C356 sets $80, $E855 sets $27)
 - [ ] Decode power-up type 2 (Shovel $EBA0) fully — understand how $C9BB triggers fortify base and what $68 timing does
-- [x] Disassemble $CF44 (called in LivesDraw/$EB60) — decoded as LivesGrantCheck (extra life on score threshold)
+- [x] Disassemble $CF44 (called in PowerUpCollision/$EB60) — decoded as LivesGrantCheck (extra life on score threshold)
 - [x] Disassemble $C33D (STA $0100 in bank 1) — decoded as LevelStart; sets EnemyFreezeTimer + $68=$80
 - [ ] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
 
@@ -1247,15 +1247,15 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] SpeedCtrlMove ($DF26): slow→DirHQ, medium→random, fast→DirP1/P2 based on player presence
 - [x] RandomDirChange ($DDFC): 50% SpeedCtrlMove / 25% turn left / 25% turn right
 - [x] MoveTank ($E06A): sprite-draw only (MoveUpdateDispatch); no position change
-- [x] ScoreDraw ($E7A9): main bullet movement/collision loop (dual tile probe ahead+behind)
-- [x] BonusDraw ($EAB5): bullet-vs-bullet cancellation (player slots 0,1,8,9 vs all enemies)
-- [x] HUDDraw ($E8B1): enemy-bullet→player hit detection (10px proximity, shield deflect)
+- [x] BulletMoveCollision ($E7A9): main bullet movement/collision loop (dual tile probe ahead+behind)
+- [x] BulletVsBulletCancel ($EAB5): bullet-vs-bullet cancellation (player slots 0,1,8,9 vs all enemies)
+- [x] EnemyBulletPlayerHit ($E8B1): enemy-bullet→player hit detection (10px proximity, shield deflect)
 - [x] $0307 = CriticalHitFlag (eagle hit AND player body hit AND level-init)
 - [x] $E4C6 = ClearBulletSlots, $E4D0 = ClearEntitySlots (game init routines)
 - [x] HUD kill-counter: $C79F/$C7AE draw icons; $C7F8 animates HUD tank countdown
 - [x] Tile cluster ($D745–$D791): SubTileBitmask, TileCollidableCheck, TileDestroyBrick, TileDestroyIfNoEntity, TileSetBrick, TileSetIfNoEntity, PPUWriteDirect, WriteTileQueueUpdate, AdvanceTilePtr — brick quarter bit manipulations fully decoded
 - [x] $0100 = EnemyFreezeTimer: Timer/Clock power-up; non-zero freezes all enemy movement and firing; decremented every 64 frames by EntityMovement
-- [x] PowerUpCollision ($EB17 — previously LivesDraw): proximity check 12px; dispatches via $EB87 table indexed by $88 (PowerUpType)
+- [x] PowerUpCollision ($EB17 — previously PowerUpCollision): proximity check 12px; dispatches via $EB87 table indexed by $88 (PowerUpType)
 - [x] Power-up dispatch table ($EB87): 6 types — Helmet, Timer, Shovel, Star, Grenade, 1-Up — all handlers disassembled ($EB95–$EBED)
 - [x] Eagle state handlers ($E3C6/$E3CB/$E3D0/$E3E2/$E3EA): tile draws + 4-wall composite sprites around eagle base
 - [x] PowerUpSpawn ($E35D) fully decoded: 16-frame tick, 64-frame DEC timer, flash pattern when $45<4, eagle $68 counter + dispatch

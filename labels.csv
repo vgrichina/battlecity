@@ -96,10 +96,10 @@
 1,E595,BulletDispatchTable
 1,E543,DirToStateTable
 1,E6A9,SpeedTable
-1,E7A9,ScoreDraw
-1,E8B1,HUDDraw
-1,EAB5,BonusDraw
-1,EB17,LivesDraw
+1,E7A9,BulletMoveCollision
+1,E8B1,EnemyBulletPlayerHit
+1,EAB5,BulletVsBulletCancel
+1,EB17,PowerUpCollision
 1,DA7F,ZeroSlot
 1,DA94,BCD_Div
 1,DABA,DrawEntityTile
