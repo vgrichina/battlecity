@@ -62,8 +62,8 @@
 |------|------|-------|
 | $00–$01 | Ptr0 | General-purpose indirect pointer (used via `($00),Y` etc.) |
 | $05 | NametableId | Nametable selector: $1C/$20/$24/$28 passed to WriteNametable |
-| $06–$07 | P1Dir / P2Dir | Player 1 / 2 direction input (bits encoded by $E50E) |
-| $08–$09 | P1Fire / P2Fire | Player 1 / 2 fire input |
+| $06–$07 | P1Buttons / P2Buttons | Per-slot raw NES controller byte written each NMI by NMI_Sub2 ($D68A); bits 7=Right,6=Left,5=Down,4=Up,3=Start,2=Select,1=B,0=A |
+| $08–$09 | P1Edges / P2Edges | Per-slot just-pressed edge bits this frame; NMI_Sub2 computes (~old AND new); used for single-frame button events |
 | $0A–$0B | FrameHi / FrameLo | Frame counter; incremented by NMI; $0B used for VBlank sync |
 | $0C | PPUQueueIdx | Write index into PPU queue at $0180 |
 | $0D | OAMHideIdx | OAM hide index for DB22 |
@@ -115,6 +115,7 @@
 | $8F | EnemyQueueIdx | Index into enemy type queue (ZP $8B,Y → type countdown) |
 | $90,X | EntityX | Entity X positions (8 bytes; X = 0–7) |
 | $98,X | EntityY | Entity Y positions (8 bytes) |
+| $14–$17 | CtrlRaw | ControllerDoubleRead ($99D2) output: $14=P1|P2 OR'd raw, $15=P1|P2 OR'd filtered (deglitched), $16=P2 raw, $17=P2 filtered; title-screen wait ($85D4) and gameplay NMI body ($8670) |
 | $15–$1B | P1Score | Player 1 BCD score: 7 digits, $1B = units, $15 = millions |
 | $1C–$22 | P2Score | Player 2 BCD score (same format) |
 | $35–$3C | ScoreIncr | Temporary score-increment BCD: $39 = hundreds, $3A = tens, $3B = units |
@@ -143,6 +144,77 @@
 
 DirDeltaTable ($E529, 8 bytes): `{0, $FF, 0, 1, $FF, 0, 1, 0}` = dx[0..3] then dy[0..3]
 DecodeDirection ($E50E): tests bits 7,6,5,4 of input byte → returns dir 3,1,2,0 respectively.
+
+### Controller Read Chain
+
+Two independent read paths; both ultimately source NES $4016/$4017 serial shift-register.
+
+#### Path A — NMI_Sub2 ($D68A, bank 1): runs every NMI
+
+Reads both controllers twice (VS System noise rejection), produces per-frame edge bits.
+
+```
+NMI ($D300) → ... → NMI_Sub2 ($D68A)
+```
+
+Algorithm:
+1. Save $06/$07 as "old" values (swap into each other via LDX/LDY/STX/STY)
+2. Strobe $4016 high then low (latch serial data)
+3. Read loop (X=1 downto 0, Y=8 bits): `LDA $4016,X; AND #$03; CMP #$01; ROR $00,X` — shift bit into $00/$01 (VS System uses bit1|bit0, CMP trick puts OR into carry)
+4. Edge detect: `LDA $06,X EOR #$FF AND $00,X → STA $08,X` (newly pressed = ~old AND new)
+5. Store new raw: `LDA $00,X → STA $06,X`
+6. Repeat steps 2–5 a second time (second double-read for further glitch rejection); edges computed against first-read values
+7. Final swaps: $06↔$07, $08↔$09
+
+Output after NMI_Sub2:
+| ZP | Content |
+|----|---------|
+| $06 | Slot-0 current frame buttons (raw NES byte) |
+| $07 | Slot-1 current frame buttons |
+| $08 | Slot-0 just-pressed edge bits (0→1 transitions only) |
+| $09 | Slot-1 just-pressed edge bits |
+
+Consumers:
+- `$DC4B`: `LDA $06,X` (X=1) → `JSR DecodeDirection ($E50E)` → entity direction for slot 1 (EnemyAI/PlayerAI)
+- `$DBE6` (PlayerMovingCheck): `LDA $06,X; AND #$F0` — non-zero = any d-pad button held
+
+#### Path B — ControllerDoubleRead ($99D2, bank 0): called from NMI body
+
+Callers: `$85D4` (title-screen wait loop) and `$8670` (gameplay NMI body at $862A).
+
+Algorithm:
+1. Snapshot old $14/$16 → $05/$06
+2. `JSR $9A23` (StrobeControllers) → fills $14/$15/$16/$17 with new data
+3. Snapshot new $14/$16 → $03/$04
+4. `JSR $9A23` again (second read)
+5. Compare: if $16≠$04 or $14≠$03, retry from step 2 (spin until two consecutive reads agree)
+6. Fire-button deglitch: if $14 has bits[7:6] set AND old $05 also had them → mask $15 &= $3F (clears fire bits in filtered copy). Same for P2 ($16/$06 → $17)
+7. `$14 |= $16; $15 |= $17` — OR P1 and P2 together into $14/$15 (so either player pressing Start works)
+
+**StrobeControllers ($9A23)**: sets $4016 bit 0 (strobe ON → latch), clears it (strobe OFF), then calls ReadControllerBits ($9A3F) with X=0 (P1=$4016) and X=1 (P2=$4017).
+
+**ReadControllerBits ($9A3F)**: 8-bit serial read loop.
+```
+Y=8 loop:
+  LDA $4016,X  ; read one bit
+  STA $00      ; temp
+  LSR          ; shift bit0 to carry
+  ORA $00      ; OR with original (combines D0+D1 for VS System dual-line output)
+  LSR          ; shift again; carry = D0|D1
+  PLA; ROL     ; rotate carry into accumulator (builds byte MSB first)
+  DEY; BNE
+Result → $14,X*2 (raw) and $15,X*2 (filtered); in-place deglitch: if fire bits set in both new and old → mask filtered copy to $3F
+```
+
+Output after ControllerDoubleRead:
+| ZP | Content |
+|----|---------|
+| $14 | P1\|P2 OR'd raw combined button byte |
+| $15 | P1\|P2 OR'd filtered (fire-button deglitched) |
+| $16 | P2 raw button byte |
+| $17 | P2 filtered button byte |
+
+Title-screen usage (`$85D7`): `LDA $14; ORA $15; AND #$10` — bit 4 = Start; spins at `$85DF` until Start released, then continues to game init.
 
 ### Entity State Byte Format (`$A0,X`)
 ```
@@ -270,10 +342,11 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $D3A1 | WaitNMI | Set NMI sync flag; wait VBlank |
 | $D3AC | ClearSpriteBuf | Zero pages $04–$07 (sprite work buffer) |
 | $D3BF | Init | Hardware init: clear ZP vars, read DIP, init PPU, clear OAM |
-| $D41E | InitPalette | Write 32-byte palette table to PPU $3F00 |
-| $D44A | PaletteData | 32-byte base palette: 4 BG palettes + 4 sprite palettes |
-| $D46A | PaletteApplyDIP | OR raw palette index with $4E, lookup in $D475 colour table |
-| $D475 | PaletteColorTable | Colour remapping table for DIP switch variants |
+| $D41E | InitPalette | WaitVBlank; set PPU addr $3F00; loop X 0→$1F: load PaletteData[X], call PaletteApplyDIP, write $2007; reset $2006 |
+| $D44A | PaletteData | 32-byte base NES palette: 8 sub-palettes × 4 colours (4 BG + 4 sprite) |
+| $D46A | PaletteApplyDIP | STY $00; ORA $4E; TAY; LDA PaletteColorTable,Y; LDY $00; RTS — saves/restores Y; maps raw colour via DIP variant |
+| $D475 | PaletteColorTable | 256-byte remap table (4 variants × 64 colours); see Palette Subsystem note |
+| $D575 | WaitVBlank | LDA $2002; BPL *; RTS — spin until VBlank flag set (bit 7 of $2002) |
 | $D5AF | SetGamePalette | Write fixed gameplay palette colours (hardcoded NES indices) |
 | $D5D3 | SetTitlePalette | Write palette colours from PaletteData table (title screen) |
 | $D6D3 | DrawSprites | Draw sprite data: reads (src ptr), writes to sprite buffer |
@@ -769,7 +842,7 @@ EntityType = $E5A9[Y]            ; get type byte for this slot
 | Address | Label | Size | Contents |
 |---------|-------|------|----------|
 | $D44A | PaletteData | 32 B | NES palette indices for 8 palettes |
-| $D475 | PaletteColorTable | ? | DIP switch colour remapping |
+| $D475 | PaletteColorTable | 256 B | DIP colour remap: 4 variants × 64 NES colour entries; indexed as `(base_color | $4E)` where $4E ∈ {$00,$40,$80,$C0} |
 | $D1A7 | TitleSpriteA | ? | Attract mode sprite frame A |
 | $D1BA | TitleSpriteB | ? | Attract mode sprite frame B |
 | $E0B7 | EnemySpeedTable | 8 B | Frame-pattern per speed tier |
@@ -845,6 +918,57 @@ This is actually **BulletUpdate** ($E0E2) reconfirmed — iterates all 10 bullet
 ---
 
 ## Key Algorithms
+
+### Palette Subsystem
+
+**Overview**: On startup (`Init` at $D3BF), the game reads DIP switches ($4017 AND $C0 → $4E), then calls `InitPalette` ($D41E) which writes all 32 NES palette entries to PPU $3F00-$3F1F with per-entry colour remapping.
+
+**DIP switch colour variants** (`$4E` ∈ {$00, $40, $80, $C0}): VS. System arcade cabinets used four different PPU chips with different colour output; the four DIP variants compensate for this.
+
+**Call chain**:
+```
+Init ($D3BF): LDA $4017 / AND #$C0 / STA $4E
+  → InitPalette ($D41E)
+      → WaitVBlank ($D575)       ; spin on $2002 bit 7
+      → STA $2006 #$3F / STX $2006 #$00  ; set PPU address to $3F00
+      → loop X=0..31:
+            LDA PaletteData,X    ; base colour ($D44A+X)
+            JSR PaletteApplyDIP  ; remap via DIP table
+            STA $2007            ; write to PPU palette RAM
+```
+
+**PaletteApplyDIP ($D46A)**:
+```asm
+STY $00          ; save Y
+ORA $4E          ; A = base_color | dip_offset  ($4E ∈ $00/$40/$80/$C0)
+TAY              ; Y = remap index
+LDA $D475,Y      ; A = PaletteColorTable[Y]  (remapped NES colour)
+LDY $00          ; restore Y
+RTS
+```
+
+**PaletteData ($D44A)** — 32 base NES colours (8 sub-palettes × 4 colours):
+```
+BG0: $0F $17 $06 $00   (black, med-grey, green, black)
+BG1: $0F $3C $10 $12   (black, pink, grey, blue)
+BG2: $0F $29 $09 $0B   (black, purple, tan, dark-green)
+BG3: $0F $00 $10 $20   (black, black, grey, white)
+SP0: $0F $18 $27 $38   (black, yellow, pink, orange)
+SP1: $0F $0A $1B $3B   (black, dark-red, cyan, lime)
+SP2: $0F $0C $10 $20   (black, dark-blue, grey, white)
+SP3: $0F $04 $16 $20   (black, magenta, red, white)
+```
+
+**PaletteColorTable ($D475)** — 256 bytes; 4 variants × 64 NES colour remap entries:
+
+| Variant | $4E | Address range | Description |
+|---------|-----|---------------|-------------|
+| 0 | $00 | $D475–$D4B4 | Default (RP2C04-0001 or standard) |
+| 1 | $40 | $D4B5–$D4F4 | Alternate (RP2C04-0002) |
+| 2 | $80 | $D4F5–$D534 | Alternate (RP2C04-0003) |
+| 3 | $C0 | $D535–$D574 | Alternate (RP2C04-0004) |
+
+Each variant entry at index `i` maps NES colour `i` to the output NES colour for that PPU hardware type.
 
 ### NMI / VBlank synchronisation
 1. Game calls `WaitNMI` → sets `$4D=1`, spins on `$0B`
@@ -1540,8 +1664,8 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Disassemble title screen / attract mode — $C65C: AttractWait loop 240 frames (INC $4F, call $C69A), exits on credits ($4B≠0); $C69A: BlinkTitleSprite, checks $0B&$20 (frame bit 5) → alternates sprite ptr $D1A7/$D1BA → DrawSprites(X=7,Y=$12); $CFAA: PreGameDraw — draw nametable blocks, set $60=$30 (stage banner), draw "STAGE XX" sprite at col$02/row$03, draw stage number, check P2, clear $60=$00
 - [x] Disassemble stage-clear score tally screen — **StageClearTallyScreen ($CAF1)**; called from $C1F5 after all enemies cleared; TallyScreenInit ($CD04) sets up nametable $24, draws P1/P2 headers + 4 tank-type icon rows (sprites); sums kills $73-$76→$7D (P1 total) $77-$7A→$7E (P2 total); per-type loop ($5A=0-3): load KillScoreTable score ($10/$20/$30/$40 = 100/200/300/400 pts), drain tally one-at-a-time (DEC $73,X INC $5D + ScoreAdd $DA31 + LivesGrantCheck), draw count via BCD_Div+DrawNametableWithOffset; DelayXFrames ($D137) paces animation; after 4 types draw totals; 2P: award bonus score to higher-kill player; wait 100 frames; return
 - [x] Disassemble game-over sequence fully — StageEndHandler ($C1A0): 4-phase flow (clear+respawn → eagle-explosion loop → palette-flash loop → tally+decision); CheckGameOver ($C62F) exits loop when A=1 (eagle gone or no lives); DrawGameOverScreen ($C53E) draws "GAME"($D214)+"OVER"($D219) tile strings via $D8F7, waits on anim timers $0318-$031A; CompareAndUpdateHiScore ($D9F0) compares 7-byte BCD $15/$1D vs $3D, updates hi-score buffer $3D-$43, returns Y=0/1/$FF; NewHiScoreDisplay ($C4E9) draws $D16B label + $D9C4 value with random palette flash; GameOverScoreScreen ($CF96) is attract-loop nametable reset (not a score screen); return path → JMP $C0A6 → PreLoop → attract loop
-- [ ] Disassemble controller read fully — ControllerDoubleRead ($99D2): NES $4016/$4017 latch+read loop, callers $85C0 (title) and $8650 (gameplay); $C389 (MainLoop_4): confirm how packed bits land in $06 (P1Dir) / $07 (P2Dir); trace DecodeDirection ($E50E) call from $DC30
-- [ ] Decode PaletteColorTable ($D475) — DIP switch colour remapping; extract all 4 colour variants
+- [x] Disassemble controller read fully — ControllerDoubleRead ($99D2): NES $4016/$4017 latch+read loop, callers $85D4 (title) and $8670 (gameplay NMI body); Path A (NMI_Sub2 $D68A): double-read with edge-detect → $06/$07 (raw buttons per slot), $08/$09 (just-pressed edges); Path B (ControllerDoubleRead $99D2 → StrobeControllers $9A23 → ReadControllerBits $9A3F): double-read with retry until stable → $14/$15 P1|P2 OR'd raw/filtered, $16/$17 P2 raw/filtered; DecodeDirection ($E50E) called from $DC4D (EnemyAI) to convert raw byte to 0–3 dir value
+- [x] Decode PaletteColorTable ($D475) — 256-byte table ($D475–$D574); 4 variants × 64 NES colour entries; indexed as `base_color | $4E` where $4E = $4017 & $C0 ∈ {$00,$40,$80,$C0}; PaletteApplyDIP ($D46A): saves Y, ORA $4E, TAY, LDA $D475,Y, restores Y, RTS; InitPalette ($D41E): WaitVBlank ($D575) → PPU addr $3F00 → 32-entry DIP-remapped write loop; PaletteData ($D44A): 32 base colours (8 sub-palettes × 4)
 - [ ] Disassemble DrawVictoryScreen ($C44D) — draws victory/stage-clear nametable strings from $D291 and $D145; confirm full sequence and return condition. NOTE: $C53E=DrawGameOverScreen (different routine)
 - [ ] Decode text strings at $D291 and $D145 — raw bytes; determine encoding (ASCII, tile indices, or length-prefixed); $D291 used by DrawGameOverScreen ($C53E); $D145 used by DrawVictoryScreen ($C44D)
 - [ ] Disassemble PlayerUpdateDispatch ($E2AE) — per-frame dispatcher; calls DecodeDirection ($E50E) via $DC30; trace full call chain and what state it updates

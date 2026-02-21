@@ -283,3 +283,9 @@
 1,C225,GameOverCleanup
 1,C301,ClearAndRespawn
 1,C249,InputBlockDuringFlash
+0,9A23,StrobeControllers
+0,9A3F,ReadControllerBits
+0,99D2,ControllerDoubleRead
+# Session 14: palette DIP remapping
+1,D475,PaletteColorTable
+1,D575,WaitVBlank
