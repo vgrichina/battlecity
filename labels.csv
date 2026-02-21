@@ -291,3 +291,11 @@
 1,D575,WaitVBlank
 # Session 15: DrawVictoryScreen
 1,D91B,DrawRowTiles
+0,98E0,StageInitHelperA
+0,98BE,StageInitHelperB
+0,97B1,StagePaletteInit
+0,871C,StageFirstTimeInit
+# Session 17: LevelCodePtrs mapping
+0,BB32,Level9Init
+0,BE65,Level10Init
+0,90BC,Level11Init
