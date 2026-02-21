@@ -59,7 +59,22 @@ Do not re-document already-covered addresses. Stop after $TASKS tasks."
         if .type == "assistant" then
           .message.content[] |
           if .type == "text" then .text
-          elif .type == "tool_use" then "[tool: \(.name)] \(.input | tostring)"
+          elif .type == "tool_use" then
+            if .name == "Bash" then
+              "  \u25b6 \(.input.command | split("\n")[0] | .[0:100])"
+            elif .name == "Read" then
+              "  \u25b6 Read \(.input.file_path | split("/")[-1])\(if .input.offset then " +\(.input.offset)" else "" end)"
+            elif .name == "Write" then
+              "  \u25b6 Write \(.input.file_path | split("/")[-1])\n\(.input.content)"
+            elif .name == "Edit" then
+              "  \u25b6 Edit \(.input.file_path | split("/")[-1])\n--- old\n\(.input.old_string)\n+++ new\n\(.input.new_string)"
+            elif .name == "Grep" then
+              "  \u25b6 Grep \"\(.input.pattern)\" \(.input.path // "")"
+            elif .name == "Glob" then
+              "  \u25b6 Glob \(.input.pattern)"
+            else
+              "  \u25b6 \(.name) \(.input | keys | join(" "))"
+            end
           else empty
           end
         else empty
