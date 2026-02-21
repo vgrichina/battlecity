@@ -80,6 +80,8 @@
 1,E35D,PowerUpSpawn
 1,E417,PlayerRespawn
 1,E46C,EnemySpawn
+1,E4C6,ClearBulletSlots
+1,E4D0,ClearEntitySlots
 1,E4DD,SetStateLo
 1,E4E8,SetSpeedPtr
 1,E50E,DecodeDirection
@@ -114,6 +116,14 @@
 0,8B48,Level4Init
 0,8B63,JmpThruPtr0
 0,86E0,StageLoader
+1,C791,HUDKillCounterHelper
+1,C79F,DrawHUDKillIconA
+1,C7AE,DrawHUDKillIconB
+1,C7BD,DrawAllHUDKillIcons
+1,C7CD,DrawHUDTanks
+1,C7F8,HUDTankAnimation
+1,EBEE,BulletDeltaX
+1,EBF2,BulletDeltaY
 # Session 3 additions
 1,DDFC,RandomDirChange
 1,DE22,ClampXMove

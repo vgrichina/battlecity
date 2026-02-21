@@ -157,11 +157,26 @@ Bits 1–0: direction (up=0, left=1, down=2, right=3)
 - Before firing a new bullet, old bullet data is saved to secondary slots; then FireBullet writes fresh bullet at state = dir | $40
 - Dispatched by $E0F0 via $E595 table; state uses same format as EntityState
 
+### Entity State Lifecycle
+```
+Spawn:   EntityState = $F0               (StateIncSlot handler)
+         $F0 → $F1 → … → $FE → state=$E0 (StateIncFire handler)
+         $E0 → $E1 → … → $EE → call EnemySpawn ($E46C) → state=$A0-$A3
+Active:  $A0-$AF  MoveGridSnap — primary movement (16 states, dir in bits 1:0)
+         $B0-$BF  DirTowardHQ  — navigate to eagle; sets state $A0-$A3
+         $C0-$CF  DirTowardP2  — navigate to P2;    sets state $A0-$A3
+         $D0-$DF  DirTowardP1  — navigate to P1;    sets state $A0-$A3
+         $90-$9F  RandomDirChange — decide direction then return to $A0-$A3
+         $80-$8F  ShieldHandler — blink/pause (temporary blocked state)
+Death:   EntityState = $73 (set by HUDDraw on bullet hit)
+         $73 → countdown via StateCountdown → $00 → PlayerKilled/EnemyKilled
+```
+
 ### Initial Entity States ($E53B, 8 bytes)
 | Index | Value | Meaning |
 |-------|-------|---------|
-| 0–1   | $A0   | Active, behavior 2, direction 0 (right) — players |
-| 2–7   | $A2   | Active, behavior 2, direction 2 (up) — enemies |
+| 0–1   | $A0   | State $A0 — MoveGridSnap, direction UP — players |
+| 2–7   | $A2   | State $A2 — MoveGridSnap, direction DOWN — enemies |
 
 ---
 
@@ -293,8 +308,8 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $E117 | BulletDelta | Apply DirDeltaTable delta to bullet position: read $E529,Y × scale |
 | $E12A | BulletCountdown | DEC $CC,X; on lower-nibble=0, step down state tier |
 | $E140 | FireBullet | Set $CC,X = dir|$40; compute bullet start position from entity X/Y/dir |
-| $E1AF | BulletExplode | Bullet explosion animation handler |
-| $E1C6 | BulletTravel | Move bullet: load $B8,X/$C2,X, apply $DF96 tile, call $DF96 |
+| $E1AF | BulletExplode | Draw explosion sprite: tile $B1+dir×2 at bullet pos −5px X |
+| $E1C6 | BulletTravel | Draw traveling bullet sprite (state $60-$8F) |
 | $E1D6 | PlayerFireCheck | Loop entities 1→0: if active & fire pressed & type=$4x & bullet avail, fire |
 | $E216 | EnemyFireCheck | If spawn timer=0: loop entities 7→2; 1-in-32 chance (PRNG) to call $E140 |
 | $E235 | CalcTilePos | Calc entity tile-map positions + mark collision flags |
@@ -304,6 +319,8 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $E35D | PowerUpSpawn | Manage power-up countdown ($45); animate eagle base ($68 flash timer); dispatch eagle-state handlers via $E3BA table |
 | $E417 | PlayerRespawn | Players: load PlayerSpawnX/Y, clear DirTimer. Enemies: cycle SpawnRotIdx ($6A 0→2), load EnemySpawnX/Y; if EnemiesRemaining($7F) = 17/10/3 → mark power-up tank ($A8=4). Both: set state $F0, call DrawNametableTile ($D82B, A=$0F) |
 | $E46C | EnemySpawn | Set initial state from $E53B; setup entity slot; update spawn index |
+| $E4C6 | ClearBulletSlots | Zero all 10 bullet state slots ($CC,0–$CC,9) — called at game init |
+| $E4D0 | ClearEntitySlots | Zero $A0,0–$A0,7 and $0103,0–$010A — called at game init |
 | $E4DD | SetStateLo | A=state-high-nibble → OR into $A0,X preserving lower nibble |
 | $E4E8 | SetSpeedPtr | Compute $8B/$8C = pointer into $E6A9 speed table from $85/$46 |
 | $E50E | DecodeDirection | Decode direction byte from input: right=0, left=1, up=2, down=3 |
@@ -322,8 +339,8 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $EB17 | LivesDraw | (to be disassembled) |
 | $EBF6 | GameOverHandler | Enable APU ($4015/$4017); zero $0300–$031B via X loop and $031C–$03F4 at stride 8 via pointer (clears entity/bullet tracking page) |
 | $EC23 | NMI_Sub3 | Stage-summary score/kill-count tabulator; reads $0300,X entries and $6D (ServiceMode); fills $F9–$FC counters for end-of-stage results display |
-# New routines (Session 3)
-| $DDFC | RandomDirChange | State $50–$5F handler: 50% → SpeedCtrlMove ($DF26); 25% → turn right (dir+1); 25% → turn left (dir−1) |
+# New routines (Sessions 3–4)
+| $DDFC | RandomDirChange | State $90–$9F handler: 50% → SpeedCtrlMove; 25% → turn right (dir+1 &3); 25% → turn left (dir−1 &3); result stored as $A0|(dir&3) |
 | $DE22 | ClampXMove | Boundary clamp helper: if A > $56 → A−1 |
 | $DE2A | ClampYMove | Boundary clamp helper: if A > $57 → A−1 |
 | $DE32 | DirTowardP1 | Load entity 0 X/Y into $71/$72; call DirTowardTarget |
@@ -332,7 +349,13 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $DE50 | DirTowardTarget | JSR CalcDirToTarget; STA $A0,X (write new state with direction); RTS |
 | $DE56 | CalcDirToTarget | Compute 9-way direction toward ($71,$72) from entity ($90/$98,X): sign(targetX−entityX)→$64, sign(targetY−entityY)→$65; index = $65×3+$64; lookup DirToStateTable[$E543, index or index+9]; return state byte |
 | $DB5D | SignFn | Sign of SEC;SBC result: BEQ→A=0; BCS→A=+1; else A=$FF (−1) |
-| $DF26 | SpeedCtrlMove | State $50 speed handler: slow ($84>>2 < FrameHi) → set state $B0; medium (random or P1/P2 absent) → set $C0; fast → set $D0; via SetStateLo |
+| $DF26 | SpeedCtrlMove | AI mode selector: slow ($84>>2 >= FrameHi) → DirTowardHQ ($B0); medium ($84>>3 >= FrameHi) → random dir ($A0-$A3); fast → DirTowardP1 ($D0) or DirTowardP2 ($C0) based on player presence |
+| $C791 | HUDKillCounterHelper | Compute OAM slot X and sprite Y from HUD index: even→X=$1D, odd→X=$1E; Y=idx/2+3 |
+| $C79F | DrawHUDKillIconA | Draw one HUD kill-counter icon from sprite table $D222 |
+| $C7AE | DrawHUDKillIconB | Draw one HUD kill-counter icon from sprite table $D22B (alternate frame) |
+| $C7BD | DrawAllHUDKillIcons | Loop $5A=$12→0 step−2 (10 pairs), call $C79F: draw all 10 HUD kill-counter icons |
+| $C7CD | DrawHUDTanks | Draw two tank sprites (tiles $79/$7D) at $0105/$0106; used for HUD enemy-count animation |
+| $C7F8 | HUDTankAnimation | Count down $0108 every 16 frames; if >= $0A: move icon along $D2C6/$D2CA delta path; call DrawHUDTanks |
 | $D5FC | TileAddrCompute | Tile (X=tileX, Y=tileY) → RAM address: low = tileX | (tileY&7)<<5; high = $04|(tileY>>3). Covers $0400–$07FF |
 | $D82B | DrawNametableTile | Write 4-tile pattern to nametable shadow: index in A, pixel position in X/Y; reads $DB69 palette table; calls $D613/$D7A4 to write tiles into $0400–$07FF |
 | $E838 | BulletTileCollision | Check bullet at (X=pixelX, Y=pixelY) vs tile map; if eagle ($C8): trigger eagle-hit flags; if steel ($10): stop bullet (armored bullet destroys); if water ($11): stop, no destroy; if brick ($00–$0F, sub-tile bit): stop and destroy ($D763) |
@@ -352,9 +375,9 @@ Each game frame invokes these 18 subsystems in order:
 9. `PlayerFireCheck` — players shoot on button press
 10. `EnemyFireCheck` — enemies fire with 1-in-32 random chance
 11. `EnemySpawnDispatch ($DBF6)` — spawn next enemy if slot free and delay elapsed
-12. `ScoreDraw ($E7A9)` — loop moving bullets: call BulletTileCollision; draw score tile on hit
-13. `BonusDraw ($EAB5)` — (to be disassembled)
-14. `HUDDraw ($E8B1)` — check impacting bullets vs player entities; deflect with shield or register hit (set CC,X=$33)
+12. `ScoreDraw ($E7A9)` — **bullet movement + tile collision**: for each active bullet, probe tile AHEAD and BEHIND (±4px along dir); if wall hit: destroy tile, stop bullet ($CC,X=$33)
+13. `BonusDraw ($EAB5)` — **bullet-vs-bullet cancel**: if player bullet (slots 0,1,8,9) within 6×6 px of any enemy bullet → clear both ($CC,X=$CC,Y=0)
+14. `HUDDraw ($E8B1)` — **enemy-bullet→player collision**: if enemy bullet (slots 1–7) within 10×10 px of player: shield → deflect bullet; no shield → EntityState=$73 (death), set $0307
 15. `LivesDraw ($EB17)` — check effect position ($86/$87) against entities; area-kill within 12px
 16. `$C7F8` — (to be disassembled)
 17. `CheckPlayersMoving ($DBB9)` — update $0311 movement flag
@@ -391,7 +414,7 @@ RAM address = $0400 + tileY*32 + tileX
 **Key RAM flags at $0300+**:
 | Address | Purpose |
 |---------|---------|
-| $0307 | Eagle hit flag (set by BulletTileCollision when bullet hits eagle) |
+| $0307 | CriticalHitFlag — set by: (a) BulletTileCollision hitting eagle tile; (b) HUDDraw when enemy bullet hits unshielded player; (c) level-init bank 0 code; triggers game-over sequence |
 | $030B | Eagle flash trigger |
 | $030C | Player bullet wall-penetration flag |
 | $030F | Player fired flag (set by FireBullet for player entities) |
@@ -497,43 +520,62 @@ Y = (state_byte >> 3) & $FE      ; even byte offset, range $00..$1E
 Inactive entities (bit 7 = 0): Y = $00..$0E → table entries [0]..[7]
 Active entities (bit 7 = 1): Y = $10..$1E → table entries [8]..[15]
 
-**$E555 — EntityMovement** (called from $DCF1 — state-machine transitions):
-| State range | Y | Handler | Role |
-|-------------|---|---------|------|
-| $00         | $00 | $DC9E (RTS) | Null / completely inactive |
-| $10–$3F     | $02–$06 | $DE9E | Countdown: DEC state; on lower-nib=0 step down tier |
-| $40–$4F     | $08 | $DD06 | Shield blink / enemy state decrement by 4 |
-| $50–$5F     | $0A | $DDFC | (to be mapped) |
-| $60–$6F     | $0C | $DD30 | Grid-snap + random direction change |
-| $70–$7F     | $0E | $DE48 | (to be mapped) |
-| $80–$8F     | $10 | $DC9E (RTS) | Active, null state |
-| $90–$9F     | $12 | $DFB1 | Draw spawn "star" sprite |
-| $A0–$AF     | $14 | $DFE7 | Draw small spawn sprite |
-| $B0–$CF     | $16–$18 | $DFFA | Draw expanding spawn sprite |
-| $D0–$FF     | $1A–$1E | $DF81 | Draw moving sprite (animation) |
+All three tables are **16 entries × 2 bytes = 32 bytes** each (not 24). Y = (state>>3)&$FE ranges $00..$1E in steps of 2 → 16 values.
 
-**$E575 — MoveUpdate** (called from $DF6C — position updates):
-| State range | Y | Handler | Role |
-|-------------|---|---------|------|
-| $00         | $00 | $DC9E (RTS) | Skip |
-| $10–$1F     | $02 | $DFB1 | |
-| $20–$2F     | $04 | $DFE7 | |
-| $30–$4F     | $06–$08 | $DFFA | |
-| $50–$7F     | $0A–$0E | $DF81 | |
-| $80–$DF     | $10–$1A | $E06A | Move tank: read dir, apply delta, update OAM |
-| $E0–$FF     | $1C–$1E | $E0BF | Shoot animation: draw shooting sprite |
+**$E555 — MovementDispatch** (called from EntityDispatch $DCF1 — state-machine logic):
+| State range | Y | Entry | Handler | Role |
+|-------------|---|-------|---------|------|
+| $00–$0F     | $00 | [0]  | $DC9E (Null) | Completely inactive |
+| $10–$1F     | $02 | [1]  | $DE9E (StateCountdown) | Countdown toward 0 |
+| $20–$2F     | $04 | [2]  | $DE9E | Countdown |
+| $30–$3F     | $06 | [3]  | $DE9E | Countdown |
+| $40–$4F     | $08 | [4]  | $DE9E | Countdown |
+| $50–$5F     | $0A | [5]  | $DE9E | Countdown |
+| $60–$6F     | $0C | [6]  | $DE9E | Countdown |
+| $70–$7F     | $0E | [7]  | $DE9E | Countdown (death animation; draws via MoveUpdate) |
+| $80–$8F     | $10 | [8]  | $DD06 (ShieldHandler) | Shield blink / spawn pause |
+| $90–$9F     | $12 | [9]  | $DDFC (RandomDirChange) | 50% SpeedCtrlMove / 25% turn L / 25% turn R |
+| $A0–$AF     | $14 | [10] | $DD30 (MoveGridSnap) | **Primary movement state** — move + collision probe |
+| $B0–$BF     | $16 | [11] | $DE48 (DirTowardHQ) | Navigate toward eagle |
+| $C0–$CF     | $18 | [12] | $DE3D (DirTowardP2) | Navigate toward P2 |
+| $D0–$DF     | $1A | [13] | $DE32 (DirTowardP1) | Navigate toward P1 |
+| $E0–$EF     | $1C | [14] | $DF18 (StateIncFire) | Spawn: count up, call EnemySpawn at $EE |
+| $F0–$FF     | $1E | [15] | $DF09 (StateIncSlot) | Spawn: count up, jump to $E0 at $FE |
 
-**$E595 — BulletDispatch** (called from $E0F0 — bullet updates):
-| BulletState | Y | Handler | Role |
-|-------------|---|---------|------|
-| $00         | $00 | $DC9E (RTS) | No bullet |
-| $10–$3F     | $02–$06 | $E12A | Countdown (like entity) |
-| $40–$4F     | $08 | $E105 | Bullet impact / hit |
-| $50–$5F     | $0A | $DC9E (RTS) | ? |
-| $60–$7F     | $0C–$0E | $E1C6 | Bullet travel (move position) |
-| $80–$CF     | $10–$18 | $E1C6 | Bullet travel |
-| $D0–$DF     | $1A | $E1AF | Bullet explode animation |
-| $E0–$FF     | $1C–$1E | $E0BF / other | (edge cases) |
+**$E575 — MoveUpdateDispatch** (called from MoveUpdate $DF5A — sprite drawing):
+| State range | Y | Entry | Handler | Role |
+|-------------|---|-------|---------|------|
+| $00–$0F     | $00 | [0]  | $DC9E (Null) | Skip |
+| $10–$1F     | $02 | [1]  | $DFB1 (DrawSpawnSprite) | "Star" spawn sprite |
+| $20–$2F     | $04 | [2]  | $DFE7 (DrawSmallSprite) | Small spawn frame |
+| $30–$3F     | $06 | [3]  | $DFFA (DrawExpandSprite) | Expanding spawn |
+| $40–$4F     | $08 | [4]  | $DFFA (DrawExpandSprite) | Expanding spawn |
+| $50–$5F     | $0A | [5]  | $DF81 (DrawMovingSprite) | Death animation |
+| $60–$6F     | $0C | [6]  | $DF81 | Death animation |
+| $70–$7F     | $0E | [7]  | $DF81 | Death animation |
+| $80–$8F     | $10 | [8]  | $E06A (MoveTank) | Draw active tank sprite |
+| $90–$9F     | $12 | [9]  | $E06A | Draw active tank sprite |
+| $A0–$AF     | $14 | [10] | $E06A | Draw active tank sprite |
+| $B0–$BF     | $16 | [11] | $E06A | Draw active tank sprite |
+| $C0–$CF     | $18 | [12] | $E06A | Draw active tank sprite |
+| $D0–$DF     | $1A | [13] | $E06A | Draw active tank sprite |
+| $E0–$EF     | $1C | [14] | $E0BF (DrawShootSprite) | Shoot animation |
+| $F0–$FF     | $1E | [15] | $E0BF | Shoot animation (spawn fire effect) |
+
+**$E595 — BulletDispatch** (called from BulletDispatch $E0F0):
+| BulletState | Y | Entry | Handler | Role |
+|-------------|---|-------|---------|------|
+| $00         | $00 | [0]  | $DC9E (Null) | Inactive |
+| $10–$1F     | $02 | [1]  | $E12A (BulletCountdown) | Countdown |
+| $20–$2F     | $04 | [2]  | $E12A | Countdown |
+| $30–$3F     | $06 | [3]  | $E12A | Countdown (post-hit: $33 set by tile collision) |
+| $40–$4F     | $08 | [4]  | $E105 (BulletImpact) | **Active moving bullet** |
+| $50–$5F     | $0A | [5]  | $DC9E (Null) | Unused |
+| $60–$6F     | $0C | [6]  | $E1C6 (BulletTravel) | Draw bullet sprite (moving) |
+| $70–$7F     | $0E | [7]  | $E1C6 | Draw bullet sprite |
+| $80–$8F     | $10 | [8]  | $E1C6 | Draw bullet sprite |
+| $90–$9F     | $12 | [9]  | $E1AF (BulletExplode) | Explosion animation |
+| $A0+        | $14+| [10]+| (data) | Unused states |
 
 ### PRNG ($D37C)
 ```
@@ -552,15 +594,58 @@ ptr = [$E555+Y, $E555+Y+1]          ; little-endian function pointer
 JMP (ptr)                           ; tail-call to state handler
 ```
 
-### Tank movement (MoveTank $E06A)
+### Tank movement — MoveGridSnap ($DD30, MovementDispatch state $A0–$AF)
+Primary movement handler. Entity positions are pixel coordinates of the **center** of the 16×16 tank sprite.
 ```
-if X < 2 (player):
-  if DirTimer[$6F,X] != 0 and frame bit 3:  return (throttled)
-  dir = $90,X & 3                            ; from entity X (player 1)
-else (enemy):
-  dir = SpeedTable or EntityType bits
-tile_ptr = EntityType | SprFrame → $53
-call DrawTank ($DB02): draws 2 tiles (EntityX/Y ± 8 px)
+if enemy (X >= 2) AND both (EntityX mod 8 == 0) AND (EntityY mod 8 == 0)
+  AND RNG & $0F == 0 (1/16 chance):
+    call SpeedCtrlMove → re-evaluate AI mode
+    return
+
+dir = EntityState & 3
+delta_x = DirDeltaTable[dir]          ; 0/−1/0/+1
+delta_y = DirDeltaTable[dir+4]        ; −1/0/+1/0
+
+; Two-point collision probe (check both halves of leading edge):
+; Probe 1: (EntityX + deltaX*9 + deltaY*8, EntityY + deltaY*9 + deltaX*8)
+; Probe 2: (EntityX + deltaX*9 − deltaY*8, EntityY + deltaY*9 − deltaX*8)
+; (i.e. probe leading edge L and R for UP/DOWN, top and bottom for L/R)
+
+if both probes clear (tile <= $11 at each point):
+  EntityX[$90,X] = EntityX + deltaX   ; advance 1 pixel
+  EntityY[$98,X] = EntityY + deltaY
+  EntitySprFrame[$B0,X] ^= 4          ; animate treads
+else (blocked):
+  if player: skip direction change
+  if enemy: RNG & 3:
+    0 (25%): reverse direction (flip dir bit 1) or grid-realign
+    1–3 (75%): SetStateLo($80) | $08 → state $88 (ShieldHandler for 8 frames)
+  EntitySprFrame[$B0,X] ^= 4          ; still animate treads
+```
+
+### AI mode selection — SpeedCtrlMove ($DF26)
+Called when a direction change is needed (blocked or grid-aligned random chance):
+```
+slow  (SpawnDelayMax>>2 >= FrameHi): state = $B0 → DirTowardHQ
+medium(SpawnDelayMax>>3 >= FrameHi): state = $A0|(RNG&3) → random direction
+fast  (else):
+  if P1 dead (EntityState[0]=0): state = $C0 → DirTowardP2
+  elif even entity slot:          state = $D0 → DirTowardP1
+  elif P2 dead (EntityState[1]=0):state = $D0 → DirTowardP1
+  else:                           state = $C0 → DirTowardP2
+```
+
+### Tank sprite drawing — MoveTank ($E06A, MoveUpdateDispatch state $80–$DF)
+```
+if enemy (X >= 2):
+  if power-up tank ($A8,X & $04): tile = ($0B>>3 & 1) + 2  (flash every 8 frames)
+  else: Y = ($0B<<2 + $A8,X) & 7 → EnemySpeedTable[Y] (2-bit frame selector)
+  $04 = tile_frame
+if player (X < 2):
+  if DirTimer[$6F,X] > 0 AND ($0B & $08): return  (throttled)
+  $04 = X (entity index)
+$53 = ($A8,X & $F0) + $B0,X          ; tile group + animation frame
+Y = EntityY, X = EntityX → JSR DrawTank2x2  ; draw 16×16 sprite
 ```
 
 ### AI direction toward target (CalcDirToTarget $DE56)
@@ -670,20 +755,18 @@ else:
 
 ## Next Tasks
 
-- [ ] Disassemble BonusDraw ($EAB5) — likely draws bonus tank icons on HUD
-- [ ] Disassemble $C7F8, $C7AE — post-spawn HUD update and unknown game-frame routine
-- [ ] Disassemble $E4C6 / $E4D0 — called at game start (entity type/queue setup?)
 - [ ] Disassemble $D763 / $D7A4 (tile destruction routines) — understand brick bit-clearing
 - [ ] Disassemble bank 0 level init routines ($874D, $8A6E, $896A, etc.) — understand how tile map is populated at level start
 - [ ] Decode inner formation data tables at $8034+ (per-stage enemy sprite/position blocks)
-- [ ] Disassemble SpeedTable ($E6A9) — dump entries, understand per-level speed parameters
+- [ ] Dump SpeedTable ($E6A9, 4-byte entries × 36 stages) — decode $8B–$8E meaning from MoveTank / MoveGridSnap callers
 - [ ] Disassemble $8B69+ (entity slot fill / enemy queue setup)
 - [ ] Disassemble $DA31 / $DA62 — called from LivesDraw area-kill handler
 - [ ] Disassemble $C9BB / $C912 — power-up activate/spawn routines
 - [ ] Validate tile map at game start — what values does level loader write to $0400–$07FF?
 - [ ] Identify and label CHR tiles by visual inspection of `tiles/chr_pt0.png` + `tiles/chr_pt1.png`
-- [ ] Disassemble HUDDraw ($E8B1), ScoreDraw ($E7A9), LivesDraw ($EB17) — scoreboard and HUD rendering
-- [ ] Disassemble $C7AE/$C7F8 area — track the 16th & 17th GameUpdate2 calls
+- [ ] Disassemble $D745 (sub-tile bitmask) and $D75C (tile-collidable check) — used by BulletTileCollision
+- [ ] Disassemble LivesDraw ($EB17) — area-kill handler (checks effect pos $86/$87 against entities)
+- [ ] Disassemble $CA25 — called on eagle hit (explosion / game-over trigger?)
 
 ### Completed
 - [x] ROM identification: iNES, mapper 99, 32KB PRG, 16KB CHR
@@ -714,3 +797,15 @@ else:
 - [x] $D5FC: nametable shadow address formula documented
 - [x] SetSpeedPtr ($E4E8): loads 4-byte speed parameters from SpeedTable into $8B–$8E
 - [x] CHR-ROM extracted: `extract_tiles.py` produces `tiles/chr_all.png`, `chr_pt0.png`, `chr_pt1.png` — sprites at PPU $0000, BG at $1000
+- [x] All three dispatch tables corrected to 16 entries × 32 bytes (not 24×48)
+- [x] Complete entity state lifecycle: $F0 spawn → $E0 activate → $A0 move → $73 death → $00
+- [x] MoveGridSnap ($DD30): 16×16 tank movement with two-tile collision probes; entity pos = center pixel
+- [x] SpeedCtrlMove ($DF26): slow→DirHQ, medium→random, fast→DirP1/P2 based on player presence
+- [x] RandomDirChange ($DDFC): 50% SpeedCtrlMove / 25% turn left / 25% turn right
+- [x] MoveTank ($E06A): sprite-draw only (MoveUpdateDispatch); no position change
+- [x] ScoreDraw ($E7A9): main bullet movement/collision loop (dual tile probe ahead+behind)
+- [x] BonusDraw ($EAB5): bullet-vs-bullet cancellation (player slots 0,1,8,9 vs all enemies)
+- [x] HUDDraw ($E8B1): enemy-bullet→player hit detection (10px proximity, shield deflect)
+- [x] $0307 = CriticalHitFlag (eagle hit AND player body hit AND level-init)
+- [x] $E4C6 = ClearBulletSlots, $E4D0 = ClearEntitySlots (game init routines)
+- [x] HUD kill-counter: $C79F/$C7AE draw icons; $C7F8 animates HUD tank countdown
