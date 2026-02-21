@@ -295,6 +295,8 @@
 0,98BE,StageInitHelperB
 0,97B1,StagePaletteInit
 0,871C,StageFirstTimeInit
+# StageFlagsTable: 13 bytes, bit 2 = VS coin-counter-2 output to $4016 via $59 shadow
+0,80B6,StageFlagsTable
 # Session 17: LevelCodePtrs mapping
 0,BB32,Level9Init
 0,BE65,Level10Init

@@ -767,7 +767,7 @@ if $30 = 0:
     if Y < 0 (first call):
         JSR $98E0, $98BE               ; one-time stage init helpers
         zero ZP $68–$EF                ; clear working variables
-        ORA $80B6[stage] into $59      ; stage flags
+        ORA $80B6[stage] into $59      ; stage flags — bit 2 = VS coin-counter-2 output
         call $97B1 (palette/init)
     else:
         inner_ptr = ($02)[Y * 2]       ; inner formation table entry
@@ -797,6 +797,38 @@ if $30 = 0:
 - `$892B` Phase 1: EnemyCount ($43) = $2E
 - `$8930` Phase 2: EnemyCount=$08, $D4=$2B, $D3=$A0, $68=1, configure entity-2 slot data
 - `$8A64` Phase 3: $44=$40=1, $42=0 (reset sub-stage for next invocation)
+
+---
+
+### StageFlagsTable ($80B6) — VS. System Coin Counter Output
+
+13-byte table indexed by stage number (X = `$41` StageNum). Each byte is OR'd into ZP `$59` after clearing bit 2 (`AND #$FB; ORA $80B6,X; STA $59`).
+
+**ZP $59** is the shadow register for `$4016` (controller port / VS. System output). It is written to `$4016` on every controller strobe in `StrobeControllers` ($9A23) and `ControllerDoubleRead` ($99D2). Bit 2 of `$59` → bit 2 of `$4016`.
+
+**Bit 2 of `$4016` on the VS. System** = Coin Counter output 2 (physical mechanical counter in the arcade cabinet). When this bit is set in `$59`, every strobe cycle drives the coin-counter-2 output high alongside the strobe signal.
+
+**Table values** (13 stages, $80B6–$80C2):
+
+| Stage | Addr | Value | Bit 2 | Note |
+|-------|------|-------|-------|------|
+| 0 | $80B6 | $04 | 1 | coin-counter-2 active |
+| 1 | $80B7 | $04 | 1 | coin-counter-2 active |
+| 2 | $80B8 | $04 | 1 | coin-counter-2 active |
+| 3 | $80B9 | $00 | 0 | coin-counter-2 inactive |
+| 4 | $80BA | $04 | 1 | coin-counter-2 active |
+| 5 | $80BB | $04 | 1 | coin-counter-2 active |
+| 6 | $80BC | $04 | 1 | coin-counter-2 active |
+| 7 | $80BD | $04 | 1 | coin-counter-2 active |
+| 8 | $80BE | $04 | 1 | coin-counter-2 active |
+| 9 | $80BF | $00 | 0 | coin-counter-2 inactive |
+| 10 | $80C0 | $00 | 0 | coin-counter-2 inactive |
+| 11 | $80C1 | $04 | 1 | coin-counter-2 active |
+| 12 | $80C2 | $00 | 0 | coin-counter-2 inactive |
+
+**Key finding**: No game logic reads `$59` bit 2 back — no branch, no AND check anywhere tests this bit for gameplay decisions. It only drives the VS. System hardware output. **Web reimplementation: ignore this table entirely** — no game logic depends on it.
+
+The separate `NMI_Sub2` ($D68A) controller path writes `$4016` directly (STX #$01 / STY #$00) and does NOT use `$59`, so NMI controller reads are unaffected by this flag.
 
 ---
 
@@ -1734,7 +1766,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
 
 - [x] Map all 13 entries in `LevelCodePtrs` ($8000) and `LevelFormationPtrs` ($801A)
-- [ ] Identify bitmask meanings for `StageFlagsTable` ($80B6)
+- [x] Identify bitmask meanings for `StageFlagsTable` ($80B6)
 - [ ] Disassemble `StageLoader` helpers at $98E0, $98BE, and $97B1 (Bank 0)
 - [ ] Investigate ZP variables $D0–$D4 in `Level0Init` ($874D) and their roles
 - [ ] Trace usage of $0301–$0305 initialized in bank 0 (likely initialization queue)
