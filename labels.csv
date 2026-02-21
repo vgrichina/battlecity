@@ -39,7 +39,7 @@
 1,C6C5,StartGame
 1,D96D,NMI_Scroll
 1,D68A,NMI_Sub2
-1,EC23,NMI_Sub3
+1,EC23,SoundEngine
 1,DB22,NMI_Sub4
 # Newly identified
 1,D37C,RNG
@@ -221,3 +221,13 @@
 1,D733,PixelToTileCoord
 1,DB69,TileAttrTable
 1,DB79,TileCHRTable
+# Session 10: level tile loader, sound engine, title screen
+1,F200,LevelTileLoad
+1,F27D,LevelMapData
+1,EE54,SoundSeqPtrLoad
+1,EE63,SoundSeqReadByte
+1,EEA3,SoundSeqPtrTable
+1,EC80,SoundAPUWrite
+1,D1A7,TitleSpriteTableA
+1,D1BA,TitleSpriteTableB
+1,D6FD,DrawNametableWithOffset
