@@ -1164,7 +1164,13 @@ All numbers are OAM sprite tile indices (sprite pattern table, PPU $0000–$0FFF
 | $F1 | Eagle explosion animation frame 1 (8×8, center) |
 | $F5 | Eagle explosion animation frame 2 |
 | $F9 | Eagle explosion animation frame 3 |
-| $81–$8F (est.) | Enemy/player tank sprites (direction × animation frame) |
+| $08–$10 | Basic enemy tank sprite (3×3 OAM grid, all 9 slots filled) |
+| $10–$18 | Player tier-1 tank sprite (3×3 OAM grid) |
+| $11–$19 | Player tier-2 tank sprite (1-star upgrade) |
+| $82–$8A | Player tier-3 tank sprite (2-star upgrade) |
+| $85–$8D | Fast enemy tank sprite (3×3 grid, 2 slots transparent) |
+| $F6–$FE | Power enemy tank sprite (CHR tile base $F6; overlaps eagle-expl range) |
+| $AC–$B4 | Armor enemy tank sprite (base $AC; tier changes on each hit) |
 
 ### Extra-life logic (LivesGrantCheck $CF44)
 
@@ -1173,6 +1179,71 @@ Called from PowerUpCollision. Checks if `$68=$80` (game active):
 - **P2**: same check with `$1F` / `$52` / `$67` (P2 score tier / lives / flag)
 - Sets `$0304=$0305=1` → triggers HUD lives display update
 - `$66` / `$67` act as "extra life already granted" flags to prevent double-grant
+
+### Shovel power-up / FortifyBase ($EBA0, $C9BB, $C912)
+
+Power-up type 2 handler at **`$EBA0`**:
+```
+LDA $68 / BPL $EBAB   ; skip if game NOT active (bit 7 of $68 clear)
+JSR $C9BB             ; FortifyBase: draw steel walls around eagle
+LDA #$14 / STA $45    ; FortifyTimer = 20
+RTS
+```
+
+**FortifyBase (`$C9BB`)** — draws 4 rows of steel wall tiles around the base:
+- Calls `DrawSprites` at nametable rows $18–$1B (rows 24–27), source data at $D249/$D250/$D257/$D25E
+- Writes PPU attribute byte `$3F` to `$07F3` and PPU write queue at `$23F3` (attribute table entry for the base 4×4 region)
+- `$3F` = palette 3 for all four 2×2 sub-blocks → steel visual palette
+
+**RevertBricks (`$C912`)** — mirror of FortifyBase but with brick tile data ($D22D/$D234/$D23B/$D242):
+- Same 4-row DrawSprites at rows $18–$1B; sets attribute `$00` (palette 0) at $07F3/$23F3
+
+**FortifyTimer (`$45`) countdown** (in `PowerUpSpawn $E35D`):
+- Decremented by `DEC $45` ($E36D) once every 64 frames (`FrameLo AND $3F == 0`)
+- Total duration: 20 × 64 = **1280 frames ≈ 21 seconds** at 60 fps
+- When `$45 < 4` (last ~192 frames): flashing mode — alternate steel/brick every 16 frames based on `FrameLo AND $10`
+- When `$45 == 0` (after decrement): call `$C912` to revert walls to brick permanently
+
+**$68 role in shovel**: `$68 >= $80` (bit 7 set) = game active; fortify only activates during live gameplay, not attract/game-over.
+
+### EntityType tier semantics ($A8,X / $0101,X)
+
+The unified **entity type byte** is stored in `$A8,X` (ZP). It encodes:
+
+| High bits [7:5] | Entity class | Score index |
+|-----------------|-------------|-------------|
+| $20–$2F | Player tier 1 (basic, no star) | — |
+| $40–$4F | Player tier 2 (1 star upgrade) | — |
+| $60–$6F | Player tier 3 (2 star upgrade) | — |
+| $80–$8F | Enemy: Basic tank (1 hit) | 0 → 100 pts |
+| $A0–$AF | Enemy: Fast tank (1 hit, fast speed) | 1 → 200 pts |
+| $C0–$CF | Enemy: Power tank (1 hit, fast bullets) | 2 → 300 pts |
+| $E0–$EF | Enemy: Armor tank (low nibble = hits remaining) | 3 → 400 pts |
+
+**Armor tank hit tracking** (low nibble of $A8,X):
+- Spawns at `$E3` (ORA #$03 applied at `$E4B5` to EnemyTypeTable value $E0)
+- Each bullet hit: `DEC $A8,X` (at `$E985`) then `AND #$03 / BEQ destroy`
+- Hit sequence: `$E3 → $E2 → $E1 → $E0` → destroyed (4 hits total)
+- Bit 2 of $A8,X (i.e., $E4): triggers color-flash effect via `$EA63` on next hit
+
+**Score formula** (at `$E9A2`): `($A8,X >> 5) − 4` → index 0/1/2/3 into score table `$EA5F`
+
+**Sprite tile mapping** (via `$A82A[entity_type]`):
+- `$B26B` returns raw `$A8,X` when entity is in movement state (`$70,X` nonzero and ≠ $0D; path via `$B2D9`)
+- This indexes `$A82A` (bank 0 data table) to get starting CHR tile:
+
+| Entity type ($A8,X) | `$A82A` base tile | `$A841` bitmask | Visible slots |
+|---------------------|------------------|-----------------|---------------|
+| $20 (player 1)      | $10              | $00             | all 9         |
+| $40 (player 2)      | $11              | —               | all 9         |
+| $80 (basic enemy)   | $08              | $A0             | all 9         |
+| $A0 (fast enemy)    | $85              | $18             | 7 of 9        |
+| $C0 (power enemy)   | $F6              | —               | —             |
+| $E3 (armor enemy)   | $AC              | —               | —             |
+
+- Sprite grid is always 3×3 = 9 OAM slots (from attribute $03=$33 → $06=3 cols, $07=3 rows)
+- `$A841[entity_type]` bitmask: each set bit (for even slots 0,2,4,6,8) writes transparent tile $FC instead of incrementing tile counter
+- `$0101,X` stores the player upgrade tier ($20/$40/$60); also mirrored into `$A8,X` via ORA at spawn (`$E4B7`)
 
 ### LevelStart ($C33D)
 
@@ -1203,10 +1274,10 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Validate tile map at game start — trace what values level loaders write to $0400–$07FF
 - [x] Identify and label CHR tiles by visual inspection — mapped tile numbers from code analysis
 - [x] Disassemble $E3BA dispatch full: eagle animation handlers $E3C6/$E3CB/$E3D0/$E3E2/$E3EA — decoded; $68 initialization traced ($C356 sets $80, $E855 sets $27)
-- [ ] Decode power-up type 2 (Shovel $EBA0) fully — understand how $C9BB triggers fortify base and what $68 timing does
+- [x] Decode power-up type 2 (Shovel $EBA0) fully — understand how $C9BB triggers fortify base and what $68 timing does
 - [x] Disassemble $CF44 (called in PowerUpCollision/$EB60) — decoded as LivesGrantCheck (extra life on score threshold)
 - [x] Disassemble $C33D (STA $0100 in bank 1) — decoded as LevelStart; sets EnemyFreezeTimer + $68=$80
-- [ ] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
+- [x] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
 
 ### Completed
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.
