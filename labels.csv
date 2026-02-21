@@ -277,3 +277,9 @@
 1,D137,DelayXFrames
 1,DA62,SetScoreWeight
 1,DA31,ScoreAdd
+# Session 13: game-over sequence
+1,D9F0,CompareAndUpdateHiScore
+1,C4E9,NewHiScoreDisplay
+1,C225,GameOverCleanup
+1,C301,ClearAndRespawn
+1,C249,InputBlockDuringFlash

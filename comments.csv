@@ -105,3 +105,10 @@
 1,DA31,ScoreAdd: X=player slot (2=P1,3=P2); scale X*8+6; 7-digit BCD add $35-$3B into score digits $15,X..$1A,X with carry propagation; if overflow set digits $17..$1A to 9
 1,73,ZP_P1KillTally: 4 bytes $73-$76 = P1 kill counts by tank type (0=basic 1=fast 2=power 3=armor); set by INC $73,X at $E9B3; summed into $7D at tally; cleared by ClearKillTallies($C625) at LevelStart
 1,77,ZP_P2KillTally: 4 bytes $77-$7A = P2 kill counts by tank type; set by INC $77,X at $E9B8; summed into $7E; cleared same as P1
+1,D9F0,CompareAndUpdateHiScore: compare P1 score ($15-$1B 7 bytes BCD) vs hi-score ($3D-$43); if P1>hi update $3D-$43 Y=1; compare P2 ($1D-$23); if P2>hi update Y=$FF; else Y=0; only caller: $C216
+1,C4E9,NewHiScoreDisplay: WaitNMI; NametableId=$1C; DrawX=$10 DrawY=$32 SrcPtr=$D16B→$D8F7 (HI-SCORE label); $D9C4 (draw value); WriteNametable; Init2; timers $0315-$0317=1; loop: WaitVBlank+RNG+QueuePaletteWrite until timers clear
+1,C225,GameOverCleanup: WaitNMI + ClearSpriteBuf + WriteNametable + Init2; called after NewHiScoreDisplay before JMP $C0A6
+1,C301,ClearAndRespawn: ClearBulletSlots+ClearEntitySlots; $0106=$F0 $0108=0; if $51>0: PlayerRespawn(X=0 P1); if $52>0: PlayerRespawn(X=1 P2); $7F=$80=$14 timers; $8F=$0A=$45=0
+1,C249,InputBlockDuringFlash: if $68=$80 (HQ active) skip; else zero $06-$09 (P1Dir/P2Dir/P1Fire/P2Fire) — blocks input during palette-flash game-over animation
+1,C53E,DrawGameOverScreen: WaitNMI; NametableId=$1C; ScrollX/Y=0; ClearSpriteBuf; draw GAME($D214) at DrawX=$3C DrawY=$46 via $D8F7; draw OVER($D219) at DrawY=$78; WriteNametable; Init2; SetGamePalette; $0318=$0319=$031A=1 (anim timers); wait VBlank until $0318=0; WaitNMI+ClearSpriteBuf+WriteNametable+Init2; RTS
+1,CF96,GameOverScoreScreen: attract-loop nametable reset (NOT a score display); SetGamePalette+WaitNMI; NametableId=$1C; ClearSpriteBuf; WriteNametable; Init2; RTS; called at $C0A9 each attract iteration

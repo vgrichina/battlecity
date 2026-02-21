@@ -1133,6 +1133,119 @@ JMP via EagleHandlerTable[$E3BA, Y]
 - Frames 13–28: intact/damaged eagle flicker (~4 frames each state)
 - Frames 29–39: explosion flash + NullHandler (eagle disappears)
 
+### Game-over sequence (StageEndHandler $C1A0)
+
+**StageEndHandler ($C1A0)** — entry point for end-of-stage logic; dispatches to tally, victory, or game-over screen:
+
+```
+; --- Phase 1: Clear state, reset bullets/entities, respawn players ---
+$0C = $60 = $6B = 0              ; clear PPU queue idx, GameState, GameActive
+JSR $CA44                         ; (curtain helper, exact role TBD)
+JSR TallyCloseCurtain ($CACF)
+JSR $D595                         ; reset helper
+JSR ClearAndRespawn ($C301)       ; clear bullets/entities; respawn players if lives > 0
+
+; --- Phase 2: Wait for eagle explosion to finish ---
+Loop:
+  JSR WaitVBlank; GameUpdate2 ($C29F); EntityUpdate ($E2EF)
+  JSR CollisionUpdate ($E18C); MoveUpdate ($DF5A)
+  JSR CheckGameOver ($C62F)        ; A=0 (Z=1) = ongoing; A=1 (Z=0) = done
+  BEQ loop                         ; repeat while still animating
+
+; --- Phase 3: PaletteFlash animation loop ---
+$0A = $0B = 0
+if $0108 != 0: $0A = $FE           ; pre-load counter if enemy killed player
+Loop:
+  JSR WaitVBlank; $C249 (input block); GameUpdate2; EntityUpdate; MoveUpdate; CollisionUpdate
+  JSR PaletteFlash ($C2D9)          ; toggles bg colour via FrameLo bits every 32 frames
+  if $0A != 2: loop                  ; repeat until $0A == 2 (flash animation complete)
+
+; --- Phase 4: Tally and decide next stage or game-over ---
+JSR SoundResetInit ($EBF6)
+JSR StageClearTallyScreen ($C1F5)   ; kills tally + score tally screen
+INC $85                              ; advance internal stage counter
+if ($51 + $52) == 0: → game-over path ($C20A)   ; no lives remain
+if $68 == $80: JMP $C0C1            ; lives remain and HQ active → load next stage
+
+; --- Game-over path ---
+$C20A: if ($15 | $1D) != 0: JSR DrawVictoryScreen ($C44D)  ; enemies still on field
+JSR DrawGameOverScreen ($C53E)
+JSR CompareAndUpdateHiScore ($D9F0) ; returns Y=0 (no), Y=1 (P1 new), Y=$FF (P2 new)
+TYA / BEQ $C222                      ; Y=0 → skip hi-score display
+  JSR NewHiScoreDisplay ($C4E9)      ; draw hi-score with flashing palette
+  JSR GameOverCleanup ($C225)        ; WaitNMI + ClearSpriteBuf + WriteNametable + Init2
+$C222: JMP $C0A6                     ; return to attract loop
+```
+
+**CheckGameOver ($C62F)**:
+```
+LDA $68 / BEQ showOAM                ; $68==0 → eagle gone, trigger OAM
+LDA $80 / BEQ return_A1             ; timer $80==0 → animation done, game over
+LDA $51+$52 / BNE return_A0         ; lives remain → loop continues
+showOAM: $0105=$70 $0106=$F0 $0107=$00 $0108=$11 ; explosion OAM entries
+         $0B = 0
+return_A1: LDA #$01 / RTS           ; Z=0 → exit StageEndHandler loop (game over)
+return_A0: LDA #$00 / RTS           ; Z=1 → BEQ taken → continue looping
+```
+
+**ClearAndRespawn ($C301)**:
+```
+JSR ClearBulletSlots ($E4C6)
+JSR ClearEntitySlots ($E4D0)
+$0106 = $F0 (hide eagle OAM Y); $0108 = 0 (clear HUD tank count)
+if $51 > 0: JSR PlayerRespawn ($E417) X=0 (P1)
+if $52 > 0: JSR PlayerRespawn ($E417) X=1 (P2)
+$7F=$80=$14 (timers); $8F=$0A=$45=0
+```
+
+**DrawGameOverScreen ($C53E)**:
+```
+JSR WaitNMI; NametableId=$1C; ScrollX=ScrollY=0; ClearSpriteBuf
+DrawX=$3C DrawY=$46 SrcPtr=$D214 → JSR $D8F7   ; draw "GAME" tile-index string
+DrawX=$3C DrawY=$78 SrcPtr=$D219 → JSR $D8F7   ; draw "OVER" tile-index string
+JSR WriteNametable; Init2; SetGamePalette
+$0A=0; $0318=$0319=$031A=1           ; set animation trigger bytes
+Loop: JSR WaitVBlank until $0318==0  ; NMI decrements/clears $0318
+JSR WaitNMI; ClearSpriteBuf; WriteNametable; Init2; RTS
+```
+"GAME" and "OVER" are sequences of tile indices (not ASCII) drawn by `$D8F7`. Animation timers `$0318/$0319/$031A` are decremented by the NMI handler each VBlank.
+
+**CompareAndUpdateHiScore ($D9F0)** — not a display routine; pure compare + update:
+```
+Compare 7 BCD bytes P1 score ($15–$1B) vs hi-score ($3D–$43)
+  P1 > hi-score: copy $15→$3D (7 bytes); Y=1
+Compare 7 BCD bytes P2 score ($1D–$23) vs hi-score ($3D–$43)
+  P2 > hi-score: copy $1D→$3D (7 bytes); Y=$FF
+No update: Y=0
+```
+Hi-score buffer is ZP `$3D–$43` (7-byte BCD). Returns Y=0/1/$FF.
+
+**NewHiScoreDisplay ($C4E9)**:
+```
+JSR WaitNMI; NametableId=$1C; ScrollX=ScrollY=0; ClearSpriteBuf
+DrawX=$10 DrawY=$32 SrcPtr=$D16B → JSR $D8F7   ; draw "HI-SCORE" label
+JSR $D9C4                            ; draw hi-score numeric value to nametable
+JSR WriteNametable; Init2
+$0315=$0316=$0317=1                  ; animation timers
+Loop: WaitVBlank → JSR RNG; AND #$3F; JSR QueuePaletteWrite  ; random colour flash
+      until timers clear
+```
+
+**GameOverScoreScreen ($CF96)** — *not a score display*; called every attract-loop iteration at `$C0A9`:
+```
+JSR SetGamePalette; WaitNMI; NametableId=$1C
+JSR ClearSpriteBuf; WriteNametable; Init2; RTS
+```
+This is the **attract-mode nametable reset** step, not a score screen. The label is misleading.
+
+**Full return path**: `StageEndHandler → JMP $C0A6 → PreLoop ($CFAA) → GameOverScoreScreen ($CF96) → MainLoop_2 ($C65C) → MainLoop_3 ($C67B) → MainLoop_4 ($C389) → GameFrame ($C402) → JMP $C0A9` (attract loop)
+
+**$C249 (input block during flash)**:
+```
+LDA $68 / CMP #$80 / BEQ skip   ; if HQ active ($68=$80), leave inputs alone
+$06=$07=$08=$09=0                ; zero P1Dir/P2Dir/P1Fire/P2Fire (block input during game-over animation)
+```
+
 ### Level screen initialization (LevelScreenInit $9764)
 
 Called from game loop after stage transition. Sequence:
@@ -1426,7 +1539,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Map APU usage — APU init at $EBF6: STA $4015=$0F (enable sq1/sq2/tri/noise), STA $4017=$C0 (5-step frame, IRQ inhibit); per-frame engine $EC23: 28 sound slots in $031C–$03F3; APU write: `STA $4000,X` (X=0/4/8/12 per channel) at $EC80; channel silence at $ECAC (bit-4 XOR); sound seq ptr table at $EEA3 (14 pointer pairs); SoundOff at $90CA: STA $4015=0
 - [x] Disassemble title screen / attract mode — $C65C: AttractWait loop 240 frames (INC $4F, call $C69A), exits on credits ($4B≠0); $C69A: BlinkTitleSprite, checks $0B&$20 (frame bit 5) → alternates sprite ptr $D1A7/$D1BA → DrawSprites(X=7,Y=$12); $CFAA: PreGameDraw — draw nametable blocks, set $60=$30 (stage banner), draw "STAGE XX" sprite at col$02/row$03, draw stage number, check P2, clear $60=$00
 - [x] Disassemble stage-clear score tally screen — **StageClearTallyScreen ($CAF1)**; called from $C1F5 after all enemies cleared; TallyScreenInit ($CD04) sets up nametable $24, draws P1/P2 headers + 4 tank-type icon rows (sprites); sums kills $73-$76→$7D (P1 total) $77-$7A→$7E (P2 total); per-type loop ($5A=0-3): load KillScoreTable score ($10/$20/$30/$40 = 100/200/300/400 pts), drain tally one-at-a-time (DEC $73,X INC $5D + ScoreAdd $DA31 + LivesGrantCheck), draw count via BCD_Div+DrawNametableWithOffset; DelayXFrames ($D137) paces animation; after 4 types draw totals; 2P: award bonus score to higher-kill player; wait 100 frames; return
-- [ ] Disassemble game-over sequence fully — StageEndHandler ($C1A0) dispatches to DrawGameOverScreen ($C53E) when $4B≠0; $C53E draws GAME/OVER strings ($D214/$D219) + PaletteFlash ($C2D9); then GameOverScoreScreen ($CF96) renders final scores; confirm full call chain and return path. NOTE: $EBF6=SoundResetInit (not game-over handler)
+- [x] Disassemble game-over sequence fully — StageEndHandler ($C1A0): 4-phase flow (clear+respawn → eagle-explosion loop → palette-flash loop → tally+decision); CheckGameOver ($C62F) exits loop when A=1 (eagle gone or no lives); DrawGameOverScreen ($C53E) draws "GAME"($D214)+"OVER"($D219) tile strings via $D8F7, waits on anim timers $0318-$031A; CompareAndUpdateHiScore ($D9F0) compares 7-byte BCD $15/$1D vs $3D, updates hi-score buffer $3D-$43, returns Y=0/1/$FF; NewHiScoreDisplay ($C4E9) draws $D16B label + $D9C4 value with random palette flash; GameOverScoreScreen ($CF96) is attract-loop nametable reset (not a score screen); return path → JMP $C0A6 → PreLoop → attract loop
 - [ ] Disassemble controller read fully — ControllerDoubleRead ($99D2): NES $4016/$4017 latch+read loop, callers $85C0 (title) and $8650 (gameplay); $C389 (MainLoop_4): confirm how packed bits land in $06 (P1Dir) / $07 (P2Dir); trace DecodeDirection ($E50E) call from $DC30
 - [ ] Decode PaletteColorTable ($D475) — DIP switch colour remapping; extract all 4 colour variants
 - [ ] Disassemble DrawVictoryScreen ($C44D) — draws victory/stage-clear nametable strings from $D291 and $D145; confirm full sequence and return condition. NOTE: $C53E=DrawGameOverScreen (different routine)
