@@ -15,3 +15,8 @@
 1,D31E,Trigger OAM DMA from page $02
 1,D341,Increment frame counter low byte (ZP $0B)
 1,D349,Increment frame counter high byte (ZP $0A)
+1,E543,DirToStateTable [18 bytes]: idx=dy_sign01*3+dx_sign01; [0..8]=prefer-Y states; [9..17]=prefer-X states (applied +9 for enemy RNG or player fire)
+1,DE56,CalcDirToTarget: sign(TargetX-EntityX)+1->$64; sign(TargetY-EntityY)+1->$65; idx=$65*3+$64 (0..8)
+1,DE70,idx formula: A=$65*3+$64; enemy uses RNG to pick +9(X-prefer); player uses fire-btn bit
+1,DE88,Enemy: 50% chance use X-preferred table (idx+9); else Y-preferred
+1,DAF3,BulletExplode helper: encodes dir into tile offset; adjusts X by -5; calls DrawEntityTile

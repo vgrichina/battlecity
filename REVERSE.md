@@ -410,12 +410,68 @@ RAM address = $0400 + tileY*32 + tileX
 | $E534 | EnemySpawnY | 3 B | Enemy spawn Y: $18/$18/$18 (all near top) |
 | $E537 | PlayerSpawnX | 2 B | Player spawn X: $58/$98 |
 | $E539 | PlayerSpawnY | 2 B | Player spawn Y: $D8/$D8 |
-| $E543 | DirToStateTable | 18 B | 9-way direction-to-state lookup (CalcDirToTarget result); index = (signY+1)×3+(signX+1); entries 0–8 = approach, 9–17 = "right half" (random variant) |
+| $E543 | DirToStateTable | 18 B | 9-way direction-to-state lookup; index = (signY+1)×3+(signX+1); set 0 (idx 0–8) = prefer-Y-axis states; set 1 (idx 9–17) = prefer-X-axis states |
 | $E53B | InitState | 8 B | Initial EntityState per entity slot |
 | $E555 | MovementDispatch | 48 B | Entity state-machine handler pointers |
 | $E575 | MoveUpdateDispatch | 48 B | Entity position-update handler pointers |
 | $E595 | BulletDispatch | 32 B | Bullet-update handler pointers |
 | $E6A9 | SpeedTable | ? | Speed/difficulty parameters |
+
+---
+
+## CHR-ROM / Graphics (Phase 4)
+
+### PPU Pattern Table Assignment
+PPU ctrl ($2000) final value = **$B0** = `1011 0000`:
+- Bit 7 = NMI enable
+- Bit 4 = BG pattern table at **$1000** (pattern table 1)
+- Bit 3 = sprite pattern table at **$0000** (pattern table 0)
+
+### CHR-ROM Layout (16KB = 1024 tiles total)
+| File offset | PPU addr | Tiles   | Purpose               |
+|-------------|----------|---------|-----------------------|
+| $8010–$8FFF | $0000–$0FFF | 0–255  | Sprite pattern table  |
+| $9010–$9FFF | $1000–$1FFF | 256–511| Background pattern table |
+| $A010–$AFFF | (bank 1) | 512–767 | Sprite tiles, bank 1  |
+| $B010–$BFFF | (bank 1) | 768–1023| BG tiles, bank 1      |
+
+### Tile Format (NES 2bpp)
+- Each tile = 16 bytes: 8 bytes plane-0 + 8 bytes plane-1
+- Pixel color index (0–3): bit from plane0 | (bit from plane1 << 1)
+- Bit 7 of each row byte = leftmost pixel (x=0)
+
+### Extracted Output
+`extract_tiles.py` produces:
+- `tiles/chr_all.png` — all 1024 tiles in 32×32 grid (289×289 px)
+- `tiles/chr_pt0.png` — pattern table 0 (sprite tiles 0–511)
+- `tiles/chr_pt1.png` — pattern table 1 (bg tiles 256–511 of first CHR bank)
+
+### BulletExplode ($E1AF)
+```
+A = CC[X] & $03          ; extract bullet direction (bits 1:0)
+PHA
+Y = C2[X]                ; bullet Y (BulletY)
+X = B8[X]                ; bullet X (BulletX) — becomes new X register
+$04 = $02                ; sprite attribute byte
+$53 = $B1                ; base tile for explosion sprite
+PLA                       ; restore dir
+JSR $DAF3                ; encode dir → tile offset, adjust X by −5, call DrawEntityTile
+```
+`$DAF3`: A=(dir×2) + $53 → tile index; X−=5; call DrawEntityTile.
+Explosion is a single 8×8 sprite centered −5 px from bullet's pixel-X.
+
+### CollisionUpdate ($E18C)
+```
+$5A = 9                        ; loop counter 9→0 (10 bullet slots)
+loop:
+  X = $5A
+  A = CC[X] >> 3 & $FE         ; BulletState → dispatch index
+  Y = A
+  ptr = $E59F[Y] : $E5A0[Y]    ; load handler ptr from BulletDispatch+4 offset
+  JMP (ptr)                    ; tail-call bullet handler
+  DEC $5A; BPL loop
+```
+This is actually **BulletUpdate** ($E0E2) reconfirmed — iterates all 10 bullet slots and dispatches via the `$E595` bullet dispatch table. (The label `CollisionUpdate` at $E18C may be a misnomer; it dispatches bullet movement, not entity collision.)
 
 ---
 
@@ -512,10 +568,30 @@ call DrawTank ($DB02): draws 2 tiles (EntityX/Y ± 8 px)
 signX = sign(targetX − entityX)     ; −1, 0, or +1
 signY = sign(targetY − entityY)     ; via SignFn ($DB5D)
 index = (signY+1) × 3 + (signX+1)  ; 0–8 (nine compass positions)
-if (entity is player OR even frame): index += 9   ; alternate entry point
-new_state = DirToStateTable[$E543, index]          ; look up state byte
-EntityState[X] = new_state                         ; write direction into state
+if entity >= 2 (enemy):
+  index += 9 if RNG() & $01         ; 50% chance: prefer-X-axis table
+else (player):
+  if (X*2) XOR $0A has bit 1 set: index += 9   ; fire-button modifier
+new_state = DirToStateTable[$E543, index]         ; look up state byte
+EntityState[X] = new_state                        ; write direction into state
 ```
+
+**DirToStateTable decoded** (`$E543`, 18 bytes: `A0 A0 A0 A1 A0 A3 A2 A2 A2  A1 A0 A3 A1 A0 A3 A1 A2 A3`):
+
+| idx | signY | signX | Set-0 state (prefer-Y) | Set-1 state (prefer-X) |
+|-----|-------|-------|------------------------|------------------------|
+|  0  |  −1   |  −1   | $A0 = UP               | $A1 = LEFT             |
+|  1  |  −1   |   0   | $A0 = UP               | $A0 = UP               |
+|  2  |  −1   |  +1   | $A0 = UP               | $A3 = RIGHT            |
+|  3  |   0   |  −1   | $A1 = LEFT             | $A1 = LEFT             |
+|  4  |   0   |   0   | $A0 = UP (default)     | $A0 = UP               |
+|  5  |   0   |  +1   | $A3 = RIGHT            | $A3 = RIGHT            |
+|  6  |  +1   |  −1   | $A2 = DOWN             | $A1 = LEFT             |
+|  7  |  +1   |   0   | $A2 = DOWN             | $A2 = DOWN             |
+|  8  |  +1   |  +1   | $A2 = DOWN             | $A3 = RIGHT            |
+
+Set 0 (prefer-Y): diagonals resolve vertically. Set 1 (prefer-X): diagonals resolve horizontally. Enemies randomly pick between sets for obstacle avoidance.
+
 Callers:
 - `DirTowardHQ ($DE48)`: target = ($78, $D8) — eagle/base position
 - `DirTowardP1 ($DE32)`: target = entity 0 pixel position
@@ -594,21 +670,20 @@ else:
 
 ## Next Tasks
 
-- [ ] Disassemble BulletExplode ($E1AF) — explosion animation state machine
 - [ ] Disassemble BonusDraw ($EAB5) — likely draws bonus tank icons on HUD
 - [ ] Disassemble $C7F8, $C7AE — post-spawn HUD update and unknown game-frame routine
 - [ ] Disassemble $E4C6 / $E4D0 — called at game start (entity type/queue setup?)
-- [ ] Disassemble $E18C (CollisionUpdate) — how entity movement checks tile collision
 - [ ] Disassemble $D763 / $D7A4 (tile destruction routines) — understand brick bit-clearing
 - [ ] Disassemble bank 0 level init routines ($874D, $8A6E, $896A, etc.) — understand how tile map is populated at level start
 - [ ] Decode inner formation data tables at $8034+ (per-stage enemy sprite/position blocks)
-- [ ] Decode DirToStateTable ($E543, 18 bytes) — dump raw bytes, understand state values
 - [ ] Disassemble SpeedTable ($E6A9) — dump entries, understand per-level speed parameters
 - [ ] Disassemble $8B69+ (entity slot fill / enemy queue setup)
 - [ ] Disassemble $DA31 / $DA62 — called from LivesDraw area-kill handler
 - [ ] Disassemble $C9BB / $C912 — power-up activate/spawn routines
-- [ ] Extract and decode CHR-ROM tiles (Phase 4: `extract_tiles.py`)
 - [ ] Validate tile map at game start — what values does level loader write to $0400–$07FF?
+- [ ] Identify and label CHR tiles by visual inspection of `tiles/chr_pt0.png` + `tiles/chr_pt1.png`
+- [ ] Disassemble HUDDraw ($E8B1), ScoreDraw ($E7A9), LivesDraw ($EB17) — scoreboard and HUD rendering
+- [ ] Disassemble $C7AE/$C7F8 area — track the 16th & 17th GameUpdate2 calls
 
 ### Completed
 - [x] ROM identification: iNES, mapper 99, 32KB PRG, 16KB CHR
@@ -629,9 +704,13 @@ else:
 - [x] $DDFC (state $50–$5F): RandomDirChange — 50% straight/25% right/25% left turn
 - [x] $DE48 (state $70–$7F): DirTowardHQ — AI navigates toward eagle ($78,$D8)
 - [x] CalcDirToTarget ($DE56): 9-way sign-based direction toward target position
+- [x] DirToStateTable ($E543, 18 bytes): fully decoded — 3×3 compass grid × 2 sets (prefer-Y / prefer-X); enemies randomly pick set
+- [x] BulletExplode ($E1AF): explosion draws single 8×8 sprite at tile $B1+dir×2, centered at bullet pos −5px X
+- [x] CollisionUpdate / BulletUpdate ($E18C): confirmed as bullet-slot dispatcher — iterates X=9→0 via $E595 table
 - [x] Nametable shadow $0400–$07FF: tile format (bit7=entity, $00=empty, $01–$0F=brick, $10=steel, $11=water, $C8=eagle)
 - [x] BulletTileCollision ($E838): brick destruction, steel/water/eagle handling
 - [x] Enemy spawn wave ($DBF6): EnemiesRemaining($7F) 20→0; power-up tanks at 17/10/3 remaining
 - [x] GameUpdate2 sequence: 18 subsystem calls documented in order
 - [x] $D5FC: nametable shadow address formula documented
 - [x] SetSpeedPtr ($E4E8): loads 4-byte speed parameters from SpeedTable into $8B–$8E
+- [x] CHR-ROM extracted: `extract_tiles.py` produces `tiles/chr_all.png`, `chr_pt0.png`, `chr_pt1.png` — sprites at PPU $0000, BG at $1000
