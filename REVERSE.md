@@ -529,6 +529,102 @@ RAM address = $0400 + tileY*32 + tileX
 | $030F | Player fired flag (set by FireBullet for player entities) |
 | $0311 | Any player has directional input (updated by CheckPlayersMoving) |
 
+### StageLoader ($86E0) and Inner Formation Sub-Tables
+
+**StageLoader dispatch logic** (called from main loop):
+```
+if $30 != 0:
+    X = $41 * 2                       ; stage number
+    Ptr0 = $8000[X]                   ; level-init routine pointer (LevelCodePtrs)
+    JMP JmpThruPtr0                   ; call level init code
+
+if $30 = 0:
+    load outer ptr: ($02/$03) = $801A[stage * 2]  (LevelFormationPtrs)
+    Y = SubStageIdx ($42) - 1
+    INC $42                            ; advance sub-stage
+    if Y < 0 (first call):
+        JSR $98E0, $98BE               ; one-time stage init helpers
+        zero ZP $68–$EF                ; clear working variables
+        ORA $80B6[stage] into $59      ; stage flags
+        call $97B1 (palette/init)
+    else:
+        inner_ptr = ($02)[Y * 2]       ; inner formation table entry
+        JMP JmpThruPtr0                ; call phase handler
+```
+
+**Inner formation sub-tables** (`$8034+`): Each stage's inner table is a sequence of 16-bit pointers to *phase-handler subroutines*. Not raw position data — each entry is called on successive invocations of StageLoader (via INC $42), implementing multi-phase level initialization. Handler counts per stage:
+
+| Stage | Inner Table | Phases | Notes |
+|-------|-------------|--------|-------|
+| 0 | $8034 | 4 | $8B22, $892B, $8930, $8A64 |
+| 1 | $8078 | 2 | |
+| 2 | $806C | 6 | |
+| 3 | $803C | 8 | |
+| 4 | $804C | 9 | |
+| 5 | $805E | 4 | |
+| 6 | $8084 | 3 | |
+| 7 | $8066 | 3 | |
+| 8 | $807C | 4 | |
+| 9 | $808A | 6 | |
+| 10 | $8096 | 5 | |
+| 11 | $80A0 | 2 | |
+| 12 | $80A4 | ≥1 | |
+
+**Stage 0 phase handlers** (example):
+- `$8B22` Phase 0: Clear $0610–$062F (32 B), clear ZP $5C–$67, set $44=$5F=1, $FD=$80, enable APU ($4015=$0F)
+- `$892B` Phase 1: EnemyCount ($43) = $2E
+- `$8930` Phase 2: EnemyCount=$08, $D4=$2B, $D3=$A0, $68=1, configure entity-2 slot data
+- `$8A64` Phase 3: $44=$40=1, $42=0 (reset sub-stage for next invocation)
+
+---
+
+### $8B–$8E SpeedParams — Enemy Type Group Counts
+
+These four ZP bytes are **enemy type group counts** loaded by `SetSpeedPtr ($E4E8)` from `SpeedTable ($E6A9)`. They are NOT speed parameters — they define how many enemies of each "type slot" (0–3) to spawn in the current wave.
+
+**How EnemySpawn ($E46C) uses them:**
+```
+Y = EnemyQueueIdx ($8F)          ; slot 0, 1, 2, or 3
+LDA $008B,Y                      ; load count for this slot
+if count = 0: INC $8F; repeat    ; skip empty slots
+DEC $008B,Y                      ; consume one enemy from slot
+Y = (GameSpeed − 1) × 4 + $8F   ; index into EnemyTypeTable
+EntityType = $E5A9[Y]            ; get type byte for this slot
+```
+
+**`EnemyTypeTable` ($E5A9, 40 bytes)** — maps `(GameSpeed-1)*4 + slot` → EntityType byte:
+
+| $85 | Slot 0 | Slot 1 | Slot 2 | Slot 3 |
+|-----|--------|--------|--------|--------|
+| 1 | $80 Basic | $A0 Fast | $C0 Power | $E0 Armor |
+| 2 | $80 Basic | $A0 Fast | $C0 Power | $E0 Armor |
+| 3 | $A0 Fast  | $C0 Power | $E0 Armor | $80 Basic |
+| 4 | $C0 Power | $A0 Fast  | $80 Basic | $E0 Armor |
+| 5 | $C0 Power | $E0 Armor | $80 Basic | $A0 Fast  |
+| 6 | $E0 Armor | $A0 Fast  | $C0 Power | $80 Basic |
+| 7 | $80 Basic | $A0 Fast  | $C0 Power | $E0 Armor |
+| 8 | $C0 Power | $E0 Armor | $A0 Fast  | $80 Basic |
+| 9 | $C0 Power | $A0 Fast  | $80 Basic | $E0 Armor |
+| 10| $A0 Fast  | $E0 Armor | $C0 Power | $A0 Fast  |
+
+**Full SpeedTable ($E6A9)** — 4 counts per entry, all summing to 20 enemies:
+
+| $85 | $8B | $8C | $8D | $8E | Notes |
+|-----|-----|-----|-----|-----|-------|
+| 1 | 18 | 2 | 0 | 0 | mostly basics |
+| 2 | 16 | 2 | 0 | 2 | |
+| 3 | 5  | 5 | 5 | 5 | even mix |
+| 4 | 8  | 5 | 4 | 3 | |
+| 5 | 5  | 2 | 8 | 5 | |
+| 6 | 3  | 4 | 6 | 7 | |
+| 7 | 8  | 6 | 4 | 2 | |
+| 8 | 7  | 2 | 4 | 7 | |
+| 9 | 8  | 6 | 0 | 6 | |
+| 10| 5  | 4 | 6 | 5 | |
+| 35 (2P) | 4 | 6 | 0 | 10 | hardcoded for 2P mode |
+
+---
+
 ### Data Tables (Bank 1)
 | Address | Label | Size | Contents |
 |---------|-------|------|----------|
@@ -547,7 +643,8 @@ RAM address = $0400 + tileY*32 + tileX
 | $E555 | MovementDispatch | 48 B | Entity state-machine handler pointers |
 | $E575 | MoveUpdateDispatch | 48 B | Entity position-update handler pointers |
 | $E595 | BulletDispatch | 32 B | Bullet-update handler pointers |
-| $E6A9 | SpeedTable | ? | Speed/difficulty parameters |
+| $E6A9 | SpeedTable | 144 B | 4-byte entries: enemy type group counts for slots 0–3; entry = (GameSpeed−1); entry 35 ($22) for 2P |
+| $E5A9 | EnemyTypeTable | 40 B | Maps (GameSpeed−1)×4+slot → EntityType byte ($80/$A0/$C0/$E0); shuffled per difficulty |
 
 ---
 
@@ -864,9 +961,9 @@ else:
 
 ## Next Tasks
 
-- [ ] Disassemble bank 0 level init routines ($8A6E, $896A, $91E8, $8B48 etc.) — understand how tile map is populated at level start ($874D partially decoded: has multi-phase sub-stage controller; continues in $B1E4, $8ADD)
-- [ ] Decode inner formation data tables at $8034+ (per-stage enemy sprite/position blocks)
-- [ ] Decode $8B–$8E SpeedParams meaning: confirm byte semantics (spawn delay, move rate, fire rate, etc.) from callsites in MoveGridSnap / SpeedCtrlMove
+- [x] Disassemble bank 0 level init routines ($8A6E, $896A, $91E8, $8B48 etc.) — understand how tile map is populated at level start ($874D partially decoded: has multi-phase sub-stage controller; continues in $B1E4, $8ADD)
+- [x] Decode inner formation data tables at $8034+ (per-stage enemy sprite/position blocks)
+- [x] Decode $8B–$8E SpeedParams meaning: confirm byte semantics (spawn delay, move rate, fire rate, etc.) from callsites in MoveGridSnap / SpeedCtrlMove
 - [ ] Disassemble $8B9F+ / $8C00+ (entity slot fill secondary routines; read $82FA/$8300/$8306 tables)
 - [ ] Decode tables at $82F4, $82FA, $8300, $8306, $8348 (formation data arrays in bank 0)
 - [ ] Disassemble $B1E4 and $8ADD (level init continuation / game-over from bank 0)
@@ -879,6 +976,7 @@ else:
 - [ ] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
 
 ### Completed
+- [x] **Session 7**: StageLoader dispatch ($86E0) fully decoded; inner formation sub-tables identified as phase-handler ptr arrays (not position data); $8B–$8E confirmed as enemy type group counts; EnemyTypeTable ($E5A9) fully decoded; SpeedTable ($E6A9) all 36 entries documented; level init routines $874D/$8A6E/$896A/$91E8/$8B48 disassembled
 - [x] **Session 6**: Tile cluster ($D745–$D7CA), EntityMovement freeze, PowerUpCollision, full power-up dispatch table (6 types), eagle state handlers, ScoreAdd/ScoreSetup, EntitySlotFill, SetSpeedPtr
 - [x] ROM identification: iNES, mapper 99, 32KB PRG, 16KB CHR
 - [x] Interrupt vectors mapped ($C070 reset, $D300 NMI)

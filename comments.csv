@@ -20,3 +20,12 @@
 1,DE70,idx formula: A=$65*3+$64; enemy uses RNG to pick +9(X-prefer); player uses fire-btn bit
 1,DE88,Enemy: 50% chance use X-preferred table (idx+9); else Y-preferred
 1,DAF3,BulletExplode helper: encodes dir into tile offset; adjusts X by -5; calls DrawEntityTile
+# Session 7 additions
+0,86E0,StageLoader: loads level-init ptr ($8000[stage]) via JmpThruPtr0 when $30!=0; else uses $801A outer table + SubStageIdx ($42)
+0,8700,StageLoader sub-stage dispatch: outer ptr=$801A[stage*2]; Y=SubStageIdx-1; inner table ptr[Y*2] called via JmpThruPtr0; first call (Y<0) goes to one-time init at $871C
+0,871C,StageLoader first-time init: JSR $98E0/$98BE; zero ZP $68-$EF; ORA stage flags from $80B6; call $97B1 (palette/init)
+1,E5A9,EnemyTypeTable[40]: Y=(GameSpeed-1)*4+slot; maps 4 enemy type slots to EntityType bytes; $80=Basic/$A0=Fast/$C0=Power/$E0=Armor; order shuffled per difficulty
+0,8B22,Stage0 wave init: clear $0610-$062F (32B); clear ZP $5C-$67 (12B); STA $44=$5F=1; STA $FD=$80; enable 4 APU channels ($4015=$0F)
+0,892B,Stage0 phase1: STA $43=$2E (set EnemyCount=46 sub-field)
+0,8930,Stage0 phase2: EnemyCount=$08; $D4=$2B/$D3=$A0; $68=1; X=$12=$66=2; configure entity 2 slot data
+0,8A64,Stage0 phase3: $44=$40=$01; $42=$00 (reset SubStageIdx); init complete

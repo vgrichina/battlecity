@@ -142,3 +142,25 @@
 1,DBF6,EnemySpawnDispatch
 1,DBB9,CheckPlayersMoving
 1,DBE6,PlayerMovingCheck
+# Session 7 additions
+0,8B22,Stage0InitPhase0
+0,892B,Stage0InitPhase1
+0,8930,Stage0InitPhase2
+0,8A64,Stage0InitPhase3
+0,896A,Level2Init
+0,91E8,Level3Init
+0,8B48,Level4Init
+0,874D,Level0Init
+1,E5A9,EnemyTypeTable
+0,803C,Stage3FormationTable
+0,804C,Stage4FormationTable
+0,805E,Stage5FormationTable
+0,8066,Stage7FormationTable
+0,806C,Stage2FormationTable
+0,8078,Stage1FormationTable
+0,807C,Stage8FormationTable
+0,8084,Stage6FormationTable
+0,808A,Stage9FormationTable
+0,8096,Stage10FormationTable
+0,80A0,Stage11FormationTable
+0,80A4,Stage12FormationTable
