@@ -240,3 +240,20 @@
 1,C69A,BlinkTitleSprite
 0,90CA,SoundOff
 0,90C8,SoundReset
+# Session traces: game-over screen, controller read, score table
+1,C44D,DrawGameOverScreen
+0,99D2,ControllerDoubleRead
+1,D291,GameOverStringA
+1,D145,GameOverStringB
+1,D2C2,KillScoreTable
+# Stage-clear score tally screen
+1,CAF1,StageClearTallyScreen
+1,CD04,TallyScreenInit
+1,CEC4,TallyScreenRowAnim
+1,CEE5,TallyInitNametable
+1,CA79,TallyDrawRowSprite
+1,CAAD,TallyOpenCurtain
+1,CACF,TallyCloseCurtain
+1,D137,DelayXFrames
+1,DA62,SetScoreWeight
+1,DA31,ScoreAdd

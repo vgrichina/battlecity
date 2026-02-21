@@ -91,3 +91,11 @@
 1,CFAA,PreGameDraw: WaitNMI+ClearSpriteBuf; NametableId=$24; draw nametable blocks; $D7D4+Init2; $60=$30(stage banner); draw STAGE-XX sprite col$02/row$03; draw number; 2P indicator if $83!=0; $60=$00; draw border sprites
 0,90CA,SoundOff: STA $4015=$00 (disable all APU channels); STA $5D=$5E=$5F=0; STA $0614=$0F
 0,90C8,SoundReset: entry point; LDA #$00 then falls into SoundOff sequence
+1,CAF1,StageClearTallyScreen: called from $C1F5 after all enemies killed; JSR TallyScreenInit($CD04); sum P1 kills $73-$76→$7D P2 kills $77-$7A→$7E; per-type loop $5A=0-3: load KillScoreTable score SetScoreWeight; drain P1 tally DEC $73,X INC $5D + ScoreAdd; drain P2 tally DEC $77,X INC $5E + ScoreAdd; draw counts via BCD_Div+DrawNametableWithOffset; repeat until no kills; INC $5A loop 4 types; draw totals; 2P bonus to winner; wait 100 frames RTS
+1,CD04,TallyScreenInit: WaitVBlank; set $6B=1,$05=$24(nametable),$4F=0,$50=2,$60=$30; SetGamePalette; WaitNMI+ClearSpriteBuf; TallyInitNametable; WriteNametable+Init2; draw P1 header sprite ($D173 at col$08 row$03); draw stage number via BCD_Div; draw 4 tank-type icon rows (sprite ptrs $D17C/$D18B at rows $07/$0C/$0F/$12/$15); if 2P($83!=0) draw P2 header+4 more icon rows
+1,D2C2,KillScoreTable: 4 bytes nibble-BCD score per tank type: $10=100pts(basic) $20=200pts(fast) $30=300pts(power) $40=400pts(armor); used by SetScoreWeight($DA62) during tally
+1,D137,DelayXFrames: loop X times: WaitVBlank+TallyScreenRowAnim($CEC4); used during tally to pace per-type counting (X=$19=25 initial wait X=$12=18 between types X=$07=7 X=$0D=13)
+1,DA62,SetScoreWeight: A=nibble-BCD value; ZeroSlot at $35; A!=0: $3A=A>>4(hi tens) $3B=A&$0F(lo units); A==0: $38=1(free tank flag)
+1,DA31,ScoreAdd: X=player slot (2=P1,3=P2); scale X*8+6; 7-digit BCD add $35-$3B into score digits $15,X..$1A,X with carry propagation; if overflow set digits $17..$1A to 9
+1,73,ZP_P1KillTally: 4 bytes $73-$76 = P1 kill counts by tank type (0=basic 1=fast 2=power 3=armor); set by INC $73,X at $E9B3; summed into $7D at tally; cleared by ClearKillTallies($C625) at LevelStart
+1,77,ZP_P2KillTally: 4 bytes $77-$7A = P2 kill counts by tank type; set by INC $77,X at $E9B8; summed into $7E; cleared same as P1
