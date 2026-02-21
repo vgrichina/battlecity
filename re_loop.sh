@@ -12,7 +12,7 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-MAX=50; TASKS=3; DRY=false
+MAX=50; TASKS=1; DRY=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --max)   MAX="$2";   shift 2 ;;
@@ -35,8 +35,12 @@ for (( i=1; i<=MAX; i++ )); do
   PROMPT="Continue the Battle City NES reverse-engineering project.
 
 Read REVERSE.md Next Tasks. Pick the top $TASKS unchecked items (\`- [ ]\`).
-For each: investigate with the tools below, document findings, mark done (\`- [x]\`).
-Update labels.csv and comments.csv with new addresses.
+For each task:
+1. Run 2-3 investigation tool calls.
+2. Immediately write findings to REVERSE.md and new addresses to labels.csv.
+3. Repeat: a few more tool calls, then write again.
+Do not batch all investigation before writing — write after every few tool calls.
+Mark task done (\`- [x]\`) once fully documented.
 End your final message with: SESSION_SUMMARY: <one line>
 
 Tools:
@@ -50,7 +54,7 @@ Do not re-document already-covered addresses. Stop after $TASKS tasks."
   echo "$PROMPT" | claude -p \
     --output-format stream-json \
     --max-turns 50 \
-    --allowedTools "Bash(python dis.py*),Bash(python xref.py*),Bash(python search_bytes.py*),Bash(python decode_tables.py*),Bash(python extract_tiles.py*),Bash(python render_screen.py*),Read,Edit,Write,Glob,Grep" \
+    --allowedTools "Bash(python dis.py*),Bash(python xref.py*),Bash(python search_bytes.py*),Bash(python decode_tables.py*),Bash(python extract_tiles.py*),Bash(python render_screen.py*),Bash(python extract_level_maps.py*),Read,Edit,Write,Glob,Grep" \
     | jq -r '
         if .type == "assistant" then
           .message.content[] |

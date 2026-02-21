@@ -28,7 +28,6 @@
 1,E2EF,EntityUpdate
 1,DF5A,MoveUpdate
 1,E18C,CollisionUpdate
-1,C62F,CheckGameOver
 # EBF6 = SoundResetInit (labeled below, not GameOverHandler)
 1,D6D3,DrawSprites
 1,D95F,WaitVBlank
@@ -246,6 +245,8 @@
 1,CF96,GameOverScoreScreen
 1,C42C,GameOverExit
 1,C62F,CheckGameOver
+1,C18A,GameLoopTop
+1,C1A0,StageEndHandler
 0,99D2,ControllerDoubleRead
 1,D214,StrGAME
 1,D219,StrOVER
