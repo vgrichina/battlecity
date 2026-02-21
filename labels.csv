@@ -291,9 +291,18 @@
 1,D575,WaitVBlank
 # Session 15: DrawVictoryScreen
 1,D91B,DrawRowTiles
-0,98E0,StageInitHelperA
-0,98BE,StageInitHelperB
-0,97B1,StagePaletteInit
+0,98E0,HideAllSprites
+0,98BE,ClearNametablesInit
+0,98DA,DisableRendering
+0,98EB,ClearNametableSlot
+0,97B1,ResetScrollToZero
+0,97BC,WritePPUCtrlScroll12
+0,97C3,WriteScroll12
+0,97CD,WriteScrollY
+0,97D1,WritePPUCtrlScroll6B
+0,97E5,VBlankScrollApply6B
+0,9803,PPUCtrlRefreshScroll12
+0,8747,WritePPUCtrl
 0,871C,StageFirstTimeInit
 # StageFlagsTable: 13 bytes, bit 2 = VS coin-counter-2 output to $4016 via $59 shadow
 0,80B6,StageFlagsTable

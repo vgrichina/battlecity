@@ -129,3 +129,13 @@
 1,E2AE,ClearTileFlags: loops X=7→0; for each active entity: compute nametable tile ptr ($E0,X/$E8,X); clear bit7 of tile at offset$21 (and $20 if state-bit7 set, $01 if state-bit6 set); used to un-mark traversable tiles after movement check
 1,E1D6,PlayerFireCheck: loops X=1→0 (player slots); reads $08,X (button edges) AND$03 (A/B buttons); if edge→check $A8,X dual-shot flag; JSR FireBullet; handles player-initiated shooting
 1,E216,EnemyFireCheck: if $0100!=0 skip; loops X=7→2 (enemy slots only; exits at X=1); active entity: JSR RNG AND$1F==0 → FireBullet (random 1-in-32 fire per update)
+0,98E0,HideAllSprites: LDA #$F8 / LDY #$00 / STA $0200,Y / DEY / BNE — fills all 256 bytes of OAM shadow ($0200-$02FF) with $F8 to move all 64 sprites off screen
+0,98BE,ClearNametablesInit: clear $0300+$0301; loop X=1→3: JSR DisableRendering($98DA) + JSR ClearNametableSlot($98EB) for nametables $20/$24/$28
+0,98DA,DisableRendering: LDA #$00 / STA $2001 / RTS — turns off both BG and sprite rendering
+0,98EB,ClearNametableSlot: reset PPU latch; clear $10 bit2 → WritePPUCtrl; compute nametable base $1C+(4*$01)→$02; write 1024 bytes of $FC (blank tile) + 64 bytes $00 (attributes) via $2006/$2007
+0,97B1,ResetScrollToZero: LDA $2002 (reset latch); write #$00 twice to $2005 → scroll(0,0); returns A=0 (caller uses to zero ZP $12/$6B/$13/$6C/$FC)
+0,97BC,WritePPUCtrlScroll12: STA $2000 from $10 OR $68; LDA $2002; write $12 then $13 to $2005 (X/Y scroll from ZP)
+0,97D1,WritePPUCtrlScroll6B: STA $2000 from $10 OR $69; LDA $2002; write $6B then $6C to $2005 (X/Y scroll from ZP)
+0,97E5,VBlankScrollApply6B: wait $2002 bit7 (VBlank); LDA$10 AND#$FE; JSR$97D3 (PPUCtrl+scroll$6B/$6C); extract $3F bits1-0→$61; delay loop; reconstruct $10→$2000; JMP WriteScroll12
+0,9803,PPUCtrlRefreshScroll12: LDA$10 AND#$7C OR$68→$10→$2000; JMP WriteScroll12($97C3) — per-frame PPU ctrl + scroll refresh
+0,8747,WritePPUCtrl: STA $2000; STA $10; RTS — write A to PPU control register and save shadow copy in $10

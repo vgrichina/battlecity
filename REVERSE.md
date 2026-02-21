@@ -765,10 +765,13 @@ if $30 = 0:
     Y = SubStageIdx ($42) - 1
     INC $42                            ; advance sub-stage
     if Y < 0 (first call):
-        JSR $98E0, $98BE               ; one-time stage init helpers
+        JSR HideAllSprites ($98E0)     ; fill OAM shadow $0200-$02FF with $F8
+        JSR ClearNametablesInit ($98BE); disable rendering; clear nametables $20/$24/$28
         zero ZP $68–$EF                ; clear working variables
         ORA $80B6[stage] into $59      ; stage flags — bit 2 = VS coin-counter-2 output
-        call $97B1 (palette/init)
+        JSR ResetScrollToZero ($97B1)  ; reset PPU scroll to (0,0); returns A=0
+        A=0 → $12/$6B/$13/$6C/$FC      ; zero scroll/nametable params
+        LDA #$10 → WritePPUCtrl($8747) ; enable NMI; set PPU ctrl = $10
     else:
         inner_ptr = ($02)[Y * 2]       ; inner formation table entry
         JMP JmpThruPtr0                ; call phase handler
@@ -797,6 +800,74 @@ if $30 = 0:
 - `$892B` Phase 1: EnemyCount ($43) = $2E
 - `$8930` Phase 2: EnemyCount=$08, $D4=$2B, $D3=$A0, $68=1, configure entity-2 slot data
 - `$8A64` Phase 3: $44=$40=1, $42=0 (reset sub-stage for next invocation)
+
+---
+
+### StageFirstTimeInit Helpers ($98E0, $98BE, $97B1) — Bank 0
+
+Three helper routines called exclusively from `StageFirstTimeInit` ($871C) on the first invocation of each stage's outer loop.
+
+#### `HideAllSprites` ($98E0)
+```
+LDA #$F8
+LDY #$00
+loop: STA $0200,Y; DEY; BNE loop
+RTS
+```
+Fills all 256 bytes of the OAM shadow buffer ($0200–$02FF) with `$F8` (Y=248), hiding all 64 hardware sprites off the visible screen before stage render begins.
+
+#### `ClearNametablesInit` ($98BE)
+Clears game-visible nametables and disables rendering. Sequence:
+1. `STA $0300 = $00` (clear CoinEventFlag); `STA $0301 = $00` (clear PPU queue head)
+2. Loop X = 1, 2, 3:
+   - **`DisableRendering` ($98DA)**: `LDA #$00; STA $2001; RTS` — turns off both BG and sprite rendering
+   - **`ClearNametableSlot` ($98EB)**: resets PPU latch; clears bit 2 of `$10`; calls `WritePPUCtrl ($8747)`; computes nametable VRAM base = `$1C + $04×$01` (→ `$20`, `$24`, `$28` for X=1,2,3); writes 1024 bytes of `$FC` (blank tile) + 64 bytes `$00` (clear attributes) directly via `$2006/$2007`
+
+After this call all three name tables ($20/$24/$28) contain blank tiles and zero attributes.
+
+#### `ResetScrollToZero` ($97B1)
+```
+LDA $2002       ; reset PPU address latch
+LDA #$00
+STA $2005       ; X scroll = 0
+JMP $97CD       ; STA $2005; RTS  (Y scroll = 0, returns A=0)
+```
+Returns A=0 which the caller (`StageFirstTimeInit`) immediately uses to zero ZP `$12/$6B/$13/$6C/$FC` (scroll shadow registers and nametable config byte). Then `LDA #$10 / JSR WritePPUCtrl` re-enables NMI and sets PPU control = `$10`.
+
+#### `WritePPUCtrl` ($8747)
+```
+STA $2000
+STA $10
+RTS
+```
+Entry point within `StageFirstTimeInit`; also called from `ClearNametableSlot` and 4 other bank-0 sites. Writes A to PPU control register `$2000` and saves shadow copy in ZP `$10`.
+
+---
+
+### PPU Scroll Write Cluster ($97B1–$9810) — Bank 0
+
+A cluster of entry points for writing the PPU scroll registers (`$2005` × 2) and updating `$2000` PPU control. All paths funnel through the two-write sequence at `$97CD` (write A to `$2005` / RTS).
+
+| Entry | Label | Action |
+|-------|-------|--------|
+| `$97B1` | `ResetScrollToZero` | Reset latch; write `$00` twice → scroll (0,0); return A=0 |
+| `$97BC` | `WritePPUCtrlScroll12` | `$2000 = $10 OR $68`; reset latch; write `$12`/`$13` → scroll X/Y |
+| `$97C3` | `WriteScroll12` | Reset latch; write `$12` then `$13` to `$2005` (no ctrl update) |
+| `$97CD` | `WriteScrollY` | Write A to `$2005` (second/Y scroll byte); RTS — shared tail |
+| `$97D1` | `WritePPUCtrlScroll6B` | `$2000 = $10 OR $69`; reset latch; write `$6B`/`$6C` → scroll X/Y |
+| `$97E5` | `VBlankScrollApply6B` | Wait `$2002` bit 7; `LDA $10 AND #$FE`; JSR `$97D3`; extract `$3F[1:0]`→`$61`; delay loop (`$70×$12`); reconstruct `$10`; JMP `WriteScroll12` |
+| `$9803` | `PPUCtrlRefreshScroll12` | `$10 = ($10 AND $7C) OR $68`; write to `$2000`; JMP `WriteScroll12` |
+
+**ZP scroll shadow registers:**
+- `$12/$13` — primary X/Y scroll (used by `WriteScroll12`, `WritePPUCtrlScroll12`)
+- `$6B/$6C` — secondary X/Y scroll (used by `WritePPUCtrlScroll6B`, `VBlankScrollApply6B`)
+- `$68` / `$69` — nametable select bits OR'd into PPU control word
+
+**Callers:**
+- `VBlankScrollApply6B ($97E5)`: called from $8662 (gameplay NMI body alternative)
+- `WritePPUCtrlScroll6B ($97D1)`: called from `LevelScreenInit ($9764)`
+- `ResetScrollToZero ($97B1)`: called from `StageFirstTimeInit ($871C)`
+- `PPUCtrlRefreshScroll12 ($9803)`: called from $8668 (third per-frame PPU path)
 
 ---
 
@@ -1767,7 +1838,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 
 - [x] Map all 13 entries in `LevelCodePtrs` ($8000) and `LevelFormationPtrs` ($801A)
 - [x] Identify bitmask meanings for `StageFlagsTable` ($80B6)
-- [ ] Disassemble `StageLoader` helpers at $98E0, $98BE, and $97B1 (Bank 0)
+- [x] Disassemble `StageLoader` helpers at $98E0, $98BE, and $97B1 (Bank 0)
 - [ ] Investigate ZP variables $D0–$D4 in `Level0Init` ($874D) and their roles
 - [ ] Trace usage of $0301–$0305 initialized in bank 0 (likely initialization queue)
 - [ ] Research what else is missing from ROM research and update next tasks; ensure enough info for a pixel-perfect web port (e.g., precise timing, sound sequences, hidden variables)
