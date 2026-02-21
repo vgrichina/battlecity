@@ -212,3 +212,12 @@
 1,C625,ClearKillTallies
 1,D2C6,HUDTankWiggleX
 1,D2CA,HUDTankWiggleY
+# Session 11 additions
+1,D071,StageStartDraw
+1,C25A,NewGameInit
+1,C840,CoinScreen
+1,C8A7,TwoPlayerStart
+1,C8AC,OnePlayerStart
+1,D733,PixelToTileCoord
+1,DB69,TileAttrTable
+1,DB79,TileCHRTable

@@ -78,7 +78,7 @@
 | $47–$48 | TileX / TileY | Tile coordinates used by $D726 / $DABA |
 | $4A | CoinHeldCounter | VS System coin/service button held counter; INC each NMI while bit 2 or 5 of $4016 set; cleared on release; drives $4B |
 | $4B | CoinCredits | VS System credits counter; INC by NMI_Sub on coin-button release (was non-zero $4A); sets $0300=1 (CoinEventFlag) |
-| $4C | Credits? | Cleared at game start |
+| $4C | GameSessionActive | Set to 1 by LevelStart ($C35D); cleared to 0 by NewGameInit ($C272); checked at $C0E8 to choose between direct-game-start and player-input paths |
 | $4D | NMISyncFlag | 0 = do OAM DMA in NMI; 1 = skip OAM DMA |
 | $4E | DIPBits | DIP switch high 2 bits (from $4017 AND $C0); affects palette |
 | $4F–$50 | ScrollX/Y | PPU scroll X/Y; written to $2005 in NMI |
@@ -88,7 +88,7 @@
 | $54–$55 | SprSaveX/Y | Saved X/Y for two-part sprite draw ($DB02) |
 | $56–$57 | DrawX / DrawY | Draw target X/Y (used by nametable routines) |
 | $5A | EntityIdx | Entity loop counter (temp, counts 7→0 or 9→0) |
-| $60 | GameState | Game state machine: $00=init, $6E=attract/title, $30=? |
+| $60 | GameState | Game state machine: $00=gameplay active, $30=stage-start banner (STAGE XX screen), $6E=attract/title mode |
 | $62 | EffectTimer | Countdown timer for visual effects |
 | $66–$67 | — | Cleared at game start |
 | $68 | — | Compared to $80 in input code; set by level init to stage phase |
@@ -1249,6 +1249,52 @@ The unified **entity type byte** is stored in `$A8,X` (ZP). It encodes:
 - `$A841[entity_type]` bitmask: each set bit (for even slots 0,2,4,6,8) writes transparent tile $FC instead of incrementing tile counter
 - `$0101,X` stores the player upgrade tier ($20/$40/$60); also mirrored into `$A8,X` via ORA at spawn (`$E4B7`)
 
+### Metatile System (DrawNametableTile — $D82B)
+
+`DrawNametableTile(A=tile_type, X=pixel_x, Y=pixel_y)`:
+1. Converts pixel coords to tile coords via $D733 (`PixelToTileCoord`: each coord >> 3)
+2. Calls $D613 to compute nametable address
+3. Rounds both tile coords to even (AND #$FE) → start of 2×2 block
+4. Looks up palette via `TileAttrTable` ($DB69, 1 byte per type) and writes attribute byte
+5. Looks up 4 CHR tile IDs from `TileCHRTable` ($DB79, 4 bytes per type = TL/TR/BL/BR) and writes them to the nametable via $D7A4/$D7CA
+
+**TileAttrTable ($DB69, 16 bytes)** — NES palette slot (0–3) per tile type:
+| Type | Palette | Terrain |
+|------|---------|---------|
+| 0–4  | 0       | Open ground / brick half-variants |
+| 5–9  | 3       | Steel wall variants |
+| 10   | 1       | Water / river |
+| 11   | 2       | Trees / forest |
+| 12   | 3       | Ice |
+| 13–15| 0       | Open (empty) |
+
+**TileCHRTable ($DB79, 64 bytes = 16 × 4)** — CHR tile IDs [TL, TR, BL, BR]:
+| Type | TL  | TR  | BL  | BR  | Terrain |
+|------|-----|-----|-----|-----|---------|
+| 4    | $0F | $0F | $0F | $0F | Solid brick |
+| 9    | $10 | $10 | $10 | $10 | Solid steel |
+| 10   | $12 | $12 | $12 | $12 | Water |
+| 11   | $22 | $22 | $22 | $22 | Trees |
+| 12   | $21 | $21 | $21 | $21 | Ice |
+| 15   | $00 | $00 | $00 | $00 | Open ground (blank tiles) |
+(Types 0–3 and 5–8 are half-brick / half-steel variants with mixed CHR IDs)
+
+Tile type $0F (15) = open ground: drawn with CHR tiles $00 everywhere. Used at $E461 to clear the spawn position before an enemy appears, and at $F25B during level tile loading.
+
+---
+
+### GameState Machine ($60)
+
+| Value | Name | When set | Description |
+|-------|------|----------|-------------|
+| $00 | Gameplay | $C1A4 (game start), $D03B (banner end) | Normal game running |
+| $30 | StageStart | $CFE2 (PreLoop), $D087 (StageStartDraw) | "STAGE XX" banner + player-count display |
+| $6E | Attract | $C0CD | Title/demo mode before coin insert |
+
+**CoinScreen flow** ($C840): loops displaying credits; on fire-press → PLA×2 (discard JSR return) + dispatch via JMP($0011) → `TwoPlayerStart` ($C8A7, $6C=5) or `OnePlayerStart` ($C8AC, $6C=7) → `NewGameInit` ($C25A: clears $4C=0, sets lives) → JMP $C0C1 (never returns to $C0BE).
+
+---
+
 ### LevelStart ($C33D)
 
 Called with enemy freeze time in A:
@@ -1261,7 +1307,7 @@ JSR WaitVBlank
 JSR $C72D, $C756  ; HUD sprite setup
 JSR SetSpeedPtr ($E4E8)
 LDA #$80 → STA $68    ; GameActive = true
-STA $0312 = 1, STA $4C = 1
+STA $0312 = 1, STA $4C = 1  ; GameSessionActive = true
 Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 ```
 
@@ -1272,9 +1318,9 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Disassemble $D352 (NMI_Sub) — VS System coin/service input handler; double-reads $4016; detects bits $24 (coin/service buttons); $4A=CoinHeldCounter, $4B=CoinCredits, $0300=CoinEventFlag
 - [x] Disassemble $C7F8 — HUDTankAnimation: counts down $0108 (HUDTankCount) every 16 frames; when ≥$0A applies D2C6/D2CA 4-directional wiggle delta to $0105/$0106; calls DrawHUDTanks
 - [x] Disassemble $C625 — ClearKillTallies: zeros ZP $73-$7A (8 bytes of per-type kill tallies) at level start before DrawAllHUDKillIcons
-- [ ] Disassemble $D82B — called at player respawn; likely sound trigger or spawn animation setup
-- [ ] Identify GameState $60 value $30 — when is it set and what mode does it represent
-- [ ] Identify $4C purpose — cleared at game start, referenced in start sequence; possibly credits counter
+- [x] Disassemble $D82B — `DrawNametableTile(A=tile_type, X=pixel_x, Y=pixel_y)`: divides coords by 8 via $D733; palette from $DB69[type]; 4 CHR tiles from $DB79[type*4]; writes 2×2 metatile to nametable+attribute. Called from $E461 to clear spawn tile ($0F=open ground) and from $F25B during level load
+- [x] Identify GameState $60 value $30 — **stage start screen**: set by PreLoop ($CFE2) and StageStartDraw ($D087) while "STAGE XX" banner is displayed; cleared to $00 once banner finishes; $60 values: $00=gameplay, $30=stage-start banner, $6E=attract/title
+- [x] Identify $4C purpose — **GameSessionActive**: set to 1 by LevelStart ($C35D) when a level is initialized; cleared to 0 by NewGameInit ($C272 via $C25A); CoinScreen ($C840) dispatches via PLA×2+JMP to OnePlayerStart/TwoPlayerStart; both call NewGameInit (clearing $4C) then JMP $C0C1; checked at $C0E8 in post-attract sequence
 - [ ] Extract all 13 level tile maps — trace $D65A/$D62F/$D6C7/$D6FE tile-write calls in each level init routine; produce raw 26×26 tile arrays per stage
 - [ ] Map APU usage — find all writes to $4000–$4013/$4015; identify sound effects (shoot, explosion, power-up, game-over, stage-clear)
 - [ ] Disassemble title screen / attract mode — $C65C (wait+animation), $C69A (sprite toggle), $CFAA (pre-game draw sequence)

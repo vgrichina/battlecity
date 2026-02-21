@@ -67,3 +67,12 @@
 1,C7F8,HUDTankAnimation: $0108=enemies-remaining display count (DEC every 16 frames via FrameLo&$0F); when $0108≥$0A: apply D2C6[Y]/D2CA[Y] delta to $0105/$0106 (X/Y position), Y=$0107 (dir index); call DrawHUDTanks; when $0108=0 set $0106=$F0 (hide sprite)
 1,D2C6,HUDTankWiggleX[4]: signed X deltas for HUD tank arrival animation; {0,-1,0,+1} = N/W/S/E
 1,D2CA,HUDTankWiggleY[4]: signed Y deltas for HUD tank arrival animation; {-1,0,+1,0} = N/W/S/E
+1,D82B,DrawNametableTile(A=tile_type 0-15, X=pixel_x, Y=pixel_y): divides coords by 8 via D733; palette from DB69[type]; 4 CHR tiles from DB79[type*4]; writes 2x2 metatile to nametable+attribute; tile $0F=open ground
+1,D733,PixelToTileCoord: converts X and Y pixel coords (each 3xLSR /8) to tile indices; returns X=tileX Y=tileY
+1,DB69,TileAttrTable[16]: palette slot (0-3) per metatile type; types 0-4=pal0(open/brick), 5-9=pal3(steel), 10=pal1, 11=pal2, 12=pal3, 13-15=pal0
+1,DB79,TileCHRTable[16*4]: 4 CHR tile IDs (TL TR BL BR) per 2x2 metatile type; tile $0F=open ground (all zeros)
+1,CFE2,$60=$30: GameState=StageStart — set by PreLoop/StageStartDraw before showing STAGE XX banner; cleared to $00 once banner display finishes
+1,C840,CoinScreen: display credits ($4B) each VBlank; wait for P1 fire (bit2 of $08) or P2 fire (bit2 of $09); on press: PLA PLA (discard JSR return) + dispatch via JMP($0011) to TwoPlayerStart/OnePlayerStart
+1,C25A,NewGameInit: ZeroSlot at $15,$1D; clear $0101-$0102; STA $4C=0 (GameSessionActive=cleared); reads $4016 AND $10 for 5-life vs 3-life DIP; sets P1/P2 lives; clears $46(PlayerCount)
+1,C35D,$4C=1: GameSessionActive set at LevelStart — paired with $68=$80; cleared only by NewGameInit($C272); checked at $C0E8 to decide game restart path
+1,D071,StageStartDraw: post-game-over stage banner setup; WaitNMI; NametableId=$24; WriteNametable; Init2; $60=$30; draw stage/player-count sprites; same sequence as PreLoop stage-start section
