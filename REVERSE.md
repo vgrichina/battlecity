@@ -223,6 +223,74 @@ Output after ControllerDoubleRead:
 
 Title-screen usage (`$85D7`): `LDA $14; ORA $15; AND #$10` — bit 4 = Start; spins at `$85DF` until Start released, then continues to game init.
 
+### PPU Write Queue / Nametable Tile Draw Subsystem
+
+All background nametable tile updates go through a deferred write queue at $0180 (index maintained in $0C). During NMI, `FlushPPUQueue` ($D96D) drains the queue to PPU $2006/$2007.
+
+#### PPU queue packet format (written by PPUQueueTiles $D6D3 and others)
+
+```
+[ppu_addr_hi] [ppu_addr_lo] [tile_byte_0] [tile_byte_1] … [$FF]
+```
+
+- `ppu_addr_hi`: high byte of nametable address = ($D5FC_A + $05); for $05=$1C: rows 0–7→$20, 8–15→$21, 16–23→$22, 24–29→$23
+- `ppu_addr_lo`: low byte = col | ((row & 7) << 5); for row=3,col=29: $7D → addr $207D
+- Tile bytes are CHR tile indices for a **horizontal run** (PPU auto-increment=1)
+- Terminated by $FF
+
+#### FlushPPUQueue ($D96D) packet processing
+
+```
+X = 0
+while X ≠ $0C (end):
+  STA $2006 ← ppu_addr_hi
+  STA $2006 ← ppu_addr_lo
+  loop: STA $2007 ← tile byte until FF (single $FF = end of this packet)
+  next packet starts at X
+$0C reset to 0 after flush
+```
+
+#### CalcPPUAddr ($D5FC) — tile coords → PPU address
+
+```
+Input:  X = tile column (0–31), Y = tile row (0–29)
+Output: A = (row >> 3) | $04   [+ $05=$1C to get actual PPU addr high byte]
+        Y = col | ((row & 7) << 5)  [PPU addr low byte]
+```
+
+#### PPUQueueTiles ($D6D3) calling convention
+
+```
+X = tile column (0–31)
+Y = tile row (0–29)
+$11/$12 = pointer to tile byte array (CHR tile indices), terminated by $FF
+Side effect: same tile bytes written to RAM shadow at ($0400 + ppu_lo) via ($13/$14)
+```
+
+#### Data string examples
+
+| Addr | Content | Drawn by |
+|------|---------|---------|
+| $D1A7 | "PLEASE INSERT COIN" (18 bytes) + $FF | BlinkTitleSprite (on half-cycle) |
+| $D1BA | blank spaces + $FF | BlinkTitleSprite (off half-cycle) |
+| $D212 | $14, $FF | StartGame nametable update |
+| $D222 | $6A, $6A, $FF | DrawHUDKillIconA (2 tiles, row 3–12 col 29) |
+| $D22B | $11, $FF | DrawHUDKillIconB (1 tile) |
+
+#### PPUQueueTilesB ($D6FD) variant
+
+Same as PPUQueueTiles but adds $60 to any tile index < $80 before writing. Used for player-2 or alternate CHR bank graphics.
+
+#### PPUAddrFromXY ($D726) + PixelToTile ($D733)
+
+Use when source coordinates are **pixel-based**: $D733 converts pixel→tile (>>3 each), then $D5FC computes PPU address stored into $11/$12. A subsequent PPUQueueTiles call uses the preset $11/$12.
+
+#### RAM nametable shadow ($0400–$07FF)
+
+Every PPUQueueTiles call also mirrors tile bytes to `RAM[$0400 + ppu_lo]` via `STA ($13),Y`. The mapping is: PPU $2000 → RAM $0400, PPU $2100 → RAM $0500, PPU $2200 → RAM $0600, PPU $2300 → RAM $0700. This area is zeroed by `ClearSpriteBuf` ($D3AC) each frame and rebuilt by all tile-draw calls.
+
+---
+
 ### Entity State Byte Format (`$A0,X`)
 ```
 Bit 7   : 1 = entity active / alive
@@ -347,7 +415,7 @@ Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique
 | $C65C | AttractWait | Loop 240 frames calling BlinkTitleSprite ($C69A); NametableId=$24; exits on credits ($4B≠0) → PLA×2+JMP $C0BB |
 | $C67B | MainLoop_3 | Wait 8 frame-counter ticks or until coin |
 | $C6C5 | StartGame | Transition to game state $6E; set $5A=$6B=1; draw player sprites; check 1/2P; count down lives |
-| $C69A | BlinkTitleSprite | Wait VBlank; test $0B&$20 (frame bit 5, ~1 Hz); if set ptr=$D1A7 else $D1BA; DrawSprites(X=7,Y=$12) |
+| $C69A | BlinkTitleSprite | Wait VBlank; test $0B&$20 (frame bit 5, ~1 Hz); if set ptr=$D1A7 ("PLEASE INSERT COIN" text, 18 bytes) else $D1BA (blank spaces); PPUQueueTiles(X=7,Y=$12) — blinking achieved by toggling background tile text each ~1 Hz |
 | $CFAA | PreGameDraw | WaitNMI+ClearSpriteBuf; NametableId=$24; draw nametable blocks; set $60=$30 (stage banner); draw STAGE/XX sprites; if P2 draw P2 indicator; clear $60=$00 |
 | $CF96 | MainLoop | Per-frame: call D5AF, D3A1, D3AC, D7D4, Init2 |
 | $CFAA | PreLoop | Pre-game sequence: draw title elements, wait |
@@ -365,8 +433,11 @@ Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique
 | $D575 | WaitVBlank | LDA $2002; BPL *; RTS — spin until VBlank flag set (bit 7 of $2002) |
 | $D5AF | SetGamePalette | Write fixed gameplay palette colours (hardcoded NES indices) |
 | $D5D3 | SetTitlePalette | Write palette colours from PaletteData table (title screen) |
-| $D6D3 | DrawSprites | Draw sprite data: reads (src ptr), writes to sprite buffer |
-| $D726 | TilePosLookup | Calc tile coordinates from entity X/Y → $47/$48 |
+| $D5FC | CalcPPUAddr | Convert (X=tile_col, Y=tile_row) → A=(row>>3)\|$04 (PPU addr hi base), Y=(col\|(row&7)<<5) (PPU addr lo); combined with $05 base offset gives full nametable address |
+| $D6D3 | PPUQueueTiles | Queue horizontal tile run to nametable: X=tile_col, Y=tile_row, ($11/$12)=tile bytes terminated by $FF; writes packet [ppu_hi, ppu_lo, tile0…tileN, $FF] to $0180 queue at $0C index; also mirrors tile bytes to RAM shadow at ($13/$14) = ($0400+ppu_lo, ppu_hi_base); 66 callers |
+| $D6FD | PPUQueueTilesB | Same as $D6D3 but adds $60 to tile indices < $80 (selects CHR bank 1 tile set for player-2 or alternate graphics) |
+| $D726 | PPUAddrFromXY | Init $11/$12 from pixel coords: calls $D733 (pixel→tile: >>3), then $D5FC (tile→PPU addr) → stores result to $12/$11, Y=0; used before PPUQueueTiles when starting from pixel position |
+| $D733 | PixelToTile | Divide Y and X each by 8: TAY/TAX after 3 LSRs each; converts pixel coordinates to tile coordinates |
 | $D7D4 | WriteNametable | Write nametable tiles to PPU VRAM (controlled by $05, $11/$12) |
 | $D95F | WaitVBlank | Spin on $0B frame counter until NMI increments it |
 | $D966 | WaitVBlankX | Wait X VBlanks |
@@ -2081,7 +2152,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 
 ### New tasks (session 11 — web port gap fill)
 - [x] Decode SoundEngine sequence format ($EC23): fully documented — 5-field slot structure ($031C+N×8), 4-byte header (ch, duty/vol, sweep, timer-hi template), note bytes $00-$5F (semitone idx 3 bits + octave 3 bits), duration $61-$E7, 8 special cmds $E8-$EF, 3-level loop cmds $F0-$F2; 12-note pitch table at $EE8B (A1–G#2); 28-slot SoundSeqPtrTable at $EEA3; BGM slot 1 ($EEDB) decoded as ascending chromatic scalar melody (C5→D5→D#5→F5→G5→A5→…)
-- [ ] Disassemble DrawSprites ($D6D3): used by BlinkTitleSprite, DrawHUDKillIconA/B, PreGameDraw, DrawVictoryScreen — document input format (X=count, Y=dest, SrcPtr=$11/$12): likely a variable-length table of (OAM-offset, tile, attr, x, y) 5-byte entries; critical for implementing all HUD and title rendering
+- [x] Disassemble DrawSprites ($D6D3): **corrected — NOT OAM sprites but PPU nametable queue writer (PPUQueueTiles)**. Calling convention: X=tile_col (0–31), Y=tile_row (0–29), ($11/$12)=CHR tile bytes terminated $FF. Writes packet [ppu_hi, ppu_lo, tile0…$FF] to $0180 queue. Helper $D5FC converts (col,row)→PPU addr. Variant $D6FD adds $60 for alt CHR bank. RAM shadow at $0400–$07FF mirrors each write. 66 call sites; data strings include "PLEASE INSERT COIN" at $D1A7. See PPU Write Queue subsystem section.
 - [ ] Disassemble score display routines $D9A7 (2-digit stage/score draw) and $D9C4 (hi-score display); $D8F7 (draw tile-string to nametable) — needed to render score HUD and game-over score screen
 - [ ] Map HUD exact pixel layout: enemy kill-counter icons ($C7BD/$C7AE — 10 pairs at rows 3–12 col 28–30), player lives sprites ($0105/$0106 = P1 lives tank, 3 tiles), P2 lives, score digits positions; all OAM slots/positions needed for faithful HUD rendering
 - [ ] Disassemble $030D/$030E sound triggers: trace what reads $030D (player bullet hits water/steel) and $030E (armor tank hit) in SoundEngine to identify which sound slots are triggered, so audio can be replicated

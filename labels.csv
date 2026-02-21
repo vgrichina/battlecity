@@ -29,7 +29,7 @@
 1,DF5A,MoveUpdate
 1,E18C,CollisionUpdate
 # EBF6 = SoundResetInit (labeled below, not GameOverHandler)
-1,D6D3,DrawSprites
+1,D6D3,PPUQueueTiles
 1,D95F,WaitVBlank
 1,D966,WaitVBlankX
 1,D96D,FlushPPUQueue
@@ -104,7 +104,7 @@
 1,DABA,DrawEntityTile
 1,DB02,DrawTank2x2
 1,DB0A,DrawTank
-1,D726,TilePosLookup
+1,D726,PPUAddrFromXY
 0,8000,LevelCodePtrs
 0,801A,LevelFormationPtrs
 0,8034,Stage0FormationData
@@ -134,7 +134,7 @@
 1,DE56,CalcDirToTarget
 1,DB5D,SignFn
 1,DF26,SpeedCtrlMove
-1,D5FC,TileAddrCompute
+1,D5FC,CalcPPUAddr
 1,D82B,DrawNametableTile
 1,E838,BulletTileCollision
 1,E330,DrawPlayerShield
@@ -217,7 +217,7 @@
 1,C840,CoinScreen
 1,C8A7,TwoPlayerStart
 1,C8AC,OnePlayerStart
-1,D733,PixelToTileCoord
+1,D733,PixelToTile
 1,DB69,TileAttrTable
 1,DB79,TileCHRTable
 # Session 10: level tile loader, sound engine, title screen
@@ -227,9 +227,9 @@
 1,EE63,SoundSeqReadByte
 1,EEA3,SoundSeqPtrTable
 1,EC80,SoundAPUWrite
-1,D1A7,TitleSpriteTableA
-1,D1BA,TitleSpriteTableB
-1,D6FD,DrawNametableWithOffset
+1,D1A7,TitleStringA
+1,D1BA,TitleStringB
+1,D6FD,PPUQueueTilesB
 # Session 12: APU engine, level tile loader, attract mode
 1,EBF6,SoundResetInit
 1,EC23,SoundEngine
