@@ -299,3 +299,23 @@
 0,BB32,Level9Init
 0,BE65,Level10Init
 0,90BC,Level11Init
+# Session 18: LevelCodePtrs + LevelFormationPtrs fully mapped
+# Bank 1 formation phase sub-routines (stages 5-8); overlapping-byte entry points
+1,D0BD,Stage5_8FormationPhase0
+1,D344,Stage5FormationPhase1
+1,D13A,Stage5FormationPhase2
+1,D107,Stage5_6FormationPhase3
+1,D143,Stage6FormationPhase1
+1,D1F9,Stage7FormationPhase2
+1,D1F4,Stage8FormationPhase1
+1,D1AC,Stage8FormationPhase2
+1,D1BF,Stage8FormationPhase3
+# Bank 0 formation phase sub-routines (stages 9-12)
+0,BA96,Stage9_10FormationPhase1
+0,BAA2,Stage9FormationPhase2
+0,BAC9,Stage9_10FormationPhase3
+0,BB1A,Stage9FormationPhase4
+0,BE33,Stage10FormationPhase2
+0,BE38,Stage10FormationPhase4
+0,90A4,Stage11FormationPhase0
+0,8AFF,Stage1FormationPhase1

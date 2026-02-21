@@ -276,39 +276,48 @@ Death:   EntityState = $73 (set by EnemyBulletPlayerHit on bullet hit)
 | $F27D   | Data | LevelMapData — 35 × 91-byte nibble-packed stage tile grids (all 35 stages) |
 
 ### Level Map Pointer Table ($8000, 13 entries)
-| Stage | Ptr   | Notes |
-|-------|-------|-------|
-| 0  | $874D | Level 0 init code |
-| 1  | $8A6E | Level 1 init code |
-| 2  | $896A | Level 2 init code |
-| 3  | $91E8 | Level 3 init code |
-| 4  | $8B48 | Level 4 init code |
-| 5  | $D309 | Level 5 init code (bank 1) |
-| 6  | $D184 | Level 6 init code (bank 1) |
-| 7  | $D309 | Level 7 (shared with 5) |
-| 8  | $D19F | Level 8 init code (bank 1) |
-| 9  | $BB32 | Level 9 init code |
-| 10 | $BE65 | Level 10 init code |
-| 11 | $90BC | Level 11 init code |
-| 12 | $91E8 | Level 12 (shared with 3) |
+Dispatched via `StageLoader` ($86E0) when flag $40≠0: loads LevelCodePtrs[$41*2] into Ptr0 → JmpThruPtr0 ($8B63).
+Entries 5–8 point into bank 1 addresses that land mid-instruction relative to other code (6502 byte-overlap technique)
+or into title-screen string data interpreted as code; the LevelCodePtrs dispatch path may never be triggered for
+stage indices 5–8 in normal play (flag $40 is only set by specific conditions checked in `$86BA`/`StageAdvance`).
+
+| Stage | Ptr   | Label | Notes |
+|-------|-------|-------|-------|
+| 0  | $874D | Level0Init | Level 0 init code (bank 0) |
+| 1  | $8A6E | Level1Init | Level 1 init code (bank 0) |
+| 2  | $896A | Level2Init | Level 2 init code (bank 0) |
+| 3  | $91E8 | Level3Init | Level 3 init code (bank 0) |
+| 4  | $8B48 | Level4Init | Level 4 init code (bank 0) |
+| 5  | $D309 | —      | Bank 1: lands 3 bytes into `STA $2001` in NMI body; executes `ORA ($20,X)` + `JSR NMI_Sub` — likely unused |
+| 6  | $D184 | —      | Bank 1: lands inside title-screen string data (PLAYER…); executed as code if dispatched — likely unused |
+| 7  | $D309 | —      | Same as entry 5 — likely unused |
+| 8  | $D19F | —      | Bank 1: lands inside title-screen string data (CREDIT…); executed as code if dispatched — likely unused |
+| 9  | $BB32 | Level9Init  | Level 9 init code (bank 0) |
+| 10 | $BE65 | Level10Init | Level 10 init code (bank 0) |
+| 11 | $90BC | Level11Init | Level 11 init code (bank 0) |
+| 12 | $91E8 | Level3Init  | Level 12 shares Level 3 init (bank 0) |
 
 ### Enemy-Formation Outer Pointer Table ($801A, 13 entries)
-Each entry → inner table of 16-bit pointers to per-enemy sprite/position data blocks.
-| Stage | Outer Ptr | Notes |
-|-------|-----------|-------|
-| 0  | $8034 | 12 formation entries |
-| 1  | $8078 | |
-| 2  | $806C | |
-| 3  | $803C | |
-| 4  | $804C | |
-| 5  | $805E | |
-| 6  | $8084 | |
-| 7  | $8066 | |
-| 8  | $807C | |
-| 9  | $808A | |
-| 10 | $8096 | |
-| 11 | $80A0 | |
-| 12 | $80A4 | |
+Each entry → inner table of 16-bit phase-handler pointers (dispatch via `JmpThruPtr0`).
+`SubStageIdx` ($42) counts which phase within the stage; on first call (Y<0) → `StageFirstTimeInit` ($871C).
+Inner tables are stored non-sequentially in ROM (interleaved). `$8A64` (Stage0InitPhase3) reused as final cleanup.
+Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique; $D396 = Init2 utility.
+
+| Stage | Outer Ptr | Inner Size | Phase sub-routines (in order) |
+|-------|-----------|------------|-------------------------------|
+| 0  | $8034 | 4 entries | $8B22 (Phase0), $892B (Phase1), $8930 (Phase2), $8A64 (Phase3) |
+| 1  | $8078 | 2 entries | $8B22 (Phase0/shared), $8AFF |
+| 2  | $806C | 6 entries | $89B6, $89C9, $89D1, $89F6, $8A29, $8A4C |
+| 3  | $803C | 8 entries | $90D9, $9755, $90DF, $9100, $9139, $9134, $9141, $915D |
+| 4  | $804C | 9 entries | $8E42, $8E47, $8E69, $8E4F, $8E9F, $8ED5, $8F5D, $8F7F, $8A64 |
+| 5  | $805E | 4 entries | $D0BD, $D344, $D13A, $D107 |
+| 6  | $8084 | 3 entries | $D0BD (shared), $D143, $D107 (shared) |
+| 7  | $8066 | 3 entries | $D0BD (shared), $D396 (Init2), $D1F9 |
+| 8  | $807C | 4 entries | $D0BD (shared), $D1F4, $D1AC, $D1BF |
+| 9  | $808A | 6 entries | $90DF, $BA96, $BAA2, $BAC9, $BB1A, $8A64 |
+| 10 | $8096 | 5 entries | $BA96, $BE33, $BAC9, $BE38, $8A64 |
+| 11 | $80A0 | 2 entries | $90A4, $8A64 |
+| 12 | $80A4 | 9 entries | $90C8 (SoundReset), $90D9, $9755, $90DF, $9100, $9139, $9134, $9141, $915D |
 
 ---
 
@@ -1724,7 +1733,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Disassemble $C33D (STA $0100 in bank 1) — decoded as LevelStart; sets EnemyFreezeTimer + $68=$80
 - [x] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
 
-- [ ] Map all 13 entries in `LevelCodePtrs` ($8000) and `LevelFormationPtrs` ($801A)
+- [x] Map all 13 entries in `LevelCodePtrs` ($8000) and `LevelFormationPtrs` ($801A)
 - [ ] Identify bitmask meanings for `StageFlagsTable` ($80B6)
 - [ ] Disassemble `StageLoader` helpers at $98E0, $98BE, and $97B1 (Bank 0)
 - [ ] Investigate ZP variables $D0–$D4 in `Level0Init` ($874D) and their roles
