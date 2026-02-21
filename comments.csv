@@ -29,3 +29,24 @@
 0,892B,Stage0 phase1: STA $43=$2E (set EnemyCount=46 sub-field)
 0,8930,Stage0 phase2: EnemyCount=$08; $D4=$2B/$D3=$A0; $68=1; X=$12=$66=2; configure entity 2 slot data
 0,8A64,Stage0 phase3: $44=$40=$01; $42=$00 (reset SubStageIdx); init complete
+# Session 8 additions
+0,8B9F,EntitySlotFill3: $34=$30,$FF=1; loop X=4..0 over entity slots; loads sprite ptr from $82FA/$8300/$82F4 and OAM base from $830C; calls $8DC4+$988C at X=4 and X=2; updates $D2/$D3/$0612/$43/$25; JMP $8B98
+0,8C00,EntitySlotFill4: clamp $6D index; select ptr pair ($8348/$834E if $5E=0 else $8354/$835A); copy 6-byte slot template to $0304-$0309 (fill zeros with $FE); copy $8312[0..3] to $0300-$0303; clear $030A; JMP $8B98
+0,8DC4,EntitySpriteSetup: LDA $82F4,X->$00 (spr ptr lo); #$32->$03; LDA $830C,X->$04 (OAM offset); A=0; JMP $9811 (sprite tile draw)
+0,82F4,SlotSprPtrLo[6]: {$74,$63,$86,$53,$96,$D0} sprite data ptr lo bytes per entity slot (ZP $00)
+0,82FA,SlotSprOffset[6]: {$4C,$54,$5C,$64,$6C,$78} sprite source offset per slot; used as ZP $01 and $D3
+0,8300,SlotSprPtrHi[6]: {$90,$90,$90,$90,$90,$A2} ptr high bytes per slot; combined with $82FA -> bank-0 sprite addresses
+0,8306,SlotEntityType[6]: {$02,$02,$02,$02,$02,$00} entity type params per slot; $02=enemy type 2, $00=empty
+0,830C,SlotOAMBase[6]: {$04,$1C,$34,$4C,$64,$7C} OAM slot base offsets per entity (spaced $18=24 apart)
+0,8312,WaveCtrlInit[4]: {$09,$23,$54,$06} 4 wave control values copied to $0300-$0303 at stage init
+0,8348,SlotDataPtrALo[6]: {$60,$66,$6C,$72,$78,$7E} low bytes of EntitySlotData block ptrs (set A, step=$06) -> $8360..$837E
+0,834E,SlotDataPtrAHi[6]: {all $83} high bytes for set A ptrs -> $8360,$8366,$836C,$8372,$8378,$837E
+0,8354,SlotDataPtrBLo[6]: {$84,$8A,$90,$96,$9C,$7E} low bytes of EntitySlotData block ptrs (set B)
+0,835A,SlotDataPtrBHi[6]: {all $83} high bytes for set B ptrs -> $8384,$838A,$8390,$8396,$839C,$837E
+0,8360,SlotDataBlocksA: 6x6-byte entity slot templates (set A, $5E=0); byte[2]=enemy count (5,3,2,1,0,0); zeros->$FE; copied to $0304-$0309
+0,8384,SlotDataBlocksB: 6x6-byte entity slot templates (set B, $5E!=0); byte[1..2]=formation counts; copied to $0304-$0309
+0,83AD,StageNumLUT[6]: {$00,$07,$0B,$02,$05,$01} indexed by Y (game state 0..5) -> stage number -> $41 (StageNum)
+0,8ADD,StageTransitionHelper: JSR $D715; copy $03F0[0..5]->$0620[0..5]; INC $41; clear $40,$42; RTS
+0,B1E4,EntityAnimLoop: X=2->1; DEC $80,X by 2 (borrow->DEC $84,X); LDA $A858,X->$04/$94,X; JSR $B20A+$988C; Y=2 JMP $B4D9
+0,B20A,EntitySpriteLayout: OAM layout for entity X; reads $A82A,Y (pos) and $A841,Y (attr); calls $9811; Y=$16 special case (+$0C/$08 offsets); checks $0E visibility
+0,B4D9,EntityAnimContinue: Y=$05 loop; $03C8,Y entity ref; $A858,Y->$07; range-check $80,X ($70-$90); JSR $AB4A

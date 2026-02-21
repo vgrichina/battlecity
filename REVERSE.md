@@ -529,6 +529,133 @@ RAM address = $0400 + tileY*32 + tileX
 | $030F | Player fired flag (set by FireBullet for player entities) |
 | $0311 | Any player has directional input (updated by CheckPlayersMoving) |
 
+### EntitySlotFill3 ($8B9F) and EntitySlotFill4 ($8C00)
+
+These two routines (bank 0) initialize entity sprite and slot data during wave/stage setup.
+
+**EntitySlotFill3 ($8B9F)** — sprite setup loop for 5 entity slots:
+```
+$34 = $30, $FF = 1, $24 = $0D = 5
+Loop X = 4..0 (DEX from 5):
+  ZP $01 = $82FA[X]          ; sprite source offset
+  ZP $02 = $8300[X]          ; sprite page (high byte)
+  ZP $0B = $8306[X]          ; entity type param
+  JSR $8DC4                  ; load sprite ptr ($82F4[X]→$00, $830C[X]→$04) + call $9811
+  if X=4 or X=2: JSR $988C   ; sprite fill helper (two groups)
+  DEX; BPL loop
+After loop:
+  X = $0D; use $6D to choose $FB/$D0 (direction flags)
+  $D2 = $82F4[$0D], $D3 = $82FA[$0D], $0612 = $D3
+  if $66 != 1: $43 = $12      ; enemy count override
+  $25 = $26; JMP $8B98       ; ($8B98 = STA $35=4, INC $42, RTS)
+```
+
+**EntitySlotFill4 ($8C00)** — wave entity slot data init:
+```
+X = min($6D, 6); DEX      ; clamp entity-count index
+if $5E = 0:
+  $00 = $8348[X], $01 = $834E[X]   ; ptr table set A -> $8360..$837E
+else:
+  $00 = $8354[X], $01 = $835A[X]   ; ptr table set B -> $8384..$839E
+Y=5..0: $0304,Y = ($00)[Y] ; copy 6-byte entity slot template
+  if $0304,Y = 0: $0304,Y = $FE   ; fill zeros with $FE sentinel
+X=3..0: $0300,X = $8312[X] ; copy 4 wave-control init bytes
+$030A = 0
+JMP $8B98
+```
+
+**EntitySpriteSetup ($8DC4)** — sprite layout helper called from EntitySlotFill3:
+```
+ZP $00 = $82F4[X]    ; sprite data ptr low byte
+ZP $03 = $32         ; packed tile/attribute byte ($32 = tile $02, attr nibble $03)
+ZP $04 = $830C[X]    ; OAM slot base offset for this entity
+A = 0; JMP $9811     ; SpriteTileDraw: builds OAM entries from these params
+```
+
+---
+
+### Bank 0 Entity Slot Data Tables ($82F4–$83AD)
+
+Six parallel 6-entry tables (indexed by entity slot X = 0..5) used by EntitySlotFill3:
+
+| Table | Size | Values | Role |
+|-------|------|--------|------|
+| `$82F4` | 6B | $74,$63,$86,$53,$96,$D0 | Sprite data ptr low bytes (ZP $00) |
+| `$82FA` | 6B | $4C,$54,$5C,$64,$6C,$78 | Sprite source offsets (ZP $01 / $D3) |
+| `$8300` | 6B | $90,$90,$90,$90,$90,$A2 | Ptr page high bytes; combined with $82FA = bank-0 sprite block addresses |
+| `$8306` | 6B | $02,$02,$02,$02,$02,$00 | Entity type param per slot (ZP $0B); $02=enemy type 2, $00=empty |
+| `$830C` | 6B | $04,$1C,$34,$4C,$64,$7C | OAM base offsets per entity (spaced $18=24 apart) |
+| `$8312` | 4B | $09,$23,$54,$06 | Wave control init bytes → $0300–$0303 |
+
+#### EntitySlotData pointer tables (used by EntitySlotFill4):
+
+Two sets of pointer pairs (6 × 2 bytes each), selected by ZP flag `$5E`:
+
+**Set A** ($5E=0):
+- `$8348` lo: {$60,$66,$6C,$72,$78,$7E} → target addresses $8360,$8366,$836C,$8372,$8378,$837E
+- `$834E` hi: {all $83}
+
+**Set B** ($5E≠0):
+- `$8354` lo: {$84,$8A,$90,$96,$9C,$7E} → target addresses $8384,$838A,$8390,$8396,$839C,$837E
+- `$835A` hi: {all $83}
+
+#### EntitySlotData blocks ($8360–$837E set A, $8384–$839E set B):
+Each block is 6 bytes copied to ZP $0304–$0309. Format:
+
+| Slot | Set A addr | Byte[2] (count field) | Set B addr | Byte[1..2] |
+|------|------------|----------------------|------------|------------|
+| 0 | $8360 | 5 | $8384 | 0,0 (byte[1]=1) |
+| 1 | $8366 | 3 | $838A | 0,6 |
+| 2 | $836C | 2 | $8390 | 0,4 |
+| 3 | $8372 | 1 | $8396 | 0,2 |
+| 4 | $8378 | 0 (byte[3]=5) | $839C | 0,1 |
+| 5 | $837E | 0 | $83A2 | (see SpeedDeltaTable) |
+
+#### StageNumLUT ($83AD, 6 bytes):
+`{$00,$07,$0B,$02,$05,$01}` — indexed by Y (0–5, derived from `$60` game state and `$4D`/`$51`):
+Y=0→stage 0, Y=1→stage 7, Y=2→stage 11, Y=3→stage 2, Y=4→stage 5, Y=5→stage 1.
+Used by `$8C52` to select starting stage when entering a new game or after game-over.
+
+---
+
+### $8ADD — StageTransitionHelper
+
+Called at the end of certain level-init phase handlers to advance to the next stage:
+```
+JSR $D715          ; (unknown — likely stage data clear/setup)
+X=5..0: $0620,X = $03F0,X   ; copy 6 bytes of stage-transition data
+INC $41            ; StageNum += 1
+$40 = $42 = 0      ; clear stage phase flags
+RTS
+```
+
+---
+
+### $B1E4 — EntityAnimLoop (bank 0)
+
+Entity animation update loop for enemy slots, used in certain bank-0 sub-game contexts:
+```
+Loop X = 2, 1 (enemy entity slots):
+  $80,X -= 2               ; decrement movement counter by 2
+  if borrow: DEC $84,X     ; underflow propagates to $84 (speed param)
+  $04 = $94,X = $A858[X]   ; load sprite lookup index from $A858 table
+  $0B = 1
+  JSR $B20A                ; EntitySpriteLayout: build OAM from ZP $80/$90/$A0 params
+  JSR $988C                ; SpriteFillHelper: write sprite slot data
+  DEX; BNE loop
+Y = 2; JMP $B4D9           ; EntityAnimContinue
+```
+
+**$B20A — EntitySpriteLayout** sub:
+- Reads ZP $80,X (position/speed), $90,X (Y pos), $03A0,X (entity ref)
+- Looks up sprite position from `$A82A,Y` → ZP $02; attribute from `$A841,Y` → calls $9811
+- Special case Y=$16: adds $0C to $04, $08 to $01, uses nametable high byte $23
+- Checks ZP $0E visibility flag to conditionally skip sprite
+
+**$B4D9 — EntityAnimContinue**: iterates entity refs from `$03C8,Y`; loads `$A858,Y` → $07; range-checks `$80,X` in $70–$8F; calls `$AB4A` for further animation processing.
+
+---
+
 ### StageLoader ($86E0) and Inner Formation Sub-Tables
 
 **StageLoader dispatch logic** (called from main loop):
@@ -964,9 +1091,9 @@ else:
 - [x] Disassemble bank 0 level init routines ($8A6E, $896A, $91E8, $8B48 etc.) — understand how tile map is populated at level start ($874D partially decoded: has multi-phase sub-stage controller; continues in $B1E4, $8ADD)
 - [x] Decode inner formation data tables at $8034+ (per-stage enemy sprite/position blocks)
 - [x] Decode $8B–$8E SpeedParams meaning: confirm byte semantics (spawn delay, move rate, fire rate, etc.) from callsites in MoveGridSnap / SpeedCtrlMove
-- [ ] Disassemble $8B9F+ / $8C00+ (entity slot fill secondary routines; read $82FA/$8300/$8306 tables)
-- [ ] Decode tables at $82F4, $82FA, $8300, $8306, $8348 (formation data arrays in bank 0)
-- [ ] Disassemble $B1E4 and $8ADD (level init continuation / game-over from bank 0)
+- [x] Disassemble $8B9F+ / $8C00+ (entity slot fill secondary routines; read $82FA/$8300/$8306 tables)
+- [x] Decode tables at $82F4, $82FA, $8300, $8306, $8348 (formation data arrays in bank 0)
+- [x] Disassemble $B1E4 and $8ADD (level init continuation / game-over from bank 0)
 - [ ] Validate tile map at game start — trace what values level loaders write to $0400–$07FF
 - [ ] Identify and label CHR tiles by visual inspection of `tiles/chr_pt0.png` + `tiles/chr_pt1.png`
 - [ ] Disassemble $E3BA dispatch full: eagle animation handlers $E3C6/$E3CB/$E3D0/$E3E2/$E3EA — done above; disassemble callers to understand $68 initialization
@@ -976,6 +1103,7 @@ else:
 - [ ] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
 
 ### Completed
+- [x] **Session 8**: EntitySlotFill3 ($8B9F) and EntitySlotFill4 ($8C00) decoded — 6 parallel entity slot tables ($82F4/$82FA/$8300/$8306/$830C/$8312) documented; EntitySlotData block pointer tables ($8348/$834E, $8354/$835A) and 12 data blocks ($8360–$839F) decoded; StageNumLUT ($83AD) decoded; StageTransitionHelper ($8ADD) documented; EntityAnimLoop ($B1E4) and EntitySpriteLayout ($B20A) disassembled.
 - [x] **Session 7**: StageLoader dispatch ($86E0) fully decoded; inner formation sub-tables identified as phase-handler ptr arrays (not position data); $8B–$8E confirmed as enemy type group counts; EnemyTypeTable ($E5A9) fully decoded; SpeedTable ($E6A9) all 36 entries documented; level init routines $874D/$8A6E/$896A/$91E8/$8B48 disassembled
 - [x] **Session 6**: Tile cluster ($D745–$D7CA), EntityMovement freeze, PowerUpCollision, full power-up dispatch table (6 types), eagle state handlers, ScoreAdd/ScoreSetup, EntitySlotFill, SetSpeedPtr
 - [x] ROM identification: iNES, mapper 99, 32KB PRG, 16KB CHR
