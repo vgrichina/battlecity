@@ -1271,6 +1271,13 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [ ] Disassemble $D82B — called at player respawn; likely sound trigger or spawn animation setup
 - [ ] Identify GameState $60 value $30 — when is it set and what mode does it represent
 - [ ] Identify $4C purpose — cleared at game start, referenced in start sequence; possibly credits counter
+- [ ] Extract all 13 level tile maps — trace $D65A/$D62F/$D6C7/$D6FE tile-write calls in each level init routine; produce raw 26×26 tile arrays per stage
+- [ ] Map APU usage — find all writes to $4000–$4013/$4015; identify sound effects (shoot, explosion, power-up, game-over, stage-clear)
+- [ ] Disassemble title screen / attract mode — $C65C (wait+animation), $C69A (sprite toggle), $CFAA (pre-game draw sequence)
+- [ ] Disassemble stage-clear score tally screen — called between levels; bonus points display, tank kill counts per type
+- [ ] Disassemble GameOverHandler ($EBF6) fully — what is drawn, sequence of events after eagle destroyed or last life lost
+- [ ] Disassemble $C389 (MainLoop_4) — controller read sequence; confirm how P1/P2 direction bits are packed into $06/$07
+- [ ] Decode PaletteColorTable ($D475) — DIP switch colour remapping; extract all 4 colour variants
 
 - [x] Disassemble bank 0 level init routines ($8A6E, $896A, $91E8, $8B48 etc.) — understand how tile map is populated at level start ($874D partially decoded: has multi-phase sub-stage controller; continues in $B1E4, $8ADD)
 - [x] Decode inner formation data tables at $8034+ (per-stage enemy sprite/position blocks)
