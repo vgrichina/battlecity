@@ -76,3 +76,18 @@
 1,C25A,NewGameInit: ZeroSlot at $15,$1D; clear $0101-$0102; STA $4C=0 (GameSessionActive=cleared); reads $4016 AND $10 for 5-life vs 3-life DIP; sets P1/P2 lives; clears $46(PlayerCount)
 1,C35D,$4C=1: GameSessionActive set at LevelStart — paired with $68=$80; cleared only by NewGameInit($C272); checked at $C0E8 to decide game restart path
 1,D071,StageStartDraw: post-game-over stage banner setup; WaitNMI; NametableId=$24; WriteNametable; Init2; $60=$30; draw stage/player-count sprites; same sequence as PreLoop stage-start section
+# Session 12: APU engine, level tile loader, attract mode
+1,EBF6,SoundResetInit: STA $4015=$0F (enable sq1/sq2/tri/noise) + STA $4017=$C0 (5-step frame IRQ-inhibit); zero 28 slots in $031C-$03F3 (stride 8 via $F0/$F1) and counters $0300-$031B
+1,EC23,SoundEngine: per-frame APU driver; 28 sound slots at $031C+; ZP $F0/$F1=slot-ptr $F4=idx $F5=limit $F9-$FC=active; writes 4 regs via STA $4000,X (X=0/4/8/12 per channel)
+1,EC80,SoundAPUWrite: STA $4000,X — write APU register; X=channel_base (0=sq1 4=sq2 8=tri 12=noise); 4-byte write loop from sequence data
+1,ECAC,SoundChSilence: mute channel: write ((ch_idx<<2)&$10)^$10 to $4000+ch_base (clears duty/volume bit4 = volume 0)
+1,EE54,SoundSeqPtrLoad: load ptr for slot $F4 from $EEA3 table (2-byte LE) into ZP $F2/$F3
+1,EE63,SoundSeqReadByte: read byte from sequence at ($F2),Y; advance offset at ($F0)+5; return in A
+1,EEA3,SoundSeqPtrTable: 14x2-byte LE ptrs to sound sequence data; indexed by channel/slot id
+1,F239,LevelTileLoader: reads nibbles from ($13),Y (ptr into $F27D+offset); hi/lo nibble alternating; calls DrawNametableTile($D82B) per 16x16 metatile; 13x13 grid X=$10-$D0 Y=$10-$D0
+1,F27D,LevelMapData: 35 stages x 91 bytes; nibble-packed 13x13 metatile grids; 14 nibbles/row (13+1 skip) 13 rows; types 0-15 (4=brick 9=steel 10=trees 11=water 12=ice 13-15=empty)
+1,C65C,AttractWait: NametableId=$24; INC $4F each frame; call BlinkTitleSprite; exit on $4B!=0 (credits) or $4F=$F0 (240 frames); credits: PLA PLA JMP $C0BB
+1,C69A,BlinkTitleSprite: JSR WaitVBlank; test $0B&$20 (frame bit 5 ~1Hz); if set ptr=$D1A7 else ptr=$D1BA; DrawSprites(X=7 Y=$12)
+1,CFAA,PreGameDraw: WaitNMI+ClearSpriteBuf; NametableId=$24; draw nametable blocks; $D7D4+Init2; $60=$30(stage banner); draw STAGE-XX sprite col$02/row$03; draw number; 2P indicator if $83!=0; $60=$00; draw border sprites
+0,90CA,SoundOff: STA $4015=$00 (disable all APU channels); STA $5D=$5E=$5F=0; STA $0614=$0F
+0,90C8,SoundReset: entry point; LDA #$00 then falls into SoundOff sequence

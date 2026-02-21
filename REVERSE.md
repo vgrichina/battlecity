@@ -197,7 +197,11 @@ Death:   EntityState = $73 (set by EnemyBulletPlayerHit on bullet hit)
 | $86E0+  | Code | Stage loader: reads $8000[stage] ptr → sets Ptr0 → JMP ($0000) |
 | $8B63   | Code | `STA $01; JMP ($0000)` — trampoline that jumps through ZP Ptr0 |
 | $8B69+  | Code | Entity slot fill / enemy queue setup |
+| $90C8   | Code | SoundReset — LDA #$00 → SoundOff |
+| $90CA   | Code | SoundOff — STA $4015=$00 (disable APU); zero $5D/$5E/$5F; STA $0614=$0F |
 | various | Code/Data | Level init routines and tile/sprite data for all 13 stages |
+| $F239   | Code | LevelTileLoader — reads nibble-packed stage data at $F27D via ($13),Y; calls DrawNametableTile per 16×16 metatile; 13×13 grid |
+| $F27D   | Data | LevelMapData — 35 × 91-byte nibble-packed stage tile grids (all 35 stages) |
 
 ### Level Map Pointer Table ($8000, 13 entries)
 | Stage | Ptr   | Notes |
@@ -252,10 +256,11 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $C43F | SetHUDSprites | Write $70 to OAM bytes $0105/$0106/$0108 (HUD sprites) |
 | $C5A1 | GameUpdate1 | Bullet spawn check loop: checks effect/entity active, calls $DE56 |
 | $C62F | CheckGameOver | Returns zero flag set if game continues |
-| $C65C | MainLoop_2 | Wait 240 frames or until coin; title screen animation |
+| $C65C | AttractWait | Loop 240 frames calling BlinkTitleSprite ($C69A); NametableId=$24; exits on credits ($4B≠0) → PLA×2+JMP $C0BB |
 | $C67B | MainLoop_3 | Wait 8 frame-counter ticks or until coin |
-| $C6C5 | StartGame | Transition to game state $6E; set $5A=$6B=1 |
-| $C69A | AnimateTitleSprite | Toggle between $D1A7/$D1BA for blinking attract animation |
+| $C6C5 | StartGame | Transition to game state $6E; set $5A=$6B=1; draw player sprites; check 1/2P; count down lives |
+| $C69A | BlinkTitleSprite | Wait VBlank; test $0B&$20 (frame bit 5, ~1 Hz); if set ptr=$D1A7 else $D1BA; DrawSprites(X=7,Y=$12) |
+| $CFAA | PreGameDraw | WaitNMI+ClearSpriteBuf; NametableId=$24; draw nametable blocks; set $60=$30 (stage banner); draw STAGE/XX sprites; if P2 draw P2 indicator; clear $60=$00 |
 | $CF96 | MainLoop | Per-frame: call D5AF, D3A1, D3AC, D7D4, Init2 |
 | $CFAA | PreLoop | Pre-game sequence: draw title elements, wait |
 | $D300 | NMI | Save regs; trigger rendering; OAM DMA; scroll; flush PPU queue |
@@ -342,8 +347,12 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $E8B1 | EnemyBulletPlayerHit | (to be disassembled) |
 | $EAB5 | BulletVsBulletCancel | (to be disassembled) |
 | $EB17 | PowerUpCollision | (to be disassembled) |
-| $EBF6 | GameOverHandler | Enable APU ($4015/$4017); zero $0300–$031B via X loop and $031C–$03F4 at stride 8 via pointer (clears entity/bullet tracking page) |
-| $EC23 | NMI_Sub3 | Stage-summary score/kill-count tabulator; reads $0300,X entries and $6D (ServiceMode); fills $F9–$FC counters for end-of-stage results display |
+| $EBF6 | SoundResetInit | APU + sound-RAM reset: STA $4015=$0F (enable sq1/sq2/tri/noise), STA $4017=$C0 (5-step frame counter, IRQ inhibit); zero 28 sound slots in $031C–$03F3 (stride 8 via $F0/$F1 ptr) and clear $0300–$031B |
+| $EC23 | SoundEngine | Per-frame sound engine: iterates 28 channel slots ($031C–$03F3, 8 bytes each) pointed by $F0/$F1; reads $0300,X active flag; if slot active loads sequence data and writes 4 regs via STA $4000,X (X=0/4/8/12); channel silence via bit-4 XOR at $ECAC; ZP $F4=slot idx, $F5=limit, $F9–$FC=active flags |
+| $EC80 | SoundAPUWrite | `STA $4000,X` — core APU register write; X=channel_base (0=sq1,4=sq2,8=tri,12=noise); writes 4 consecutive regs from sequence data at ($F0),Y |
+| $EE54 | SoundSeqPtrLoad | Load sound sequence pointer for channel $F4 from table $EEA3 → ZP $F2/$F3 |
+| $EE63 | SoundSeqReadByte | Read one byte from sound sequence at ($F2),Y; advance sequence offset in ($F0)+5 |
+| $EEA3 | SoundSeqPtrTable | 14 × 2-byte little-endian pointers to sound sequence data (one per slot) |
 # New routines (Sessions 3–4)
 | $C912 | PowerUpSprite_Off | Draw power-up "OFF" sprite frames (4×DrawSprites) + clear palette at $07F3/$07F4 |
 | $C9BB | PowerUpSprite_On | Draw power-up "ON" sprite frames (4×DrawSprites) + set $3F palette flash at $07F3/$07F4 |
@@ -1176,6 +1185,98 @@ All numbers are OAM sprite tile indices (sprite pattern table, PPU $0000–$0FFF
 | $F6–$FE | Power enemy tank sprite (CHR tile base $F6; overlaps eagle-expl range) |
 | $AC–$B4 | Armor enemy tank sprite (base $AC; tier changes on each hit) |
 
+### Level tile map data and loader ($F27D, $F239)
+
+Level tile maps are stored at **CPU $F27D** (file offset `0x728D`, PRG bank 1):
+- **35 stages** × **91 bytes each** = 3185 bytes total, ending at ~$FFEE
+- Each stage encodes a **13 × 13 metatile grid** as nibble-packed bytes
+  - 14 nibbles per row (13 columns + 1 padding nibble), 13 rows = 182 nibbles = 91 bytes
+  - High nibble first: `tile = (byte >> 4)` for even nibble, `tile = byte & $0F` for odd
+- Tile type values match `DrawNametableTile` ($D82B) type table: 0–3=brick partial, 4=brick full, 5–8=steel partial, 9=steel full, 10=trees, 11=water, 12=ice, 13–15=empty
+
+**Loader loop ($F239)**:
+```
+$13/$14 = pointer into $F27D + stage_offset  (set by level init)
+$5A = nibble index (0 → 169)
+$56/$57 = current pixel X/Y (starts $10/$10, steps by $10 = 16px per metatile)
+
+Loop:
+  Y = $5A >> 1 (byte index)
+  if $5A & 1: tile = ($13),Y & $0F   (low nibble)
+  else:        tile = ($13),Y >> 4    (high nibble)
+  X = $56, Y = $57 → JSR DrawNametableTile ($D82B)
+  $56 += $10; if $56 == $E0: wrap, $57 += $10
+  INC $5A; continue until $57 == $E0 (all 13 rows done)
+```
+
+All 35 stage maps already extracted and decoded in **`extract_level_maps.py`** (ASCII art + JS constants).
+
+### APU sound engine
+
+**Initialization ($EBF6 / SoundResetInit)** — called at level start, game over, attract entry:
+```
+STA $4015 = $0F   ; enable channels: pulse1, pulse2, triangle, noise
+STA $4017 = $C0   ; 5-step frame counter; bit 6 = IRQ inhibit
+; Zero 28 sound slots: $031C–$03F3 (stride 8) and counters $0300–$031B
+```
+
+**Disable ($90CA / SoundOff)**:
+```
+STA $4015 = $00   ; disable all APU channels
+STA $5D = $5E = $5F = $00
+STA $0614 = $0F
+```
+
+**Per-frame engine ($EC23 / SoundEngine)** — called each frame from main loop:
+- ZP `$F0/$F1` = pointer into sound slot workspace (starts $031C)
+- ZP `$F4` = current slot index (0–27), `$F5` = slot limit ($1C=28 or $01 in service)
+- ZP `$F9–$FC` = 4 channel active flags (one per APU channel)
+- For each active slot: reads sequence byte from ($F0)+5; values 1–4 = channels 0–3; ≥5 = stop channel
+- **APU write** (`$EC80`): `STA $4000,X` with X = channel × 4 (0=sq1, 4=sq2, 8=tri, 12=noise); writes 4 consecutive registers from sequence data at `($F0),Y`
+- **Channel silence** (`$ECAC`): writes `((channel_idx << 2) & $10) XOR $10` to `$4000,X` (clears bit 4 of vol/duty register → volume=0)
+- Sound sequences pointed by `$EEA3` table (14 × 2-byte LE pointers); each sequence is a stream of register bytes + duration + next-pointer
+
+### Title screen / attract mode
+
+**AttractWait ($C65C)**:
+```
+NametableId ($05) = $24  (second nametable)
+$4F = $50 = 0            (scroll reset)
+Loop:
+  JSR BlinkTitleSprite ($C69A)
+  INC $4F
+  if $4B != 0: PLA; PLA; JMP $C0BB  (credits → exit attract)
+  if $4F != $F0: loop               (wait 240 frames ~4 sec)
+RTS
+```
+
+**BlinkTitleSprite ($C69A)**:
+```
+JSR WaitVBlank ($D95F)
+if $0B & $20 != 0:             (frame counter bit 5 = ~1 Hz toggle)
+  ptr = $D1A7 (sprite table A) ; "1UP" / "2UP" frame A
+else:
+  ptr = $D1BA (sprite table B) ; frame B (blinking)
+JSR DrawSprites ($D6D3, X=7 sprites, Y=$12 dest row)
+```
+
+**PreGameDraw ($CFAA)**:
+```
+JSR WaitNMI; ClearSpriteBuf
+NametableId = $24
+Draw nametable block pair at ($D14F/$D156)  ; border/title elements row 1
+Draw nametable block pair at ($D163/$D16A)  ; row 2
+JSR $D7D4 (tile map flush); JSR Init2 ($D396)
+$60 = $30            ; enter stage-start banner state
+DrawSprites ("STAGE" text at col$02, row$03) from ptr $D15B, X=2 tiles
+DrawSprites (stage number) via $D9A7 (2-digit Y=$16, X=$04)
+JSR $D6FD (draw row)
+if $83 != 0: DrawSprites (P2 indicator at col$15/$17, row$03)
+$60 = $00            ; back to gameplay state
+JSR WaitVBlank
+DrawSprites (level border sprites from $D145/$D1E7/$D1FE)
+```
+
 ### Extra-life logic (LivesGrantCheck $CF44)
 
 Called from PowerUpCollision. Checks if `$68=$80` (game active):
@@ -1321,9 +1422,9 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Disassemble $D82B — `DrawNametableTile(A=tile_type, X=pixel_x, Y=pixel_y)`: divides coords by 8 via $D733; palette from $DB69[type]; 4 CHR tiles from $DB79[type*4]; writes 2×2 metatile to nametable+attribute. Called from $E461 to clear spawn tile ($0F=open ground) and from $F25B during level load
 - [x] Identify GameState $60 value $30 — **stage start screen**: set by PreLoop ($CFE2) and StageStartDraw ($D087) while "STAGE XX" banner is displayed; cleared to $00 once banner finishes; $60 values: $00=gameplay, $30=stage-start banner, $6E=attract/title
 - [x] Identify $4C purpose — **GameSessionActive**: set to 1 by LevelStart ($C35D) when a level is initialized; cleared to 0 by NewGameInit ($C272 via $C25A); CoinScreen ($C840) dispatches via PLA×2+JMP to OnePlayerStart/TwoPlayerStart; both call NewGameInit (clearing $4C) then JMP $C0C1; checked at $C0E8 in post-attract sequence
-- [ ] Extract all 13 level tile maps — trace $D65A/$D62F/$D6C7/$D6FE tile-write calls in each level init routine; produce raw 26×26 tile arrays per stage
-- [ ] Map APU usage — find all writes to $4000–$4013/$4015; identify sound effects (shoot, explosion, power-up, game-over, stage-clear)
-- [ ] Disassemble title screen / attract mode — $C65C (wait+animation), $C69A (sprite toggle), $CFAA (pre-game draw sequence)
+- [x] Extract all 13 level tile maps — level data at $F27D (35 stages × 91 bytes, nibble-packed 13×13 metatile grids); loader $F239 reads nibbles via ($13),Y, calls DrawNametableTile ($D82B) per tile; complete decoder in `extract_level_maps.py` (all 35 ASCII maps + JS constants)
+- [x] Map APU usage — APU init at $EBF6: STA $4015=$0F (enable sq1/sq2/tri/noise), STA $4017=$C0 (5-step frame, IRQ inhibit); per-frame engine $EC23: 28 sound slots in $031C–$03F3; APU write: `STA $4000,X` (X=0/4/8/12 per channel) at $EC80; channel silence at $ECAC (bit-4 XOR); sound seq ptr table at $EEA3 (14 pointer pairs); SoundOff at $90CA: STA $4015=0
+- [x] Disassemble title screen / attract mode — $C65C: AttractWait loop 240 frames (INC $4F, call $C69A), exits on credits ($4B≠0); $C69A: BlinkTitleSprite, checks $0B&$20 (frame bit 5) → alternates sprite ptr $D1A7/$D1BA → DrawSprites(X=7,Y=$12); $CFAA: PreGameDraw — draw nametable blocks, set $60=$30 (stage banner), draw "STAGE XX" sprite at col$02/row$03, draw stage number, check P2, clear $60=$00
 - [ ] Disassemble stage-clear score tally screen — called between levels; bonus points display, tank kill counts per type
 - [ ] Disassemble GameOverHandler ($EBF6) fully — what is drawn, sequence of events after eagle destroyed or last life lost
 - [ ] Disassemble $C389 (MainLoop_4) — controller read sequence; confirm how P1/P2 direction bits are packed into $06/$07

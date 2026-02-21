@@ -231,3 +231,12 @@
 1,D1A7,TitleSpriteTableA
 1,D1BA,TitleSpriteTableB
 1,D6FD,DrawNametableWithOffset
+# Session 12: APU engine, level tile loader, attract mode
+1,EBF6,SoundResetInit
+1,EC23,SoundEngine
+1,ECAC,SoundChSilence
+1,EC2D,SoundEngineUpdate
+1,F239,LevelTileLoader
+1,C69A,BlinkTitleSprite
+0,90CA,SoundOff
+0,90C8,SoundReset
