@@ -139,7 +139,7 @@ python3 -m http.server 8000
 `re_loop.sh` drives repeated short Claude sessions until all Next Tasks are resolved.
 
 ```bash
-./re_loop.sh                 # default: up to 50 sessions, 3 tasks each
+./re_loop.sh                 # default: up to 50 sessions, 1 task each
 ./re_loop.sh --max 10        # limit iterations
 ./re_loop.sh --tasks 5       # tasks per session
 ./re_loop.sh --dry-run       # print prompt only
@@ -156,6 +156,6 @@ The script commits after each session using the summary as the message, then loo
 Stops automatically when: no tasks remain, no files changed, or `--max` hit.
 
 ### Session prompt rules (enforced in re_loop.sh)
-- Scoped tools only: `Bash(python dis.py*)`, `Bash(python xref.py*)`, `Bash(python search_bytes.py*)`, `Bash(python decode_tables.py*)`, `Read`, `Edit`, `Write`
+- Scoped tools only: `Bash(python dis.py*)`, `Bash(python xref.py*)`, `Bash(python search_bytes.py*)`, `Bash(python decode_tables.py*)`, `Bash(python extract_tiles.py*)`, `Bash(python render_screen.py*)`, `Bash(python extract_level_maps.py*)`, `Read`, `Edit`, `Write`, `Glob`, `Grep`
 - Stop after N tasks (keeps context small for reliable restarts)
 - Do not re-document already-covered addresses
