@@ -42,7 +42,7 @@
 1,DB22,NMI_Sub4
 # Newly identified
 1,D37C,RNG
-1,DC23,EnemyAI
+1,DC23,PlayerInputUpdate
 1,DC9E,NullHandler
 1,DC9F,EntityMovement
 1,DCF1,EntityDispatch

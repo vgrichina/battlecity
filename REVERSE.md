@@ -362,7 +362,7 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $DB0A | DrawTank | Set pixel origin (X,Y), compute tile from $53/$04, call $DABA twice |
 | $DB22 | HideSprites | Fill unused OAM entries with $F0 (offscreen Y) |
 | $DB3E | QueuePaletteWrite | Append {$3F, slot, colour, $FF} to PPU write queue at $0180 |
-| $DC23 | EnemyAI | AI for entity 1 (P2 slot, AI-controlled in 1-player): direction snapping, 1-in-32 random turn |
+| $DC23 | PlayerInputUpdate | Per-frame player input handler (was mislabeled EnemyAI): loops X=1→0 (P2/P1 tank slots); reads $06,X (P1/P2 buttons) → DecodeDirection; on turn: snap position to (+4)&$F8 tile boundary; updates $A0,X=$A0\|dir; AI-mode via $0103,X bit7 |
 | $DC9E | NullHandler | Single RTS — used by state machine for inactive/null states |
 | $DC9F | EntityMovement | Loop all 8 entities; player frame-throttle; enemy type/speed check; call $DCF1 |
 | $DCF1 | EntityDispatch | Y=(state>>3)&$FE; JMP through $E555 table |
@@ -1055,7 +1055,7 @@ A = A + ZP[$10]                    ; add ring-buffer byte
 $0F = A                            ; store new state
 return A
 ```
-Used by EnemyAI (random direction 1-in-4) and EnemyFireCheck (1-in-32 fire chance).
+Used by RandomDirChange handler (enemy random direction 1-in-4) and EnemyFireCheck (1-in-32 fire chance).
 
 ### Entity movement dispatch
 ```
@@ -1707,7 +1707,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Decode PaletteColorTable ($D475) — 256-byte table ($D475–$D574); 4 variants × 64 NES colour entries; indexed as `base_color | $4E` where $4E = $4017 & $C0 ∈ {$00,$40,$80,$C0}; PaletteApplyDIP ($D46A): saves Y, ORA $4E, TAY, LDA $D475,Y, restores Y, RTS; InitPalette ($D41E): WaitVBlank ($D575) → PPU addr $3F00 → 32-entry DIP-remapped write loop; PaletteData ($D44A): 32 base colours (8 sub-palettes × 4)
 - [x] Disassemble DrawVictoryScreen ($C44D) — full sequence confirmed; called from $C210 when $15|$1D ≠ 0 (enemies still on field at game over); clear nametables $1C+$24; draw "PEACE BE WITH YOU" (DrawSprites from $D291, col7 row10) + 9 deco tiles $60-$68 (DrawSprites from $D145, col12 row14); draw "NOW LONG WAR"/$D2A4, "COMES TO"/$D2B1, "AN END"/$D2BA via DrawRowTiles ($D91B); then 240-frame ScrollX slide (INC $4F until $F0); ScrollX=0 ScrollY=2; hide sprites; RTS
 - [x] Decode text strings at $D291 and $D145 — encoding is ASCII with $FF terminator; $D291 data: $D291="PEACE BE WITH YOU"+$15+FF, $D2A4="NOW LONG WAR"+FF, $D2B1="COMES TO"+FF, $D2BA="AN END"+$69+FF; $D145 data: $D145=9 graphic tile indices $60-$68+FF, $D14F="BATTLE"+FF, $D156="CITY"+FF, $D16B="HISCORE"+FF (plus tile-pair entries for decoration)
-- [ ] Disassemble PlayerUpdateDispatch ($E2AE) — per-frame dispatcher; calls DecodeDirection ($E50E) via $DC30; trace full call chain and what state it updates
+- [x] Disassemble PlayerUpdateDispatch ($DC23, mislabeled EnemyAI) — per-frame player input dispatcher; relabeled PlayerInputUpdate; loops X=1→0 (P2/P1 slots); frame-throttled (odd frames OR frame%4==0); reads $06,X (P1/P2 buttons) → DecodeDirection($E50E) → 0=Up/1=Left/2=Down/3=Right/$FF=idle; no-input: SetStateLo($80)+OR $08 into $A0,X; on direction change: snap $90,X/$98,X to (+4)&$F8 grid boundary for clean turns; updates $A0,X=$A0|dir (bits7-5=101=running; bits1-0=direction); AI-mode: if $0103,X bit7+countdown=0 → reload $9C, set $0310=1; EntityDispatch($DCF1) further dispatches all 8 entities via MovementDispatch[$A0,X>>3&$FE] table; EnemyFireCheck($E216) loops X=7→2 (enemy slots only); NOTE: $E2AE is ClearTileFlags (clears bit7 of nametable tile ptr for each active entity)
 - [x] Decode score-weight table at $D2C2 — **KillScoreTable**: 4 nibble-BCD bytes $10/$20/$30/$40 → 100/200/300/400 pts per tank type (basic/fast/power/armor); used by SetScoreWeight ($DA62) which stores hi-nibble→$3A lo-nibble→$3B; ScoreAdd ($DA31) does 7-digit BCD add into $15,X..$1A,X (X=2 for P1, X=3 for P2)
 
 - [x] Disassemble bank 0 level init routines ($8A6E, $896A, $91E8, $8B48 etc.) — understand how tile map is populated at level start ($874D partially decoded: has multi-phase sub-stage controller; continues in $B1E4, $8ADD)

@@ -116,3 +116,16 @@
 1,C249,InputBlockDuringFlash: if $68=$80 (HQ active) skip; else zero $06-$09 (P1Dir/P2Dir/P1Fire/P2Fire) — blocks input during palette-flash game-over animation
 1,C53E,DrawGameOverScreen: WaitNMI; NametableId=$1C; ScrollX/Y=0; ClearSpriteBuf; draw GAME($D214) at DrawX=$3C DrawY=$46 via $D8F7; draw OVER($D219) at DrawY=$78; WriteNametable; Init2; SetGamePalette; $0318=$0319=$031A=1 (anim timers); wait VBlank until $0318=0; WaitNMI+ClearSpriteBuf+WriteNametable+Init2; RTS
 1,CF96,GameOverScoreScreen: attract-loop nametable reset (NOT a score display); SetGamePalette+WaitNMI; NametableId=$1C; ClearSpriteBuf; WriteNametable; Init2; RTS; called at $C0A9 each attract iteration
+# Session 13: PlayerInputUpdate (mislabeled EnemyAI), EntityDispatch, MovementDispatch table
+1,DC23,PlayerInputUpdate (was mislabeled EnemyAI): processes P1(X=0) and P2(X=1) tanks each frame; frame-throttled (odd OR frame%4==0); LDX #$01 loop↓X=0; checks $6F,X cooldown; reads $06,X buttons→DecodeDirection($E50E)→dir 0-3/$FF; no-input→SetStateLo($80)+set $A0,X|=$08; $0103,X AI-mode: bit7 set + countdown=0 → reload $9C + $0310=1; dir-change→snap $90,X/98,X to (+4)&$F8 grid; $A0,X=$A0|dir (running+direction)
+1,DC2F,PlayerInputUpdate loop start: LDX #$01; BPL loop checks active state ($80-$DF); if $6F,X>0 decrement and skip input
+1,DC42,AI-mode fire timer: if $0103,X bit7 set (AI-controlled player) and low-5-bits=0 → reset timer to $9C and set $0310=1 (AI fire trigger)
+1,DC4B,read player directional input: LDA $06,X (P1Buttons or P2Buttons); JSR DecodeDirection→A=0(Up)/1(Left)/2(Down)/3(Right)/$FF(none)
+1,DC54,no-direction path: SetStateLo($80)+ORA $08 into $A0,X (stopped+wall-bumped); skip to next entity
+1,DC75,direction-vs-state check: if new dir==current dir(bits0-1) skip snap; if new dir==opposite dir skip snap; else snap X/Y
+1,DC83,grid-snap on turn: $90,X=($90,X+4)&$F8; $98,X=($98,X+4)&$F8 (align to next 8-pixel tile boundary for clean turns)
+1,DC95,commit player direction: A=decoded_dir|$A0; STA $A0,X (bits7-5=101=running; bits1-0=direction 0-3)
+1,DCF1,EntityDispatch: $A0,X LSR×3 AND$FE → Y (even index into MovementDispatch); load 16-bit ptr→$11/$12; JMP($11); dispatches per-entity movement behavior based on state bits 5-3
+1,E2AE,ClearTileFlags: loops X=7→0; for each active entity: compute nametable tile ptr ($E0,X/$E8,X); clear bit7 of tile at offset$21 (and $20 if state-bit7 set, $01 if state-bit6 set); used to un-mark traversable tiles after movement check
+1,E1D6,PlayerFireCheck: loops X=1→0 (player slots); reads $08,X (button edges) AND$03 (A/B buttons); if edge→check $A8,X dual-shot flag; JSR FireBullet; handles player-initiated shooting
+1,E216,EnemyFireCheck: if $0100!=0 skip; loops X=7→2 (enemy slots only; exits at X=1); active entity: JSR RNG AND$1F==0 → FireBullet (random 1-in-32 fire per update)
