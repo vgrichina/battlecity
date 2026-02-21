@@ -1,0 +1,17 @@
+# bank,addr,comment
+# bank: hex PRG bank number (0-based), or * for any bank
+# addr: hex CPU address (no prefix)
+1,C070,SEI; disable interrupts; start of reset handler
+1,C073,PPU ctrl: NMI off / 8x8 sprites / BG pattern table 1
+1,C078,VS. System register - coin/service I/O
+1,C07E,Wait for 1st VBlank
+1,C088,Wait for 2nd VBlank
+1,C092,Set stack pointer to $7F (128-byte stack at $0100-$017F)
+1,C09E,PPU ctrl: NMI enable / BG pattern 1 / sprite pattern 0
+1,C0B8,Main game loop (infinite)
+1,D300,Save A X Y P on stack
+1,D306,Force rendering on during NMI
+1,D318,Write OAM base address $02xx
+1,D31E,Trigger OAM DMA from page $02
+1,D341,Increment frame counter low byte (ZP $0B)
+1,D349,Increment frame counter high byte (ZP $0A)
