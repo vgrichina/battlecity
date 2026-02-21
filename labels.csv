@@ -330,3 +330,10 @@
 0,BE38,Stage10FormationPhase4
 0,90A4,Stage11FormationPhase0
 0,8AFF,Stage1FormationPhase1
+# Session: ZP $D0-$D4 in Level0Init — stage-0 animation state
+0,892B,Stage0InitPhase1
+0,8930,Stage0InitPhase2
+0,8153,Level0DispatchTable
+0,8834,Level0DispatchSub
+0,886A,Level0Phase_SpriteCycle
+0,8885,Level0Phase_SubState

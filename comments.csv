@@ -139,3 +139,8 @@
 0,97E5,VBlankScrollApply6B: wait $2002 bit7 (VBlank); LDA$10 AND#$FE; JSR$97D3 (PPUCtrl+scroll$6B/$6C); extract $3F bits1-0→$61; delay loop; reconstruct $10→$2000; JMP WriteScroll12
 0,9803,PPUCtrlRefreshScroll12: LDA$10 AND#$7C OR$68→$10→$2000; JMP WriteScroll12($97C3) — per-frame PPU ctrl + scroll refresh
 0,8747,WritePPUCtrl: STA $2000; STA $10; RTS — write A to PPU control register and save shadow copy in $10
+# Session: Level0Init ZP $D0-$D4 state block
+0,874D,Level0Init: stage-0 animation state machine; ZP $D0=phase(0=entry/non-0=scroll), $D1=sub-wave state(1-7 dispatch via $8153 ptr table), $D2=wave counter(0-7 cap; phase5→StageNum=$0B JMP StageTransitionHelper), $D3=scroll position(A0+step$20 0..$BF→wraps→$D4 cycle), $D4=attribute byte($2B start; EOR$0B on D3 overflow when D4&3=3); writes $D4→$0301 $D3→$0302 $60→$0303 $FC→$0304 $00→$0305
+0,8153,Level0DispatchTable: 7 16-bit ptrs (indexed by D1-1)*2: D1=1→$8885 D1=2→$886A D1=3→$884F D1=4→$D1BF D1=5→$8919 D1=6→$202A D1=7→$2822; indirect dispatch via JMP($0000)
+0,886A,Level0Phase_SpriteCycle: LDA $81BF/C3,Y → ptr; JSR $D14F (StrBATTLE/string); carry set → INC $D5 (AND#$03 cycle 0-3) + INC $5D + SEC; RTS
+0,8885,Level0Phase_SubState: JSR $888E (sub-step counter $E5; X=step); carry→INC $D1; CLC RTS

@@ -128,6 +128,11 @@
 | $C2,X | BulletY | Primary bullet Y position (per entity) — **not** BulletOwner |
 | $CA,X | SavedBulletY | Double-shot saved secondary bullet Y (copied from $C2,X) |
 | $CC,X | BulletState | Bullet state byte (same state-machine format as EntityState; see $E595 table) |
+| $D0 | Level0PhaseFlag | Level0Init ($874D) top-level phase: 0=entry/intro phase (animate tanks entering), non-zero=active scroll-wave phase. Init'd to 0 by EntitySlotFill3 ($8BDF: LDA #$02; EOR #$02). Also used as Y-index into pointer tables $820A/$8212 at $89F6. INC at $878E (entry done) and $8A07 (wave advance). |
+| $D1 | Level0SubState | Level0Init sub-wave state index (1-based). Controls which 16-bit pointer from $8153 table is dispatched (DEX; ASL; TAX → $8153,X). Preset: D2=1→D1=5, D2=4→D1=3; cleared to 0 on sub-task complete ($882D); INC at $8854, $888A, $8A11. Capped at 7. |
+| $D2 | Level0WavePhase | Level0Init scroll-wave counter (0–7, capped). Counts animation waves; phase 5 triggers `StageNum=$0B; JMP StageTransitionHelper`. Init'd from $0613 (capped at 7) at $89D1. INC at $87AB and $8A0F. |
+| $D3 | Level0ScrollPos | Level0Init animation horizontal scroll position (sub-byte). Starts $A0; ADC #$20 each step; range $00–$BF. Overflow or carry → reset to $00, advance $D4. Written to $0302 (animation data buffer). Also init'd as SlotSprOffset ($8BEB) and saved to $0612. |
+| $D4 | Level0ScrollAttr | Level0Init animation attribute/pattern byte. Starts $2B; cycled EOR #$0B when $D3 overflows and ($D4 AND #$03)=$03. Written to $0301. Also tested as tile-index at $8CC3 (CMP #$10/$11 for sprite variant). **Note**: $D4,X (below) and $D6,X overlap these addresses during gameplay; this region serves dual purpose at different game phases. |
 | $D4,X | BulletFired | Saved bullet state at fire time (for double-shot secondary tracking) |
 | $D6,X | BulletDouble | Double-shot / armor flags (bit 0=double, bit 1=armor-piercing) |
 | $DE,X | SavedBulletDouble | Double-shot flag saved alongside SavedBulletX/Y |
@@ -1839,7 +1844,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Map all 13 entries in `LevelCodePtrs` ($8000) and `LevelFormationPtrs` ($801A)
 - [x] Identify bitmask meanings for `StageFlagsTable` ($80B6)
 - [x] Disassemble `StageLoader` helpers at $98E0, $98BE, and $97B1 (Bank 0)
-- [ ] Investigate ZP variables $D0–$D4 in `Level0Init` ($874D) and their roles
+- [x] Investigate ZP variables $D0–$D4 in `Level0Init` ($874D) and their roles
 - [ ] Trace usage of $0301–$0305 initialized in bank 0 (likely initialization queue)
 - [ ] Research what else is missing from ROM research and update next tasks; ensure enough info for a pixel-perfect web port (e.g., precise timing, sound sequences, hidden variables)
 
