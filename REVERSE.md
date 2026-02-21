@@ -76,8 +76,8 @@
 | $43 | EnemyCount | Enemy count remaining in current wave |
 | $46 | PlayerCount | Player count / game mode |
 | $47–$48 | TileX / TileY | Tile coordinates used by $D726 / $DABA |
-| $4A | — | Cleared at init |
-| $4B | CoinBtn | Coin or start button pressed flag |
+| $4A | CoinHeldCounter | VS System coin/service button held counter; INC each NMI while bit 2 or 5 of $4016 set; cleared on release; drives $4B |
+| $4B | CoinCredits | VS System credits counter; INC by NMI_Sub on coin-button release (was non-zero $4A); sets $0300=1 (CoinEventFlag) |
 | $4C | Credits? | Cleared at game start |
 | $4D | NMISyncFlag | 0 = do OAM DMA in NMI; 1 = skip OAM DMA |
 | $4E | DIPBits | DIP switch high 2 bits (from $4017 AND $C0); affects palette |
@@ -100,6 +100,7 @@
 | $6C | EnemySpawnSlot | Entity slot index to try for next enemy spawn (used by $DBF6) |
 | $6F,X | DirTimer | Per-entity direction-change delay timer (X = entity 0–7) |
 | $71–$72 | TargetX/Y | AI navigation target pixel position (set by DirTowardP1/P2/HQ before CalcDirToTarget) |
+| $73–$7A | KillTallyBuf | Per-type enemy kill counts (8 bytes); zeroed by ClearKillTallies at LevelStart; decremented during end-of-level score tally ($CB41/$CB5F); drives $5D/$5E tally display |
 | $7F | EnemiesRemaining | Enemies left to spawn this wave (20→0); checked at 17/10/3 to mark power-up tanks |
 | $80 | EnemyKillsPool | Enemies left to kill for stage clear (20→0); decremented by EnemyKilled |
 | $82 | SpawnDelay | Inter-enemy spawn cooldown (loaded from $84; counts down before next spawn) |
@@ -387,9 +388,12 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $C791 | HUDKillCounterHelper | Compute OAM slot X and sprite Y from HUD index: even→X=$1D, odd→X=$1E; Y=idx/2+3 |
 | $C79F | DrawHUDKillIconA | Draw one HUD kill-counter icon from sprite table $D222 |
 | $C7AE | DrawHUDKillIconB | Draw one HUD kill-counter icon from sprite table $D22B (alternate frame) |
+| $C625 | ClearKillTallies | Zero ZP $73–$7A (8 bytes): kill-tally buffer for all enemy types; called from LevelStart before DrawAllHUDKillIcons |
 | $C7BD | DrawAllHUDKillIcons | Loop $5A=$12→0 step−2 (10 pairs), call $C79F: draw all 10 HUD kill-counter icons |
-| $C7CD | DrawHUDTanks | Draw two tank sprites (tiles $79/$7D) at $0105/$0106; used for HUD enemy-count animation |
-| $C7F8 | HUDTankAnimation | Count down $0108 every 16 frames; if >= $0A: move icon along $D2C6/$D2CA delta path; call DrawHUDTanks |
+| $C7CD | DrawHUDTanks | Draw two tank sprites (tiles $79/$7D) at $0105/$0106 and $0105+$10/$0106; used for HUD enemy-count animation |
+| $C7F8 | HUDTankAnimation | Count down $0108 (HUDTankCount) every 16 frames; when ≥$0A: apply HUDTankWiggleX/Y[$0107] delta to $0105/$0106 (tank X/Y); call DrawHUDTanks; when $0108→0 set $0106=$F0 (off-screen) |
+| $D2C6 | HUDTankWiggleX | 4-entry s8 table: X deltas for HUD tank wobble animation {0,−1,0,+1} (N/W/S/E) |
+| $D2CA | HUDTankWiggleY | 4-entry s8 table: Y deltas for HUD tank wobble animation {−1,0,+1,0} (N/W/S/E) |
 | $D5FC | TileAddrCompute | Tile (X=tileX, Y=tileY) → RAM address: low = tileX | (tileY&7)<<5; high = $04|(tileY>>3). Covers $0400–$07FF |
 | $D82B | DrawNametableTile | Write 4-tile pattern to nametable shadow: index in A, pixel position in X/Y; reads $DB69 palette table; calls $D613/$D7A4 to write tiles into $0400–$07FF |
 | $E838 | BulletTileCollision | Check bullet at (X=pixelX, Y=pixelY) vs tile map; if eagle ($C8): trigger eagle-hit flags; if steel ($10): stop bullet (armored bullet destroys); if water ($11): stop, no destroy; if brick ($00–$0F, sub-tile bit): stop and destroy ($D763) |
@@ -1251,7 +1255,7 @@ Called with enemy freeze time in A:
 ```
 STA $0100    ; EnemyFreezeTimer (freeze all enemies at level start)
 STA $6A      ; also stored in $6A (SpawnRotIdx — reused as init count)
-JSR $C625    ; (score/HUD init — not yet decoded)
+JSR $C625    ; ClearKillTallies — zeros ZP $73-$7A (8 kill-tally bytes for per-type enemy kill counts)
 JSR DrawAllHUDKillIcons
 JSR WaitVBlank
 JSR $C72D, $C756  ; HUD sprite setup
@@ -1265,9 +1269,9 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 
 ## Next Tasks
 
-- [ ] Disassemble $D352 (NMI_Sub) — first subroutine called from NMI handler; purpose unknown
-- [ ] Disassemble $C7F8 — GameUpdate2 step 16 (HUD tank countdown animator); purpose TBD
-- [ ] Disassemble $C625 — called from LevelStart; likely score/HUD init; confirm what it resets
+- [x] Disassemble $D352 (NMI_Sub) — VS System coin/service input handler; double-reads $4016; detects bits $24 (coin/service buttons); $4A=CoinHeldCounter, $4B=CoinCredits, $0300=CoinEventFlag
+- [x] Disassemble $C7F8 — HUDTankAnimation: counts down $0108 (HUDTankCount) every 16 frames; when ≥$0A applies D2C6/D2CA 4-directional wiggle delta to $0105/$0106; calls DrawHUDTanks
+- [x] Disassemble $C625 — ClearKillTallies: zeros ZP $73-$7A (8 bytes of per-type kill tallies) at level start before DrawAllHUDKillIcons
 - [ ] Disassemble $D82B — called at player respawn; likely sound trigger or spawn animation setup
 - [ ] Identify GameState $60 value $30 — when is it set and what mode does it represent
 - [ ] Identify $4C purpose — cleared at game start, referenced in start sequence; possibly credits counter

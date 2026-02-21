@@ -61,3 +61,9 @@
 0,992E,BuildPPUWriteQueue: read byte from ($02)[Y]; lo-nibble=row_count; hi-nibble=col_count; write PPU-addr-hi/lo + tile data to $0301+ cmd buffer; advance src by $20 per column group; terminates with $00 sentinel
 0,96D6,CalcSpeedTiers: X=3..0; compute speed tier 5..0 for each entity from $B0,X (subtract $10/$08 steps); store result in $0370,X (used by AI/movement code)
 0,96F1,FormationDataLoad: X=3..0; for each entity slot read 4 bytes from current stage source via ptr $03/$C0,X; store in $0360,X (enemy type/spawn data array)
+# Session 10 additions
+1,D352,VS System coin/service input handler: double-read $4016 (glitch filter); route bit to $4020 (VS protection); AND #$24 (bits 2&5=coin/service buttons); on press INC $4A (CoinHeldCounter); on release INC $4B (credits counter) + $0300=1 (coin event flag) + clear $4A
+1,C625,ClearKillTallies: loop X=7..0; STA $73,X=#$00; zeros ZP $73-$7A (8 kill-tally bytes used for per-type enemy kill counts in score tally); called at LevelStart before DrawAllHUDKillIcons
+1,C7F8,HUDTankAnimation: $0108=enemies-remaining display count (DEC every 16 frames via FrameLo&$0F); when $0108≥$0A: apply D2C6[Y]/D2CA[Y] delta to $0105/$0106 (X/Y position), Y=$0107 (dir index); call DrawHUDTanks; when $0108=0 set $0106=$F0 (hide sprite)
+1,D2C6,HUDTankWiggleX[4]: signed X deltas for HUD tank arrival animation; {0,-1,0,+1} = N/W/S/E
+1,D2CA,HUDTankWiggleY[4]: signed Y deltas for HUD tank arrival animation; {-1,0,+1,0} = N/W/S/E

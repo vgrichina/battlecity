@@ -208,3 +208,7 @@
 0,992E,BuildPPUWriteQueue
 0,96D6,CalcSpeedTiers
 0,96F1,FormationDataLoad
+# Session 10 additions
+1,C625,ClearKillTallies
+1,D2C6,HUDTankWiggleX
+1,D2CA,HUDTankWiggleY
