@@ -107,6 +107,10 @@
 1,77,ZP_P2KillTally: 4 bytes $77-$7A = P2 kill counts by tank type; set by INC $77,X at $E9B8; summed into $7E; cleared same as P1
 1,D9F0,CompareAndUpdateHiScore: compare P1 score ($15-$1B 7 bytes BCD) vs hi-score ($3D-$43); if P1>hi update $3D-$43 Y=1; compare P2 ($1D-$23); if P2>hi update Y=$FF; else Y=0; only caller: $C216
 1,C4E9,NewHiScoreDisplay: WaitNMI; NametableId=$1C; DrawX=$10 DrawY=$32 SrcPtr=$D16B→$D8F7 (HI-SCORE label); $D9C4 (draw value); WriteNametable; Init2; timers $0315-$0317=1; loop: WaitVBlank+RNG+QueuePaletteWrite until timers clear
+1,C44D,DrawVictoryScreen: final victory (all stages cleared); disable PPU; clear nametables $1C+$24; draw "PEACE BE WITH YOU"(col7 row10) via DrawSprites($D291); draw 9 deco tiles $60-$68(col12 row14) via DrawSprites($D145); draw "NOW LONG WAR"(col10 row7)/"COMES TO"(col12 row10)/"AN END"(col13 row13) via DrawRowTiles; then 240-frame ScrollX slide (INC $4F until $F0); ScrollX=0 ScrollY=2; RTS; called from $C210 when $15|$1D != 0
+1,D291,VictoryMsgData: FF-terminated ASCII strings — $D291="PEACE BE WITH YOU"+$15+FF; $D2A4="NOW LONG WAR"+FF; $D2B1="COMES TO"+FF; $D2BA="AN END"+$69+FF; then anim/palette timing bytes $D2C2-$D2CF
+1,D145,VictoryTileData: $D145=9 graphic tiles $60-$68+FF (deco row used by DrawVictoryScreen); $D14F="BATTLE"+FF; $D156="CITY"+FF; tile pairs and "HISCORE"($D16B) strings used by NewHiScoreDisplay
+1,D91B,DrawRowTiles: draw byte stream from ($13/$14) ptr horizontally; per non-FF byte: calc PPU addr $D5FC(col=$5D row=$5E); enqueue to PPU queue $0180; INC $5D; set $0313=$0314=1; until FF; RTS
 1,C225,GameOverCleanup: WaitNMI + ClearSpriteBuf + WriteNametable + Init2; called after NewHiScoreDisplay before JMP $C0A6
 1,C301,ClearAndRespawn: ClearBulletSlots+ClearEntitySlots; $0106=$F0 $0108=0; if $51>0: PlayerRespawn(X=0 P1); if $52>0: PlayerRespawn(X=1 P2); $7F=$80=$14 timers; $8F=$0A=$45=0
 1,C249,InputBlockDuringFlash: if $68=$80 (HQ active) skip; else zero $06-$09 (P1Dir/P2Dir/P1Fire/P2Fire) — blocks input during palette-flash game-over animation

@@ -289,3 +289,5 @@
 # Session 14: palette DIP remapping
 1,D475,PaletteColorTable
 1,D575,WaitVBlank
+# Session 15: DrawVictoryScreen
+1,D91B,DrawRowTiles

@@ -1355,6 +1355,45 @@ Loop: WaitVBlank → JSR RNG; AND #$3F; JSR QueuePaletteWrite  ; random colour f
       until timers clear
 ```
 
+**DrawVictoryScreen ($C44D)** — final victory screen shown when all stages are cleared (called when $15|$1D ≠ 0 at $C210):
+```
+JSR WaitNMI; ScrollX=ScrollY=0; JSR SetPPUState
+NametableId=$1C → JSR WriteNametable    ; clear nametable 1
+NametableId=$24 → JSR WriteNametable    ; clear nametable 2
+JSR Init2; JSR ClearSpriteBuf
+SrcPtr=$D291, X=7, Y=$0A → JSR DrawSprites   ; "PEACE BE WITH YOU" at col7 row10
+SrcPtr=$D145, X=$0C, Y=$0E → JSR DrawSprites ; 9 deco tiles $60-$68 at col12 row14
+JSR WaitVBlank
+($13)=$D2A4, col=$0A, row=$07 → JSR DrawRowTiles ; "NOW LONG WAR" at row7 col10
+($13)=$D2B1, col=$0C, row=$0A → JSR DrawRowTiles ; "COMES TO" at row10 col12
+($13)=$D2BA, col=$0D, row=$0D → JSR DrawRowTiles ; "AN END" at row13 col13
+LDX #$F0 → JSR WaitVBlankX             ; hide sprites
+; 240-frame horizontal scroll slide
+Loop: JSR WaitVBlank; INC $4F(ScrollX); until $4F==$F0
+ScrollX=0; ScrollY=2
+LDX #$F0 → JSR WaitVBlankX; RTS
+```
+**String data at $D291** (ASCII, $FF-terminated lines):
+- `$D291` = "PEACE BE WITH YOU" + $15 + $FF (9 ASCII chars; $15 may be a punctuation tile)
+- `$D2A4` = "NOW LONG WAR" + $FF
+- `$D2B1` = "COMES TO" + $FF
+- `$D2BA` = "AN END" + $69 + $FF ($69 likely '!' or '.' tile index)
+- `$D2C2–$D2CF` = animation/palette timing bytes (not string data)
+
+**Tile data at $D145** (mixed tile indices and ASCII, $FF-terminated):
+- `$D145` = tile indices $60–$68 + $FF → 9 decorative graphic tiles (used by DrawVictoryScreen)
+- `$D14F` = "BATTLE" + $FF; `$D156` = "CITY" + $FF (used by PreGameDraw/other callers)
+- `$D16B` = "HISCORE" + $FF (used by NewHiScoreDisplay $C4E9)
+
+**DrawRowTiles ($D91B)** — draws a horizontal run of tiles from a ZP-indirect ptr:
+```
+Y=0; $5F=0
+Loop: A = ($13/$14)[Y]; if A==$FF → RTS
+  PHA; LDX=$5D(col), LDY=$5E(row) → JSR $D5FC (calc PPU addr)
+  enqueue (PPU addr hi, PPU addr lo, tile) + $FF sentinel to $0180 queue
+  $0313=$0314=1 (trigger PPU flush); INC $5D (advance col); INC $5F (advance byte); loop
+```
+
 **GameOverScoreScreen ($CF96)** — *not a score display*; called every attract-loop iteration at `$C0A9`:
 ```
 JSR SetGamePalette; WaitNMI; NametableId=$1C
@@ -1666,8 +1705,8 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Disassemble game-over sequence fully — StageEndHandler ($C1A0): 4-phase flow (clear+respawn → eagle-explosion loop → palette-flash loop → tally+decision); CheckGameOver ($C62F) exits loop when A=1 (eagle gone or no lives); DrawGameOverScreen ($C53E) draws "GAME"($D214)+"OVER"($D219) tile strings via $D8F7, waits on anim timers $0318-$031A; CompareAndUpdateHiScore ($D9F0) compares 7-byte BCD $15/$1D vs $3D, updates hi-score buffer $3D-$43, returns Y=0/1/$FF; NewHiScoreDisplay ($C4E9) draws $D16B label + $D9C4 value with random palette flash; GameOverScoreScreen ($CF96) is attract-loop nametable reset (not a score screen); return path → JMP $C0A6 → PreLoop → attract loop
 - [x] Disassemble controller read fully — ControllerDoubleRead ($99D2): NES $4016/$4017 latch+read loop, callers $85D4 (title) and $8670 (gameplay NMI body); Path A (NMI_Sub2 $D68A): double-read with edge-detect → $06/$07 (raw buttons per slot), $08/$09 (just-pressed edges); Path B (ControllerDoubleRead $99D2 → StrobeControllers $9A23 → ReadControllerBits $9A3F): double-read with retry until stable → $14/$15 P1|P2 OR'd raw/filtered, $16/$17 P2 raw/filtered; DecodeDirection ($E50E) called from $DC4D (EnemyAI) to convert raw byte to 0–3 dir value
 - [x] Decode PaletteColorTable ($D475) — 256-byte table ($D475–$D574); 4 variants × 64 NES colour entries; indexed as `base_color | $4E` where $4E = $4017 & $C0 ∈ {$00,$40,$80,$C0}; PaletteApplyDIP ($D46A): saves Y, ORA $4E, TAY, LDA $D475,Y, restores Y, RTS; InitPalette ($D41E): WaitVBlank ($D575) → PPU addr $3F00 → 32-entry DIP-remapped write loop; PaletteData ($D44A): 32 base colours (8 sub-palettes × 4)
-- [ ] Disassemble DrawVictoryScreen ($C44D) — draws victory/stage-clear nametable strings from $D291 and $D145; confirm full sequence and return condition. NOTE: $C53E=DrawGameOverScreen (different routine)
-- [ ] Decode text strings at $D291 and $D145 — raw bytes; determine encoding (ASCII, tile indices, or length-prefixed); $D291 used by DrawGameOverScreen ($C53E); $D145 used by DrawVictoryScreen ($C44D)
+- [x] Disassemble DrawVictoryScreen ($C44D) — full sequence confirmed; called from $C210 when $15|$1D ≠ 0 (enemies still on field at game over); clear nametables $1C+$24; draw "PEACE BE WITH YOU" (DrawSprites from $D291, col7 row10) + 9 deco tiles $60-$68 (DrawSprites from $D145, col12 row14); draw "NOW LONG WAR"/$D2A4, "COMES TO"/$D2B1, "AN END"/$D2BA via DrawRowTiles ($D91B); then 240-frame ScrollX slide (INC $4F until $F0); ScrollX=0 ScrollY=2; hide sprites; RTS
+- [x] Decode text strings at $D291 and $D145 — encoding is ASCII with $FF terminator; $D291 data: $D291="PEACE BE WITH YOU"+$15+FF, $D2A4="NOW LONG WAR"+FF, $D2B1="COMES TO"+FF, $D2BA="AN END"+$69+FF; $D145 data: $D145=9 graphic tile indices $60-$68+FF, $D14F="BATTLE"+FF, $D156="CITY"+FF, $D16B="HISCORE"+FF (plus tile-pair entries for decoration)
 - [ ] Disassemble PlayerUpdateDispatch ($E2AE) — per-frame dispatcher; calls DecodeDirection ($E50E) via $DC30; trace full call chain and what state it updates
 - [x] Decode score-weight table at $D2C2 — **KillScoreTable**: 4 nibble-BCD bytes $10/$20/$30/$40 → 100/200/300/400 pts per tank type (basic/fast/power/armor); used by SetScoreWeight ($DA62) which stores hi-nibble→$3A lo-nibble→$3B; ScoreAdd ($DA31) does 7-digit BCD add into $15,X..$1A,X (X=2 for P1, X=3 for P2)
 
