@@ -349,3 +349,26 @@
 0,82EA,MusicSlotInitTable
 0,8129,Level3SoundInitTable
 0,AFA8,DivBy10
+# Session 14: SoundEngine sequence format fully decoded
+1,EE8B,NoteFreqTable
+1,ED8B,SoundCmdDispatchTable
+1,ECF4,SoundSeqInit
+1,ED2D,SoundSeqDecode
+1,EDAF,SoundCmdStop
+1,EDC6,SoundCmdModVolLo6
+1,EDD8,SoundCmdModVolHi2
+1,EDEA,SoundCmdModVolLo4
+1,EDFC,SoundCmdSetTimerLo
+1,EE06,SoundCmdSetTimerHi
+1,EE10,SoundCmdSetDutyVol
+1,EE1A,SoundCmdLoopReset
+1,EE26,SoundCmdInnerLoop
+1,EE2A,SoundCmdMidLoop
+1,EE2D,SoundCmdOuterLoop
+1,EE3E,SoundCmdSkip
+1,EEDB,SeqBGM_Pulse1
+1,EF02,SeqBGM_Ch2
+1,EF2D,SeqBGM_Ch3
+1,EFD1,SeqCoin
+1,F044,SeqLifeUpP1
+1,F053,SeqLifeUpP2

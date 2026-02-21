@@ -1630,7 +1630,127 @@ STA $0614 = $0F
 - For each active slot: reads sequence byte from ($F0)+5; values 1–4 = channels 0–3; ≥5 = stop channel
 - **APU write** (`$EC80`): `STA $4000,X` with X = channel × 4 (0=sq1, 4=sq2, 8=tri, 12=noise); writes 4 consecutive registers from sequence data at `($F0),Y`
 - **Channel silence** (`$ECAC`): writes `((channel_idx << 2) & $10) XOR $10` to `$4000,X` (clears bit 4 of vol/duty register → volume=0)
-- Sound sequences pointed by `$EEA3` table (14 × 2-byte LE pointers); each sequence is a stream of register bytes + duration + next-pointer
+- Sound sequences pointed by `$EEA3` table (28 × 2-byte LE pointers, one per slot); each sequence is a stream of header bytes + command/note bytes + loop bytes
+
+### Sound Sequence Format (fully decoded — $EC23 engine)
+
+#### Slot data structure ($031C + N×8, 8 bytes)
+
+| Offset | Field | Description |
+|--------|-------|-------------|
+| +0 | `channel_select` | 0=inactive; 1=pulse1($4000); 2=pulse2($4004); 3=triangle($4008); 4=noise($400C); 5–8 = silence (same channels) |
+| +1 | APU reg at base+0 | Duty/volume ($4000/$4004/$4008/$400C) — duty bits 7-6, halt bit 5, const-vol bit 4, vol bits 3-0 |
+| +2 | APU reg at base+1 | Sweep ($4001/$4005) / linear counter ($4009) / unused ($400D) |
+| +3 | APU reg at base+2 | **Timer low** ($4002/$4006/$400A/$400E) — updated each note by pitch decode |
+| +4 | APU reg at base+3 | **Timer hi + length counter** ($4003/$4007/$400B/$400F) — bits 7-3 = length counter load index; bits 2-0 = timer hi (updated per note) |
+| +5 | `seq_offset` | Current byte index into sequence stream (incremented as bytes consumed) |
+| +6 | `dur_remaining` | Note duration countdown (frames); decremented each frame; on 0 → read next command |
+| +7 | `dur_saved` | Total note duration (copied from +6 when note first played) |
+
+#### Sequence stream layout
+
+**Header** (read once when slot priority first set to 1, before command stream):
+- byte 0: `channel_select` (1–4)
+- byte 1: initial APU[+1] (duty/volume)
+- byte 2: initial APU[+2] (sweep/linear)
+- byte 3: initial APU[+4] template (length counter + timer hi bits)
+- byte 4 *(noise/channel=4 only)*: initial APU[+3] ($400E noise period/mode)
+
+**Command stream** (one or more bytes consumed per note event):
+```
+$00–$5F  NOTE: bits 7-3 = semitone index 0-11 (A=0 A#=1 B=2 C=3 C#=4 D=5 D#=6 E=7 F=8 F#=9 G=10 G#=11);
+               bits 2-0 = octave shift 0-7 (right-shift pitch table value N times)
+$60      HOLD: sustain current note; use stored duration (no new pitch written)
+$61–$E7  DURATION: frames = byte − $60 (range 1–$87); stored at slot[+6]
+$E8      STOP: deactivate slot ($0300,X ← 0; channel_select ← 0)
+$E9      MODIFY VOL low-6: slot[+1] = (slot[+1] & $3F) | next_byte
+$EA      MODIFY VOL high-2: slot[+1] = (slot[+1] & $C0) | next_byte
+$EB      MODIFY VOL low-4: slot[+1] = (slot[+1] & $F0) | next_byte
+$EC      SET SWEEP: slot[+2] = next_byte (replaces $4001 sweep register)
+$ED      SET TIMER-HI: slot[+4] = next_byte (replaces $4003 entirely)
+$EE      SET DUTY/VOL: slot[+1] = next_byte (replaces $4000 entirely)
+$EF      LOOP-RESET: clears loop counters ZP $F6/$F7/$F8 to 0
+$F0      INNER-LOOP (counter 0/$F6): next_byte=repeat_count; byte_after=restart_offset
+$F1      MID-LOOP   (counter 1/$F7): next_byte=repeat_count; byte_after=restart_offset
+$F2      OUTER-LOOP (counter 2/$F8): next_byte=repeat_count; byte_after=restart_offset
+$F3–$F7  SKIP: advance seq_offset by 1 (skip one byte)
+```
+Loop commands: on each pass, increment counter; if counter == repeat_count → clear counter and skip (fall through); else → set `seq_offset` = restart_offset and re-execute from there.
+
+#### Note pitch table ($EE8B, 12 × 2 bytes)
+
+Indexed as `X = semitone_index * 2`. Each entry: FD = hi byte (bits[10:8] of period in bits[2:0]), FE = lo byte (bits[7:0]).
+Effective 11-bit timer period = `((FD & 7) << 8) | FE`. After `octave` right-shifts: `period >>= octave`.
+
+| Idx | Note | Raw FD/FE | Period (oct 0) | Base freq |
+|-----|------|-----------|---------------|-----------|
+| 0 | A  | $07/$F2 | 2034 | 55.0 Hz (A1) |
+| 1 | A# | $07/$80 | 1920 | 58.3 Hz |
+| 2 | B  | $07/$14 | 1812 | 61.7 Hz |
+| 3 | C  | $06/$AE | 1710 | 65.3 Hz (C2) |
+| 4 | C# | $06/$43 | 1603 | 69.6 Hz |
+| 5 | D  | $05/$F4 | 1524 | 73.2 Hz |
+| 6 | D# | $05/$9E | 1438 | 77.6 Hz |
+| 7 | E  | $05/$4E | 1358 | 82.2 Hz |
+| 8 | F  | $05/$02 | 1282 | 87.1 Hz |
+| 9 | F# | $04/$BA | 1210 | 92.3 Hz |
+| 10 | G  | $04/$76 | 1142 | 97.8 Hz |
+| 11 | G# | $04/$36 | 1078 | 103.6 Hz |
+
+Base octave (shift=0) plays the note at A1–G#2 range. Each +1 octave shift doubles the frequency (one octave up).
+
+#### Sound Sequence Pointer Table ($EEA3)
+
+28 × 2-byte LE pointers (slots 0–27):
+| Slot | Sequence addr | Channel | Usage |
+|------|--------------|---------|-------|
+| 0 | $EFD1 | — | Coin-insert jingle |
+| 1 | $EEDB | pulse1 | BGM channel 1 |
+| 2 | $EF02 | — | BGM channel 2 |
+| 3 | $EF2D | — | BGM channel 3 |
+| 4 | $F044 | — | Life-up jingle P1 |
+| 5 | $F053 | — | Life-up jingle P2 |
+| 6 | $EFBE | — | SFX slot 6 |
+| 7 | $EF58 | — | SFX slot 7 |
+| 8 | $EF7A | — | SFX slot 8 |
+| 9 | $EFED | — | SFX slot 9 |
+| 10 | $EFA8 | — | SFX slot 10 |
+| 11 | $EF99 | — | SFX slot 11 |
+| 12 | $F003 | — | SFX slot 12 |
+| 13 | $EFFB | — | SFX slot 13 |
+| 14 | $F00C | — | SFX slot 14 |
+| 15 | $EFB7 | — | SFX slot 15 |
+| 16 | $F03A | — | Enemy-fire SFX |
+| 17 | $F031 | — | SFX slot 17 |
+| 18 | $F027 | — | SFX slot 18 |
+| 19 | $F018 | — | Kill sound |
+| 20 | $F01F | — | Kill sound 2 |
+| 21 | $F066 | — | SFX slot 21 |
+| 22 | $F084 | — | SFX slot 22 |
+| 23 | $F0AF | — | SFX slot 23 |
+| 24 | $F0E1 | — | SFX slot 24 |
+| 25 | $F0F4 | — | SFX slot 25 |
+| 26 | $F107 | — | SFX slot 26 |
+| 27 | $EFDF | — | SFX slot 27 |
+
+#### BGM sequence $EEDB (slot 1) — partial decode
+
+Header: channel=1 (pulse1), $4000=$81 (duty=50%, vol=1, envelope), $4001=$7F (sweep off), $4003 template=$40 (length=8).
+Command stream (starting at offset 4):
+```
+$EF           ; clear loop counters
+$68 $1B       ; dur=8, note C5 (idx=3, oct=3, period=213 ≈ 523 Hz)
+$2B           ; note D5  (idx=5, oct=3, period≈190 ≈ 587 Hz)
+$33           ; note D#5 (idx=6, oct=3, period≈179 ≈ 622 Hz)
+$F0 $02 $06   ; inner-loop ×2 back to offset 6 (repeat C5/D5/D#5)
+$33 $43 $53   ; D#5, F5, G5
+$F0 $02 $0C   ; inner-loop ×2 back to offset 12
+$43 $53 $04   ; F5, G5, A5 (oct=4 → period≈127 ≈ 880 Hz)
+$F0 $02 $12   ; inner-loop ×2 back to offset 18
+$5B $0C $1C   ; G#5, Bb5, C6
+…             ; ascending melody continues
+```
+Ascending chromatic scalar melody is Battle City's main in-game BGM.
 
 ### Sound slot priority array ($0300–$031B)
 
@@ -1960,7 +2080,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Research what else is missing from ROM research and update next tasks; ensure enough info for a pixel-perfect web port — decoded BulletMoveCollision ($E7A9), EnemyBulletPlayerHit ($E8B1), BulletVsBulletCancel ($EAB5); confirmed tile passability boundary ($20), ice=passable/no-slide, bullet slot ownership; documented RAM flags $030A-$030E; added 7 new critical tasks below
 
 ### New tasks (session 11 — web port gap fill)
-- [ ] Decode SoundEngine sequence format ($EC23): determine exact byte layout for sequences at $EEDB/$EF02/$EF2D/$EFD1/$F044/$F053 — each slot's bytes include: channel-select (1–4), 4 APU register bytes, duration byte, loop/next pointer; decode the first few sequences to extract music note data (pitch, duty, volume per frame)
+- [x] Decode SoundEngine sequence format ($EC23): fully documented — 5-field slot structure ($031C+N×8), 4-byte header (ch, duty/vol, sweep, timer-hi template), note bytes $00-$5F (semitone idx 3 bits + octave 3 bits), duration $61-$E7, 8 special cmds $E8-$EF, 3-level loop cmds $F0-$F2; 12-note pitch table at $EE8B (A1–G#2); 28-slot SoundSeqPtrTable at $EEA3; BGM slot 1 ($EEDB) decoded as ascending chromatic scalar melody (C5→D5→D#5→F5→G5→A5→…)
 - [ ] Disassemble DrawSprites ($D6D3): used by BlinkTitleSprite, DrawHUDKillIconA/B, PreGameDraw, DrawVictoryScreen — document input format (X=count, Y=dest, SrcPtr=$11/$12): likely a variable-length table of (OAM-offset, tile, attr, x, y) 5-byte entries; critical for implementing all HUD and title rendering
 - [ ] Disassemble score display routines $D9A7 (2-digit stage/score draw) and $D9C4 (hi-score display); $D8F7 (draw tile-string to nametable) — needed to render score HUD and game-over score screen
 - [ ] Map HUD exact pixel layout: enemy kill-counter icons ($C7BD/$C7AE — 10 pairs at rows 3–12 col 28–30), player lives sprites ($0105/$0106 = P1 lives tank, 3 tiles), P2 lives, score digits positions; all OAM slots/positions needed for faithful HUD rendering

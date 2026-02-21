@@ -148,4 +148,9 @@
 1,E7A9,BulletMoveCollision: loop slots 9→0; skip non-active; compute |dx|/|dy| and *4; probe1=BulletTileCollision(BX,BY); if hit probe2 at (BX+4|dy|,BY+4|dx|); probe3=BulletTileCollision(BX-|dx|,BY-|dy|); if hit probe4; alternating-frame skip for non-double-shot via (slot XOR $0B)&1
 1,E8B1,EnemyBulletPlayerHit: dual loop — Loop1(players X=1→0 vs enemy bullets Y=7→1): 10x10px check; shield→deflect; else death $A0,X=$73,$0307=1. Loop2(enemies X=7→2 vs player bullets Y where Y&6==0): 10x10px; armor hit→$EA63,DEC $A8,X,$030E=1; destroy→$030A=1,score
 1,EAB5,BulletVsBulletCancel: only player bullet slots (slot&6==0); inner loop all slots; same-entity skip; both active $40-$4F within 6x6px → both CC=0
+# Session 14: SoundEngine sequence format
+1,EE8B,NoteFreqTable: 12×2-byte entries (FD=hi,FE=lo of 11-bit period); A(2034) A#(1920) B(1812) C(1710) C#(1603) D(1524) D#(1438) E(1358) F(1282) F#(1210) G(1142) G#(1078); base octave A1-G#2
+1,ED8B,SoundCmdDispatchTable: 16×ptr16 for cmds $E8-$F7; stop/modvol/setregs/$EF-loop-reset/$F0-$F2 loops/$F3-$F7 skip
+1,ECF4,SoundSeqInit: reads 4 header bytes (ch,APU1,APU2,APU4) into slot+0/1/2/4; noise reads extra byte into +3; resets seq_offset=0
+1,ED2D,SoundSeqDecode: main loop; $00-$5F=note(semitone=bits7-3 octave=bits2-0); $60=hold; $61-$E7=dur(byte-$60); $E8+=cmd dispatch
 1,E838,BulletTileCollision: (X=px,Y=py)→TilePosLookup→SubTileBitmask→TileCollidableCheck; eagle→$68=$27,$030B=$0307=1; water→$030D=1 player only; steel→$030D=1 player only; brick→TileDestroyBrick,$030C=1 player only; returns A=1 (hit) A=0 (no hit)
