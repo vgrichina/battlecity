@@ -85,12 +85,14 @@
 1,E50E,DecodeDirection
 1,E529,DirDeltaTable
 1,E531,EnemySpawnX
+1,E534,EnemySpawnY
 1,E537,PlayerSpawnX
 1,E539,PlayerSpawnY
 1,E53B,InitState
 1,E555,MovementDispatch
 1,E575,MoveUpdateDispatch
 1,E595,BulletDispatchTable
+1,E543,DirToStateTable
 1,E6A9,SpeedTable
 1,E7A9,ScoreDraw
 1,E8B1,HUDDraw
@@ -112,3 +114,21 @@
 0,8B48,Level4Init
 0,8B63,JmpThruPtr0
 0,86E0,StageLoader
+# Session 3 additions
+1,DDFC,RandomDirChange
+1,DE22,ClampXMove
+1,DE2A,ClampYMove
+1,DE32,DirTowardP1
+1,DE3D,DirTowardP2
+1,DE48,DirTowardHQ
+1,DE50,DirTowardTarget
+1,DE56,CalcDirToTarget
+1,DB5D,SignFn
+1,DF26,SpeedCtrlMove
+1,D5FC,TileAddrCompute
+1,D82B,DrawNametableTile
+1,E838,BulletTileCollision
+1,E330,DrawPlayerShield
+1,DBF6,EnemySpawnDispatch
+1,DBB9,CheckPlayersMoving
+1,DBE6,PlayerMovingCheck
