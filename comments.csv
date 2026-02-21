@@ -50,3 +50,14 @@
 0,B1E4,EntityAnimLoop: X=2->1; DEC $80,X by 2 (borrow->DEC $84,X); LDA $A858,X->$04/$94,X; JSR $B20A+$988C; Y=2 JMP $B4D9
 0,B20A,EntitySpriteLayout: OAM layout for entity X; reads $A82A,Y (pos) and $A841,Y (attr); calls $9811; Y=$16 special case (+$0C/$08 offsets); checks $0E visibility
 0,B4D9,EntityAnimContinue: Y=$05 loop; $03C8,Y entity ref; $A858,Y->$07; range-check $80,X ($70-$90); JSR $AB4A
+# Session 9 additions
+1,E386,EagleStateUpdate: exit if $68=0 or neg; DEC $68; x=$68>>2; Y=2×||(x-5)|-5|; JMP via EagleHandlerTable (39-frame animation)
+1,E3BA,EagleHandlerTable[6]: Y=0→NullHandler($DC9E); Y=2→EagleExplosion1(tile$F1); Y=4→EagleExplosion2(tile$F5); Y=6→EagleExplosion3(tile$F9); Y=8→EagleDrawIntact; Y=10→EagleDrawDamaged
+1,E855,Eagle bullet hit: if $68≠0 set $68=$27 (start 39-frame destruction timer); $030B=$0307=1; STA $CC,X=#$33
+1,C354,$68=$80 = GameActive flag set at level start; same ZP used as eagle destruction countdown (1..$7F) and game-over check (0)
+1,CF44,LivesGrantCheck: if $68=$80 (game active) and P1 score-tier $17≥2 or extra-life flag $66≥1: INC $51(P1Lives)+INC $66; same for P2 ($83/$52/$67); sets $0304=$0305=1 (trigger HUD update)
+0,9764,LevelScreenInit: wait VBlank, call PPU tile writers (D65A/D62F/D6C7/D6FE), zero OAM buffer to $F8, load enemy formation (96F1), init HQ sprites (971F)
+0,971F,HQSpriteInit: set $00/$01=$2356(PPU nametable dst); $02/$03=$0400(RAM src); $0400=$17 $0402=$0405=$FB; copy $0409-$040F→$0401-$0407; JMP BuildPPUWriteQueue($992E)
+0,992E,BuildPPUWriteQueue: read byte from ($02)[Y]; lo-nibble=row_count; hi-nibble=col_count; write PPU-addr-hi/lo + tile data to $0301+ cmd buffer; advance src by $20 per column group; terminates with $00 sentinel
+0,96D6,CalcSpeedTiers: X=3..0; compute speed tier 5..0 for each entity from $B0,X (subtract $10/$08 steps); store result in $0370,X (used by AI/movement code)
+0,96F1,FormationDataLoad: X=3..0; for each entity slot read 4 bytes from current stage source via ptr $03/$C0,X; store in $0360,X (enemy type/spawn data array)

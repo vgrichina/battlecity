@@ -190,3 +190,21 @@
 0,B4D9,EntityAnimContinue
 0,988C,SpriteFillHelper
 0,9811,SpriteTileDraw
+# Session 9 additions
+1,E386,EagleStateUpdate
+1,E3BA,EagleHandlerTable
+1,E3C6,EagleExplosion1
+1,E3CB,EagleExplosion2
+1,E3D0,EagleExplosion3
+1,E3D2,EagleDrawCenter
+1,E3DC,EagleDrawSingle
+1,E3E2,EagleDrawIntact
+1,E3EA,EagleDrawDamaged
+1,E3F2,EagleDrawFull
+1,C33D,LevelStart
+1,CF44,LivesGrantCheck
+0,9764,LevelScreenInit
+0,971F,HQSpriteInit
+0,992E,BuildPPUWriteQueue
+0,96D6,CalcSpeedTiers
+0,96F1,FormationDataLoad

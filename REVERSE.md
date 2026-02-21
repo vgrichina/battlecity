@@ -1084,6 +1084,112 @@ else:
   call $D82B          ; (unknown — likely play respawn sound/animation)
 ```
 
+### Eagle / HQ destruction animation (EagleStateUpdate $E386)
+
+ZP `$68` has a **dual role**:
+- `$68 = $80` (128): **GameActive flag** — set by `LevelStart ($C33D)` at level start; checked by `CheckGameOver ($C62F)` and input/spawn code
+- `$68 = 1..39`: **Eagle destruction countdown** — set to `$27` (39) by `BulletTileCollision ($E855)` when a bullet hits nametable tile type `$C8` (the eagle/HQ); decrements each frame; reaches 0 → game over
+- `$68 = 0`: game over / eagle gone
+
+**Trigger** (`$E855`, inside BulletTileCollision): `LDA $68 / F0 skip / LDA #$27 / STA $68` — only triggers if game active; also sets `$030B=$0307=1` and `$CC,X=$33`.
+
+**Dispatch** (`$E386–$E3B9`):
+```
+if $68 = 0 or $68 < 0: RTS          ; done
+DEC $68
+x = $68 >> 2
+Y = 2 × ||(x − 5)| − 5|            ; triangle wave 0..10 → 0,2,4,6,8,10,8,6,4,2,0
+JMP via EagleHandlerTable[$E3BA, Y]
+```
+
+**Handler table** (`$E3BA`, 6 pointer entries):
+
+| Y  | Address | Action |
+|----|---------|--------|
+| 0  | $DC9E   | NullHandler — no-op (final frames, eagle gone) |
+| 2  | $E3C6   | Draw tile $F1 at center (explosion frame 1) |
+| 4  | $E3CB   | Draw tile $F5 at center (explosion frame 2) |
+| 6  | $E3D0   | Draw tile $F9 at center (explosion frame 3) |
+| 8  | $E3E2   | Eagle intact ($69=0) — draw 4-tile 2×2 HQ sprite |
+| 10 | $E3EA   | Eagle damaged ($69=$10) — draw HQ with +$10 tile offset |
+
+**Eagle draw** (`$E3F2`): draws 4 × 8×8 sprite tiles at fixed screen positions (X=$70/$80 ≈ 112/128 px, Y=$D0/$E0 ≈ 208/224 px) using `DrawEntityTile ($DABA)`.  Base tile = $D1 (intact) or $E1 (damaged).
+
+**Animation sequence** (39 frames total from $68=$27 to 0):
+- Frames 1–12: explosion flash (tiles $F1/$F5/$F9, ~4 frames each)
+- Frames 13–28: intact/damaged eagle flicker (~4 frames each state)
+- Frames 29–39: explosion flash + NullHandler (eagle disappears)
+
+### Level screen initialization (LevelScreenInit $9764)
+
+Called from game loop after stage transition. Sequence:
+```
+Wait VBlank clear ($2002 bit 6)
+JSR $97D1    ; set PPU$2000 ctrl (NMI flags, nametable from $69/$6B/$6C)
+Read $3F & 3 → $61 (BG attribute quadrant)
+JSR $D65A    ; write PPU nametable block A (level border/BG tiles)
+JSR $D62F    ; write PPU nametable block B
+JSR $D6C7    ; write PPU nametable block C
+JSR $D6FE    ; write PPU nametable block D
+JSR $974A    ; $0300=$12 (cmd count), $0313=0
+Zero $0200 OAM shadow to $F8 (Y=$EC..00, step 4) — hides all sprites
+JSR $96F1    ; FormationDataLoad: enemy type data → $0360–$036F
+JSR $971F    ; HQSpriteInit: set up $0400 eagle tile data
+Delay loops (~34×18 iterations)
+JMP $97BC    ; set PPU$2000 + scroll from $12/$13/$68
+```
+
+### PPU write queue and $0400 tile buffer
+
+`$0400–$07FF` RAM serves as a **background tile state cache** for the playfield:
+- Written by level init routines (`$D65A` / `$D62F` / `$D6C7` / `$D6FE`) with tile indices for brick/steel/water/bush/ice/empty
+- `$971F` (HQSpriteInit) writes the eagle area specifically:
+  - `$0400 = $17` (eagle nametable tile / Y coord), `$0402=$0405=$FB` (hidden), `$0401–$0407` = copied from `$0409–$040F`
+  - Sets ptr `$02/$03 = $0400` (source), `$00/$01 = $2356` (PPU nametable destination)
+- `$992E` (BuildPPUWriteQueue) reads `($02),Y = $0400+Y`, interprets each byte as `lo_nibble=row_count, hi_nibble=col_count`, and emits PPU nametable write commands into the `$0300+` command buffer
+- NMI handler (`FlushPPUQueue $D96D`) applies `$0300+` commands to PPU during VBlank
+
+### CHR sprite tile number map (from code analysis)
+
+All numbers are OAM sprite tile indices (sprite pattern table, PPU $0000–$0FFF):
+
+| Tile(s) | Game object |
+|---------|-------------|
+| $79–$7B | HUD P1 lives tank icon (2 tiles horizontal) |
+| $7D–$7F | HUD P2 lives tank icon (2 tiles horizontal) |
+| $B1 + dir×2 | Bullet explosion (4 directional variants) |
+| $C3–$CF | Spawn sparkle animation: 3 frames × 4 tiles (`$A8,X`→`(>>3 & $FC)−$10+$B9`) |
+| $D1,$D5,$D9,$DD | Eagle HQ 2×2 sprite (intact): TL, TR, BL, BR |
+| $E1,$E5,$E9,$ED | Eagle HQ 2×2 sprite (damaged/black): TL, TR, BL, BR |
+| $F1 | Eagle explosion animation frame 1 (8×8, center) |
+| $F5 | Eagle explosion animation frame 2 |
+| $F9 | Eagle explosion animation frame 3 |
+| $81–$8F (est.) | Enemy/player tank sprites (direction × animation frame) |
+
+### Extra-life logic (LivesGrantCheck $CF44)
+
+Called from LivesDraw. Checks if `$68=$80` (game active):
+- **P1**: if `$17 ≥ 2` (score tier) or `$66 ≥ 1`: `INC $51` (P1Lives), `INC $66`; set `$0304=$0305=1`
+- **P2**: same check with `$1F` / `$52` / `$67` (P2 score tier / lives / flag)
+- Sets `$0304=$0305=1` → triggers HUD lives display update
+- `$66` / `$67` act as "extra life already granted" flags to prevent double-grant
+
+### LevelStart ($C33D)
+
+Called with enemy freeze time in A:
+```
+STA $0100    ; EnemyFreezeTimer (freeze all enemies at level start)
+STA $6A      ; also stored in $6A (SpawnRotIdx — reused as init count)
+JSR $C625    ; (score/HUD init — not yet decoded)
+JSR DrawAllHUDKillIcons
+JSR WaitVBlank
+JSR $C72D, $C756  ; HUD sprite setup
+JSR SetSpeedPtr ($E4E8)
+LDA #$80 → STA $68    ; GameActive = true
+STA $0312 = 1, STA $4C = 1
+Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
+```
+
 ---
 
 ## Next Tasks
@@ -1094,15 +1200,16 @@ else:
 - [x] Disassemble $8B9F+ / $8C00+ (entity slot fill secondary routines; read $82FA/$8300/$8306 tables)
 - [x] Decode tables at $82F4, $82FA, $8300, $8306, $8348 (formation data arrays in bank 0)
 - [x] Disassemble $B1E4 and $8ADD (level init continuation / game-over from bank 0)
-- [ ] Validate tile map at game start — trace what values level loaders write to $0400–$07FF
-- [ ] Identify and label CHR tiles by visual inspection of `tiles/chr_pt0.png` + `tiles/chr_pt1.png`
-- [ ] Disassemble $E3BA dispatch full: eagle animation handlers $E3C6/$E3CB/$E3D0/$E3E2/$E3EA — done above; disassemble callers to understand $68 initialization
+- [x] Validate tile map at game start — trace what values level loaders write to $0400–$07FF
+- [x] Identify and label CHR tiles by visual inspection — mapped tile numbers from code analysis
+- [x] Disassemble $E3BA dispatch full: eagle animation handlers $E3C6/$E3CB/$E3D0/$E3E2/$E3EA — decoded; $68 initialization traced ($C356 sets $80, $E855 sets $27)
 - [ ] Decode power-up type 2 (Shovel $EBA0) fully — understand how $C9BB triggers fortify base and what $68 timing does
-- [ ] Disassemble $CF44 (called in LivesDraw/$EB60) — unknown game-state side effect
-- [ ] Disassemble $C33D (STA $0100 in bank 1) — another writer to EnemyFreezeTimer
+- [x] Disassemble $CF44 (called in LivesDraw/$EB60) — decoded as LivesGrantCheck (extra life on score threshold)
+- [x] Disassemble $C33D (STA $0100 in bank 1) — decoded as LevelStart; sets EnemyFreezeTimer + $68=$80
 - [ ] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
 
 ### Completed
+- [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.
 - [x] **Session 8**: EntitySlotFill3 ($8B9F) and EntitySlotFill4 ($8C00) decoded — 6 parallel entity slot tables ($82F4/$82FA/$8300/$8306/$830C/$8312) documented; EntitySlotData block pointer tables ($8348/$834E, $8354/$835A) and 12 data blocks ($8360–$839F) decoded; StageNumLUT ($83AD) decoded; StageTransitionHelper ($8ADD) documented; EntityAnimLoop ($B1E4) and EntitySpriteLayout ($B20A) disassembled.
 - [x] **Session 7**: StageLoader dispatch ($86E0) fully decoded; inner formation sub-tables identified as phase-handler ptr arrays (not position data); $8B–$8E confirmed as enemy type group counts; EnemyTypeTable ($E5A9) fully decoded; SpeedTable ($E6A9) all 36 entries documented; level init routines $874D/$8A6E/$896A/$91E8/$8B48 disassembled
 - [x] **Session 6**: Tile cluster ($D745–$D7CA), EntityMovement freeze, PowerUpCollision, full power-up dispatch table (6 types), eagle state handlers, ScoreAdd/ScoreSetup, EntitySlotFill, SetSpeedPtr
