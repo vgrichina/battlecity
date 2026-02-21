@@ -6,7 +6,7 @@
 1,D3BF,Init
 1,D396,Init2
 1,CFAA,PreLoop
-1,CF96,MainLoop
+# CF96 is GameOverScoreScreen (labeled below)
 1,C65C,MainLoop_2
 1,C67B,MainLoop_3
 1,C389,MainLoop_4
@@ -29,7 +29,7 @@
 1,DF5A,MoveUpdate
 1,E18C,CollisionUpdate
 1,C62F,CheckGameOver
-1,EBF6,GameOverHandler
+# EBF6 = SoundResetInit (labeled below, not GameOverHandler)
 1,D6D3,DrawSprites
 1,D95F,WaitVBlank
 1,D966,WaitVBlankX
@@ -241,10 +241,29 @@
 0,90CA,SoundOff
 0,90C8,SoundReset
 # Session traces: game-over screen, controller read, score table
-1,C44D,DrawGameOverScreen
+1,C44D,DrawVictoryScreen
+1,C53E,DrawGameOverScreen
+1,CF96,GameOverScoreScreen
+1,C42C,GameOverExit
+1,C62F,CheckGameOver
 0,99D2,ControllerDoubleRead
-1,D291,GameOverStringA
-1,D145,GameOverStringB
+1,D214,StrGAME
+1,D219,StrOVER
+1,D291,StrPeaceBeWithYou
+1,D2A4,StrNowLongWar
+1,D2B1,StrComesTo
+1,D2BA,StrAnEnd
+1,D145,VictorySpritesData
+1,D14F,StrBATTLE
+1,D156,StrCITY
+1,D15B,SprP1Icon
+1,D15E,SprP2Icon
+1,D167,SprHiLabel
+1,D16B,StrHISCORE
+1,D17C,SprP1PlayerLabel
+1,D185,SprP2PlayerLabel
+1,D1E7,StrCopyright
+1,D1FE,StrAllRightsReserved
 1,D2C2,KillScoreTable
 # Stage-clear score tally screen
 1,CAF1,StageClearTallyScreen
