@@ -45,9 +45,9 @@
 | $0100–$017F   | Stack (128 bytes; SP initialised to $7F) |
 | $0180–$01FF   | PPU write queue (applied during VBlank by NMI) |
 | $0200–$02FF   | OAM shadow buffer (DMA'd to PPU at NMI) |
-| $0300–$031B   | Sound slot priority array: 28 bytes; $0300,X (X=0–27) is the active-priority counter for sound slot X; 0=inactive, >0=active; zeroed by SoundResetInit ($EBF6); **slot 0** ($0300)=CoinEventFlag; **slots 1–3** ($0301–$0303)=main game music channels (all set to $01 simultaneously at GameLoopTop $C18A to trigger sq1/sq2/triangle music; during gameplay Level0Init also continuously writes $D4/$D3/$60 to these); **slots 4–5** ($0304–$0305)=life-gained jingle (set to $01 at $EBE7/$EBEA for P1 and $CF8F/$CF92 for P2); $0310=enemy fire slot 16; $0313–$0314=kill event slots 19–20; **dual-use during level init as PPU tile write queue**: $0300 = queue head index (set to $12 by PPUQueueHeadInit $974A), $0301+$12=$0313 onward = queue entries (format: PPU_hi, PPU_lo, count, N×tile_bytes, $00-terminator); queue built by BuildPPUWriteQueue ($992E, capacity $3E entries); head reset and $0313 cleared at LevelScreenInit ($9764) via PPUQueueHeadInit |
-| $031C–$03F3   | Sound slot data structures: 28×8 bytes; slot N at $031C+(N×8); each entry: [channel_select, 4×APU_regs, duration, ...]; channel_select 1–4=write ch 0–3, 5–8=silence ch 0–3; zeroed by SoundResetInit |
-| $03F4–$03FF   | Possibly unused / padding at end of sound workspace |
+| $0300–$031B   | Sound slot priority array: 28 bytes; $0300,X (X=0–27) is the active-priority counter for sound slot X; 0=inactive, >0=active; zeroed by SoundResetInit ($EBF6); **slot 0** ($0300)=CoinEventFlag; **slots 1–3** ($0301–$0303)=main game music channels (all set to $01 simultaneously at GameLoopTop $C18A to trigger sq1/sq2/triangle music; during gameplay Level0Init also continuously writes $D4/$D3/$60 to these); **slots 4–5** ($0304–$0305)=life-gained jingle (set to $01 at $EBE7/$EBEA for P1 and $CF8F/$CF92 for P2); $0310=enemy fire slot 16; $0313–$0314=kill event slots 19–20; **dual-use during level init as PPU tile write queue**: $0300 = queue head index (set to $12 by PPUQueueHeadInit $974A), $0301+$12=$0313 onward = queue entries (format: PPU_hi, PPU_lo, count, N×tile_bytes, $00-terminator); queue built by BuildPPUWriteQueue ($992E, capacity $3E entries); head reset and $0313 cleared at LevelScreenInit ($9764) via PPUQueueHeadInit; **triple-use during bank 0 entity/wave init**: EntitySlotFill4 ($8C00) writes 6-byte entity slot template to $0304–$0309 and WaveCtrlInit table ($8312: $09,$23,$54,$06) to $0300–$0303 before JMP $8B98 (these are temporary staging writes; per-frame music engine overwrites $0301–$0303 afterward) |
+| $031C–$03F3   | Sound slot data structures: 28×8 bytes; slot N at $031C+(N×8); each entry: [channel_select, 4×APU_regs, duration, ...]; channel_select 1–4=write ch 0–3, 5–8=silence ch 0–3; zeroed by SoundResetInit; slot 0 channel_select at $031C set to 1 (sq1) from $CC93/$CCEA (kill-event sound trigger paired with $031B priority=1) |
+| $03F4–$03FF   | Possibly slot 27 data area (slot 27 = $031C+27×8=$03F4); set to 1 at $CC90/$CCE7 via priority-counter $031B=1 |
 | $0400–$07FF   | Sprite work buffer (4 pages, zeroed each frame) |
 | $8000–$BFFF   | PRG bank 0 code/data (level init routines + level tables) |
 | $C000–$FFFF   | PRG bank 1 code/data (all engine code) |
@@ -1657,6 +1657,21 @@ Sound slot data structures: slot N lives at `$031C + N×8` (8 bytes).
 `$974A` initialises head to `$12` (=18) before `HQSpriteInit` appends HQ sprite tiles from $0313 onward.
 After all bank-0 level-init code completes, `SoundResetInit` zeroes $0300–$031B, wiping the queue and initialising the sound priority array for gameplay.
 
+**Bank 0 $0301–$0305 usage map (traced session 10):**
+
+| Site | Address range written | Values / Source | Context |
+|------|-----------------------|-----------------|---------|
+| `Level0Init` tick ($874D, $87F8) | $0301–$0305 | $D4→$0301, $D3→$0302, #$60→$0303, #$FC→$0304, #$00→$0305 | Per-frame music pitch update (when $D2≠2); $D3/$D4 are scroll/phase accumulators cycling per-step |
+| `EntitySlotFill4` ($8C00, $8C24–$8C48) | $0304–$0309, $0300–$0303 | 6-byte entity template from ($00),Y → $0304–$0309; WaveCtrlInit ($8312: $09,$23,$54,$06) → $0300–$0303 | One-time staging write during wave init; temporal separation ensures music engine overwrites afterward |
+| Music reset ($8CF2) | $0301–$0308 | Table $82EA ($23,$15,$04,$2C,$FE,$FE,$FE,$00) | Reset 8 sound slots to initial priorities (Y=7..0 bulk copy) |
+| Kill-jingle trigger ($8CCC) | $0301–$0305 | $21→$0301, $1A→$0302, $01→$0303, computed→$0304 | Music phrase start; computed = (enemy-kill count + 1) base-10 digit |
+| Level-3 init ($91CA, $91CD) | $0301–$0306 | Table $8129 ($20,$D4,$02,$9B,$00,$00) then digits of ($5D+$0613+1)÷10 | Wave-specific sound init; $0304/$0305 get hundreds/tens digits of score-like sum |
+| Music sequence engine ($BC80+, $BCC8–$BCD4) | $0301–$0303 | ZP $EA→$0301, ZP $E9→$0302, #$8F→$0303 | Per-note update; $E9/$EA are channel pitch registers, #$8F = triangle linear-counter hold |
+| Note data loop ($BD36–$BD44) | $0304–$0312 | $FC fill then music-seq bytes via ($05),Y | Initialise 15 priority slots (4–18) for a chord/polyphonic note block |
+| Score-display ($8D03–$8D1C) | $0305–$0307 | Digit decomposition of $6D via ÷10 helper $AFA8 | Decimal-digit encoding; written to sound priority slots used as HUD digit index |
+
+**Key insight**: $0301–$0305 are legitimately the NMI sound priority counters during gameplay.  Bank 0 level-init code exploits the same addresses as temporary scratch/staging storage before the per-frame music engine takes over.  `SoundResetInit` ($EBF6) provides the clean transition point.  The music engine in bank 0 ($BC80 seq-player, $87F8 pitch-update) writes to these slots every frame to keep music channels active; `SoundEngine` ($EC23) in the NMI reads them and writes 4 APU regs from slot data at $031C+N×8.
+
 ### Title screen / attract mode
 
 **AttractWait ($C65C)**:
@@ -1873,7 +1888,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Identify bitmask meanings for `StageFlagsTable` ($80B6)
 - [x] Disassemble `StageLoader` helpers at $98E0, $98BE, and $97B1 (Bank 0)
 - [x] Investigate ZP variables $D0–$D4 in `Level0Init` ($874D) and their roles
-- [ ] Trace usage of $0301–$0305 initialized in bank 0 (likely initialization queue)
+- [x] Trace usage of $0301–$0305 initialized in bank 0 (likely initialization queue)
 - [ ] Research what else is missing from ROM research and update next tasks; ensure enough info for a pixel-perfect web port (e.g., precise timing, sound sequences, hidden variables)
 
 ### Completed

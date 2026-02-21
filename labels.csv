@@ -340,3 +340,12 @@
 # Session: $0301-$0305 — sound slot priority array / PPU tile write queue
 0,974A,PPUQueueHeadInit
 0,998A,BuildPPUWriteQueueAdvance
+# Session: bank 0 music engine and $0301-$0305 triple-use traced
+0,BC80,MusicSeqEngine
+0,BD36,MusicSlotReset
+0,BD41,MusicSlotLoad
+0,BD4D,MusicSeqPtrLoad
+0,BD0C,MusicAPUWrite4
+0,82EA,MusicSlotInitTable
+0,8129,Level3SoundInitTable
+0,AFA8,DivBy10
