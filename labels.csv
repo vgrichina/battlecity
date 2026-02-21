@@ -372,3 +372,13 @@
 1,EFD1,SeqCoin
 1,F044,SeqLifeUpP1
 1,F053,SeqLifeUpP2
+# Session: score display routines
+1,D8F7,DrawSpriteString
+1,D87E,DrawBigSpriteTile
+1,D9A7,SkipLeadingZeros
+1,D9C4,DrawHiScoreSprite
+1,D91B,DrawRowTiles
+1,D95F,WaitVBlank
+1,D966,WaitVBlankX
+1,D214,StrGAME
+1,D219,StrOVER
