@@ -432,10 +432,11 @@ Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique
 | $E575 | MoveUpdateDispatch | 24×2 B ptr table: Y=(state>>3)&$FE → MoveUpdate position handler |
 | $E595 | BulletDispatch | 16×2 B ptr table: Y=(bulletState>>3)&$FE → bullet handler |
 | $E6A9 | SpeedTable | Difficulty/speed parameters: 2-byte entries indexed by ($85−1)×4 |
-| $E7A9 | BulletMoveCollision | (to be disassembled) |
-| $E8B1 | EnemyBulletPlayerHit | (to be disassembled) |
-| $EAB5 | BulletVsBulletCancel | (to be disassembled) |
-| $EB17 | PowerUpCollision | (to be disassembled) |
+| $E7A9 | BulletMoveCollision | 10-slot loop; for each active bullet ($CC,X&$F0==$40): compute |delta| and |delta|*4 for the direction; probe1 = BulletTileCollision at current (BX,BY); if hit → also probe $E83F at (BX+4*|dy|, BY+4*|dx|); probe2 = BulletTileCollision at (BX−|dx|, BY−|dy|) (1px behind); if hit → also probe (BX−4*|dx|−|dx|, BY−4*|dy|−|dy|); alternating-frame skip for non-double-shot bullets via (X XOR $0B) & $01 |
+| $E838 | BulletTileCollision | (X=px, Y=py) → TilePosLookup → SubTileBitmask → TileCollidableCheck; if eagle tile ($C8) AND $68≠0: set $68=$27 (eagle destruction), $030B=$0307=1, call $CA25, $CC,X=$33; if impassable but not water/steel: brick → TileDestroyBrick, $030C=1 if player bullet (X<2), RTS A=1; if water/steel: $CC,X=$33; if player bullet hits steel: $030D=1; returns A=1 (hit) or A=0 (no hit) |
+| $E8B1 | EnemyBulletPlayerHit | **Dual-purpose bullet-entity collision** — Loop 1 (players X=1→0): check entity active AND state<$E0; inner loop (enemy bullets Y=7→1): if active ($40–$4F) and |BX−EntityX|<10 AND |BY−EntityY|<10 → hit: $CC,Y=$33; if ShieldTimer ($89,X)>0 → deflect ($CC,Y=$00); else → $A0,X=$73 (death), $0307=1, clear $0101/$A8. Loop 2 (enemy entities X=7→2): inner loop (player bullets Y=9→0, Y&$06==0): if active and within 10×10px → $CC,Y=$33; if armor ($A8,X bit2): call $EA63 flash, possibly DEC $A8,X; check $A8,X&$03: if zero → destroy ($A0,X=$73, $030A=1, INC kill tally, ScoreAdd, LivesGrantCheck), else DEC $A8,X, $030E=1 |
+| $EAB5 | BulletVsBulletCancel | Loop $5A=9→0; only process if $5A&$06==0 (player bullet slots 0,1,8,9); check state $40–$4F; inner loop $5B=9→0 all slots; skip if $5A&$07==$5B&$07 (same entity); if both active and |BX−BX|<6 AND |BY−BY|<6 → both cleared ($CC=0) |
+| $EB17 | PowerUpCollision | Effect-position ($86/$87) vs player proximity check (12px); if EffectTimer ($62)=0: loop players X=1→0; if active and state<$E0 and |EntityX−$86|<12 AND |EntityY−$87|<12: set EffectTimer=50, dispatch via $EB87 power-up table |
 | $EBF6 | SoundResetInit | APU + sound-RAM reset: STA $4015=$0F (enable sq1/sq2/tri/noise), STA $4017=$C0 (5-step frame counter, IRQ inhibit); zero 28 sound slots in $031C–$03F3 (stride 8 via $F0/$F1 ptr) and clear $0300–$031B |
 | $EC23 | SoundEngine | Per-frame sound engine: iterates 28 channel slots ($031C–$03F3, 8 bytes each) pointed by $F0/$F1; reads $0300,X active flag; if slot active loads sequence data and writes 4 regs via STA $4000,X (X=0/4/8/12); channel silence via bit-4 XOR at $ECAC; ZP $F4=slot idx, $F5=limit, $F9–$FC=active flags |
 | $EC80 | SoundAPUWrite | `STA $4000,X` — core APU register write; X=channel_base (0=sq1,4=sq2,8=tri,12=noise); writes 4 consecutive regs from sequence data at ($F0),Y |
@@ -1786,6 +1787,73 @@ The unified **entity type byte** is stored in `$A8,X` (ZP). It encodes:
 - `$A841[entity_type]` bitmask: each set bit (for even slots 0,2,4,6,8) writes transparent tile $FC instead of incrementing tile counter
 - `$0101,X` stores the player upgrade tier ($20/$40/$60); also mirrored into `$A8,X` via ORA at spawn (`$E4B7`)
 
+### Tile Passability — Collision Map Boundary
+
+The collision map at $0400–$07FF stores **CHR tile index bytes** directly (from DrawNametableTile writes). The passability test in `MoveGridSnap ($DD30)` is:
+```
+if tile == $00: passable (empty / fully-destroyed brick)
+if tile  < $20 AND != 0: BLOCKED  → tiles $01–$1F
+if tile >= $20: passable           → tiles $20–$7F
+if tile bit 7 set: BLOCKED         → entity-occupied ($80–$FF)
+```
+This maps to terrain types:
+| CHR tile | Value | Terrain | Passable? |
+|----------|-------|---------|-----------|
+| $00 | 0 | Empty (open ground) | ✓ |
+| $01–$0F | 1–15 | Brick sub-tile bits (partial/full) | ✗ |
+| $10 | 16 | Steel wall | ✗ |
+| $12 | 18 | Water | ✗ |
+| $21 | 33 | Ice | ✓ (no slide mechanic; normal speed) |
+| $22 | 34 | Trees / forest | ✓ |
+| $80+ | 128+ | Entity-occupied (bit 7 set by CalcTilePos) | ✗ |
+
+**Ice tile**: CHR $21 ≥ $20 → passable; **no slide mechanic in this game** — tanks move at normal speed on ice, it is purely a visual terrain type.
+
+**Water tile**: CHR $12 = 18 < $20 → blocks tank movement AND bullets; BulletTileCollision at $E87B checks `CMP #$11` (tank-map water sentinel) → $030D=1 (player bullet water-hit flag), no tile destroy.
+
+**Steel tile**: CHR $10 = 16 < $20 → blocks tank movement. BulletTileCollision at $E892 checks `CMP #$10` → $030D=1 (player bullet steel-hit flag); armored bullet ($D6 bit1) destroys steel: calls $D7A4 to clear tile to $00.
+
+### MoveGridSnap — Two-Corner Leading-Edge Probe
+
+`MoveGridSnap ($DD30)` checks two corners of the 16×16 tank's leading edge (9 pixels ahead of center):
+
+```
+For direction dir:
+  dx = DirDeltaTable[$E529+dir]    ; +1/-1/0/0 (x component)
+  dy = DirDeltaTable[$E52D+dir]    ; 0/0/-1/+1 (y component)
+
+Probe1 X = EntityX + dx   + |dy|*8   (leading edge + right-perpendicular)
+Probe1 Y = EntityY + dy   + |dy|*8   (leading edge)
+Probe2 X = EntityX + dx   - |dy|*8   (leading edge + left-perpendicular)
+Probe2 Y = EntityY + dy   - |dy|*8
+
+Each probe: TilePosLookup → SubTileBitmask → TileCollidableCheck
+```
+If BOTH probes clear → advance entity 1 pixel in direction → animate tread (`$B0,X XOR $04`).
+If EITHER probe blocked → enemy: 75% pause (state $88), 25% reverse/random-dir; player: no direction change.
+
+### Bullet Slot Assignment (player vs enemy)
+
+10 bullet slots total (indexed 0–9), mapped to entity/player ownership:
+| Slot | Owner | Notes |
+|------|-------|-------|
+| 0 | P1 primary | Set by FireBullet (entity 0) |
+| 1 | P2 primary | Set by FireBullet (entity 1) |
+| 2–7 | Enemy slots | One per enemy entity 2–7 |
+| 8 | P1 secondary | Double-shot second bullet (entity 0) |
+| 9 | P2 secondary | Double-shot second bullet (entity 1) |
+
+Player bullet test: `slot & $06 == 0` (used by BulletVsBulletCancel $EAB5, EnemyBulletPlayerHit $E8B1).
+Enemy bullet test: `slot & $06 != 0` OR use slot range 2–7.
+
+### RAM flags $030A–$030E (game event triggers)
+| Address | Set by | Role |
+|---------|--------|------|
+| $030A | $E99D (EnemyBulletPlayerHit after kill) | Enemy kill event flag; ROL'd each frame at $D4EC |
+| $030C | $E88D, $E89C (BulletTileCollision) | Player bullet wall-penetration flag (set when player bullet hits brick or non-water/steel) |
+| $030D | $E8AB, $E8AB (BulletTileCollision) | Player bullet hits water or steel (no tile destruction); likely triggers sound slot |
+| $030E | $E991 (EnemyBulletPlayerHit armor hit) | Armor tank hit without destroy; likely triggers armor-hit sound |
+
 ### Metatile System (DrawNametableTile — $D82B)
 
 `DrawNametableTile(A=tile_type, X=pixel_x, Y=pixel_y)`:
@@ -1889,7 +1957,16 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Disassemble `StageLoader` helpers at $98E0, $98BE, and $97B1 (Bank 0)
 - [x] Investigate ZP variables $D0–$D4 in `Level0Init` ($874D) and their roles
 - [x] Trace usage of $0301–$0305 initialized in bank 0 (likely initialization queue)
-- [ ] Research what else is missing from ROM research and update next tasks; ensure enough info for a pixel-perfect web port (e.g., precise timing, sound sequences, hidden variables)
+- [x] Research what else is missing from ROM research and update next tasks; ensure enough info for a pixel-perfect web port — decoded BulletMoveCollision ($E7A9), EnemyBulletPlayerHit ($E8B1), BulletVsBulletCancel ($EAB5); confirmed tile passability boundary ($20), ice=passable/no-slide, bullet slot ownership; documented RAM flags $030A-$030E; added 7 new critical tasks below
+
+### New tasks (session 11 — web port gap fill)
+- [ ] Decode SoundEngine sequence format ($EC23): determine exact byte layout for sequences at $EEDB/$EF02/$EF2D/$EFD1/$F044/$F053 — each slot's bytes include: channel-select (1–4), 4 APU register bytes, duration byte, loop/next pointer; decode the first few sequences to extract music note data (pitch, duty, volume per frame)
+- [ ] Disassemble DrawSprites ($D6D3): used by BlinkTitleSprite, DrawHUDKillIconA/B, PreGameDraw, DrawVictoryScreen — document input format (X=count, Y=dest, SrcPtr=$11/$12): likely a variable-length table of (OAM-offset, tile, attr, x, y) 5-byte entries; critical for implementing all HUD and title rendering
+- [ ] Disassemble score display routines $D9A7 (2-digit stage/score draw) and $D9C4 (hi-score display); $D8F7 (draw tile-string to nametable) — needed to render score HUD and game-over score screen
+- [ ] Map HUD exact pixel layout: enemy kill-counter icons ($C7BD/$C7AE — 10 pairs at rows 3–12 col 28–30), player lives sprites ($0105/$0106 = P1 lives tank, 3 tiles), P2 lives, score digits positions; all OAM slots/positions needed for faithful HUD rendering
+- [ ] Disassemble $030D/$030E sound triggers: trace what reads $030D (player bullet hits water/steel) and $030E (armor tank hit) in SoundEngine to identify which sound slots are triggered, so audio can be replicated
+- [ ] Disassemble power-up spawn location logic: how power-up X/Y ($86/$87) is chosen when power-up spawns — look for writes to $86/$87 in PowerUpSpawn ($E35D) context; also document power-up tile/sprite CHR for all 6 types
+- [ ] Disassemble NMI handler body ($D300) fully: sequence of sub-calls (save regs → $D304 branch → OAM DMA $4014 → scroll writes → FlushPPUQueue → NMI_Sub2 $D68A → restore → RTI); NMI_Sub1 ($D352) exact flow; needed for accurate frame timing in web port
 
 ### Completed
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.

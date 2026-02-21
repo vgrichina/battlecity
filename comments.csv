@@ -144,3 +144,8 @@
 0,8153,Level0DispatchTable: 7 16-bit ptrs (indexed by D1-1)*2: D1=1→$8885 D1=2→$886A D1=3→$884F D1=4→$D1BF D1=5→$8919 D1=6→$202A D1=7→$2822; indirect dispatch via JMP($0000)
 0,886A,Level0Phase_SpriteCycle: LDA $81BF/C3,Y → ptr; JSR $D14F (StrBATTLE/string); carry set → INC $D5 (AND#$03 cycle 0-3) + INC $5D + SEC; RTS
 0,8885,Level0Phase_SubState: JSR $888E (sub-step counter $E5; X=step); carry→INC $D1; CLC RTS
+# Session 11: Bullet collision routines fully decoded
+1,E7A9,BulletMoveCollision: loop slots 9→0; skip non-active; compute |dx|/|dy| and *4; probe1=BulletTileCollision(BX,BY); if hit probe2 at (BX+4|dy|,BY+4|dx|); probe3=BulletTileCollision(BX-|dx|,BY-|dy|); if hit probe4; alternating-frame skip for non-double-shot via (slot XOR $0B)&1
+1,E8B1,EnemyBulletPlayerHit: dual loop — Loop1(players X=1→0 vs enemy bullets Y=7→1): 10x10px check; shield→deflect; else death $A0,X=$73,$0307=1. Loop2(enemies X=7→2 vs player bullets Y where Y&6==0): 10x10px; armor hit→$EA63,DEC $A8,X,$030E=1; destroy→$030A=1,score
+1,EAB5,BulletVsBulletCancel: only player bullet slots (slot&6==0); inner loop all slots; same-entity skip; both active $40-$4F within 6x6px → both CC=0
+1,E838,BulletTileCollision: (X=px,Y=py)→TilePosLookup→SubTileBitmask→TileCollidableCheck; eagle→$68=$27,$030B=$0307=1; water→$030D=1 player only; steel→$030D=1 player only; brick→TileDestroyBrick,$030C=1 player only; returns A=1 (hit) A=0 (no hit)
