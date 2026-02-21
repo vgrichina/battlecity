@@ -337,3 +337,6 @@
 0,8834,Level0DispatchSub
 0,886A,Level0Phase_SpriteCycle
 0,8885,Level0Phase_SubState
+# Session: $0301-$0305 — sound slot priority array / PPU tile write queue
+0,974A,PPUQueueHeadInit
+0,998A,BuildPPUWriteQueueAdvance

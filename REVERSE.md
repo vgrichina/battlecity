@@ -45,7 +45,9 @@
 | $0100–$017F   | Stack (128 bytes; SP initialised to $7F) |
 | $0180–$01FF   | PPU write queue (applied during VBlank by NMI) |
 | $0200–$02FF   | OAM shadow buffer (DMA'd to PPU at NMI) |
-| $0300–$03FF   | Entity bullets, misc buffers; $0310 = enemy fire trigger |
+| $0300–$031B   | Sound slot priority array: 28 bytes; $0300,X (X=0–27) is the active-priority counter for sound slot X; 0=inactive, >0=active; zeroed by SoundResetInit ($EBF6); $0300=CoinEventFlag/slot 0, $0304–$0305=life-gained/HUD, $0310=enemy fire slot 16, $0313–$0314=kill event slots 19–20; dual-use during level init as PPU tile write queue (head index + entries) |
+| $031C–$03F3   | Sound slot data structures: 28×8 bytes; slot N at $031C+(N×8); each entry: [channel_select, 4×APU_regs, duration, ...]; channel_select 1–4=write ch 0–3, 5–8=silence ch 0–3; zeroed by SoundResetInit |
+| $03F4–$03FF   | Possibly unused / padding at end of sound workspace |
 | $0400–$07FF   | Sprite work buffer (4 pages, zeroed each frame) |
 | $8000–$BFFF   | PRG bank 0 code/data (level init routines + level tables) |
 | $C000–$FFFF   | PRG bank 1 code/data (all engine code) |
@@ -1628,6 +1630,32 @@ STA $0614 = $0F
 - **APU write** (`$EC80`): `STA $4000,X` with X = channel × 4 (0=sq1, 4=sq2, 8=tri, 12=noise); writes 4 consecutive registers from sequence data at `($F0),Y`
 - **Channel silence** (`$ECAC`): writes `((channel_idx << 2) & $10) XOR $10` to `$4000,X` (clears bit 4 of vol/duty register → volume=0)
 - Sound sequences pointed by `$EEA3` table (14 × 2-byte LE pointers); each sequence is a stream of register bytes + duration + next-pointer
+
+### Sound slot priority array ($0300–$031B)
+
+28 bytes, one per sound slot.  `$0300,X` (X = 0–27) is the priority counter for slot X.  Zero = slot inactive; non-zero = slot wants to play.  `SoundResetInit` ($EBF6) zeroes all 28 on level-start/game-over.
+
+Known slot assignments:
+| Slot | Address | Trigger |
+|------|---------|---------|
+| 0 | $0300 | `CoinEventFlag`: set to 1 by NMI_Sub ($D374) on coin release; also sound slot 0 (coin-insert jingle). |
+| 1–3 | $0301–$0303 | Set to 1 at `GameLoopTop` ($C18A) at the top of every game-loop frame (background music / tick channels). |
+| 4–5 | $0304–$0305 | Set to 1 by `LivesGrantCheck` ($CF8F) and power-up code ($EBE7) when player gains a life (life-up jingle + HUD redraw trigger). |
+| 10 | $030A | ROL'd at $D4EC (bitwise carry-shift, multi-frame animated effect). |
+| 16 | $0310 | Enemy bullet-fire trigger ("enemy fire trigger" per earlier notes). |
+| 19–20 | $0313–$0314 | Set to 1 at kill-tally ($CB47/$CB65) when enemy destroyed (kill sound). Also noted: `$9751` zeroes $0313 at level-screen init. |
+
+Sound slot data structures: slot N lives at `$031C + N×8` (8 bytes).
+
+**Dual use during level init (bank 0 only, before SoundResetInit):**
+
+`$0300` acts as a **PPU tile write queue head index**.  `BuildPPUWriteQueue` ($992E):
+1. Reads `LDX $0300` (write position).
+2. Appends entries to `$0301,X++`: format `[ppu_addr_hi, ppu_addr_lo, count, tile×count]`.
+3. Saves X back → `STX $0300`.
+4. Boundary: if X ≥ $3F → abort (queue full sentinel).
+`$974A` initialises head to `$12` (=18) before `HQSpriteInit` appends HQ sprite tiles from $0313 onward.
+After all bank-0 level-init code completes, `SoundResetInit` zeroes $0300–$031B, wiping the queue and initialising the sound priority array for gameplay.
 
 ### Title screen / attract mode
 
