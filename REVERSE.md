@@ -108,11 +108,15 @@
 | $85 | GameSpeed | Game pace/speed control; compared against $41 |
 | $86 | EffectX | Active area-effect X position; 0 = no effect |
 | $87 | EffectY | Active area-effect Y position (paired with $86) |
+| $88 | PowerUpType | Current power-up type index (0–5) for dispatch at $EB87 |
 | $89,X | ShieldTimer | Per-player shield countdown (X=0–1); decremented every 64 frames |
 | $8B–$8E | SpeedParams | Four speed parameters loaded from SpeedTable by SetSpeedPtr |
 | $8F | EnemyQueueIdx | Index into enemy type queue (ZP $8B,Y → type countdown) |
 | $90,X | EntityX | Entity X positions (8 bytes; X = 0–7) |
 | $98,X | EntityY | Entity Y positions (8 bytes) |
+| $15–$1B | P1Score | Player 1 BCD score: 7 digits, $1B = units, $15 = millions |
+| $1C–$22 | P2Score | Player 2 BCD score (same format) |
+| $35–$3C | ScoreIncr | Temporary score-increment BCD: $39 = hundreds, $3A = tens, $3B = units |
 | $A0,X | EntityState | Entity state byte (see format below) |
 | $A8,X | EntityType | Entity type byte; bit 2 set ($04) = power-up/armored tank |
 | $45 | PowerUpTimer | Power-up appearance countdown; decremented every 64 frames when non-zero |
@@ -340,6 +344,36 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $EBF6 | GameOverHandler | Enable APU ($4015/$4017); zero $0300–$031B via X loop and $031C–$03F4 at stride 8 via pointer (clears entity/bullet tracking page) |
 | $EC23 | NMI_Sub3 | Stage-summary score/kill-count tabulator; reads $0300,X entries and $6D (ServiceMode); fills $F9–$FC counters for end-of-stage results display |
 # New routines (Sessions 3–4)
+| $C912 | PowerUpSprite_Off | Draw power-up "OFF" sprite frames (4×DrawSprites) + clear palette at $07F3/$07F4 |
+| $C9BB | PowerUpSprite_On | Draw power-up "ON" sprite frames (4×DrawSprites) + set $3F palette flash at $07F3/$07F4 |
+| $CA25 | EagleHitAnim | Draw eagle hit animation (2×DrawSprites, OAM slot $0E, frames A/B) |
+| $CA44 | ShovelAttribUpdate | Write 64 bytes from tile-map $07C0 to PPU attribute area $23C0 (fortify base palette effect) |
+| $CA79 | QueueTileNametable | TileAddrCompute → queue nametable write at computed address |
+| $DA31 | ScoreAdd | BCD-add 7-digit value at $35–$3B to player score at ZP $15+X*8; carry propagation; cap digits at 9 |
+| $DA62 | ScoreSetup | A = packed BCD amount (hi nibble=tens, lo nibble=units); zeros $35–$3C; stores tens→$39, units→$3A |
+| $D745 | SubTileBitmask | Compute 1-bit mask for brick sub-tile quarter: TileY.bit2→shift2, TileX.bit2→shift1; top-left=1, top-right=2, bottom-left=4, bottom-right=8 |
+| $D75C | TileCollidableCheck | Test if brick quarter intact: A = tile & (mask\|$F0); non-zero if brick present OR entity on tile |
+| $D763 | TileDestroyBrick | Clear brick sub-tile bit: tile &= ~mask; call $D7A4 to write+queue nametable |
+| $D76D | TileDestroyIfNoEntity | Destroy brick quarter only if tile high nibble = 0 (no entity); no PPU queue |
+| $D77C | TileSetBrick | Set (OR) brick quarter bit; call $D7A4 |
+| $D784 | TileSetIfNoEntity | Set brick quarter bit only if no entity present; no PPU queue |
+| $D791 | PPUWriteDirect | Write tile byte directly to PPU: addr = ($12 + $05, $11); value from ($11),Y |
+| $D7A4 | WriteTileQueueUpdate | STA ($11),Y; enqueue 4-byte PPU record {$12+$1C, $11, value, $FF} at $0180 |
+| $D7CA | AdvanceTilePtr | Add A to ($11,$12) pointer pair (advance tile ptr by A bytes) |
+| $E3C6 | EagleAnimA | Draw eagle sprite tile $F1 at position ($78,$D8) via DrawTank |
+| $E3CB | EagleAnimB | Draw eagle sprite tile $F5 at ($78,$D8) |
+| $E3D0 | EagleAnimC | Draw eagle sprite tile $F9 at ($78,$D8) |
+| $E3DC | EagleAnimDraw | DrawTank with tile=$53+$69 at fixed eagle position |
+| $E3E2 | EagleWallClosed | Set $69=0; draw 4 base wall tiles around eagle (closed/intact formation) |
+| $E3EA | EagleWallOpen | Set $69=$10; draw 4 base wall tiles (open/damaged formation) |
+| $E3F2 | DrawEagleWalls | Draw 4 wall sprites at (70,D0),(80,D0),(70,E0),(80,E0) with tiles $D1/$D5/$D9/$DD+$69 |
+| $EB17 | PowerUpCollision | Effect-position vs player proximity check (12px); if hit: set EffectTimer=50, dispatch via $EB87 power-up table |
+| $EB95 | PU_Helmet | Helmet power-up: ShieldTimer[$89,X] = 10 (≈640 frames invincibility) |
+| $EB9A | PU_Timer | Timer/Clock power-up: EnemyFreezeTimer[$0100] = 10 (freeze enemies ≈640 frames) |
+| $EBA0 | PU_Shovel | Shovel power-up: if $68<0: JSR PowerUpSprite_On; PowerUpTimer[$45]=20 |
+| $EBAC | PU_Star | Star power-up: upgrade entity type $0101,X += $20 (max $60; 3 tiers) |
+| $EBBC | PU_Grenade | Grenade/Bomb power-up: set EntityState=$73 for all 8 active entities (instant kill-all) |
+| $EBE3 | PU_1Up | Tank/1-Up power-up: INC $51,X (add life); set $0304=$0305=1 |
 | $DDFC | RandomDirChange | State $90–$9F handler: 50% → SpeedCtrlMove; 25% → turn right (dir+1 &3); 25% → turn left (dir−1 &3); result stored as $A0|(dir&3) |
 | $DE22 | ClampXMove | Boundary clamp helper: if A > $56 → A−1 |
 | $DE2A | ClampYMove | Boundary clamp helper: if A > $57 → A−1 |
@@ -361,6 +395,73 @@ Each entry → inner table of 16-bit pointers to per-enemy sprite/position data 
 | $E838 | BulletTileCollision | Check bullet at (X=pixelX, Y=pixelY) vs tile map; if eagle ($C8): trigger eagle-hit flags; if steel ($10): stop bullet (armored bullet destroys); if water ($11): stop, no destroy; if brick ($00–$0F, sub-tile bit): stop and destroy ($D763) |
 | $DBF6 | EnemySpawnDispatch | If SpawnDelay ($82) > 0: decrement and return. If EnemiesRemaining ($7F) = 0: return. Find free entity slot ($6C→2..7), call PlayerRespawn, DEC $7F, update HUD |
 | $DBB9 | CheckPlayersMoving | Check $0311 flag; test if entity 0 or 1 has direction input ($06,X & $F0 ≠ 0) AND is active; update $0311 accordingly |
+
+### Power-up Dispatch Table ($EB87, 6 entries, indexed by `$88 × 2`)
+
+| $88 | Handler | Power-up | Effect |
+|-----|---------|----------|--------|
+| 0 | $EB95 | Helmet | `$89,X` (ShieldTimer) = 10 → ~640 frames invincibility |
+| 1 | $EB9A | Timer/Clock | `$0100` (EnemyFreezeTimer) = 10 → freeze all enemies ~640 frames |
+| 2 | $EBA0 | Shovel | If $68<0: call $C9BB; PowerUpTimer=20 (fortify base) |
+| 3 | $EBAC | Star | `$0101,X` += $20 (max $60); `$A8,X` = same (3-tier weapon upgrade) |
+| 4 | $EBBC | Grenade | All 8 entities → state $73, clear $A8 (instant screen-clear) |
+| 5 | $EBE3 | Tank/1-Up | INC $51,X; set $0304=$0305=1 (extra life) |
+| 6 | $EBED | (null) | RTS only |
+
+### Eagle State Dispatch Table ($E3BA, indexed from `PowerUpSpawn $E35D`)
+
+| Idx | Handler | Role |
+|-----|---------|------|
+| 0 | $DC9E | NullHandler — no animation |
+| 1 | $E3C6 | Eagle anim frame A (tile $F1) |
+| 2 | $E3CB | Eagle anim frame B (tile $F5) |
+| 3 | $E3D0 | Eagle anim frame C (tile $F9) |
+| 4 | $E3E2 | Eagle wall closed ($69=0, 4 wall sprites) |
+| 5 | $E3EA | Eagle wall open ($69=$10, 4 wall sprites) |
+
+### SetSpeedPtr ($E4E8) — corrected
+
+```
+if PlayerCount ($46) != 0:
+  use speed index 35 ($23) → Y = 34*4 = $88  (2-player always uses max speed tier)
+else:
+  use GameSpeed ($85)                         → Y = ($85-1)*4
+$8B = SpeedTable[Y+0]   ; spawn delay max
+$8C = SpeedTable[Y+1]   ; (speed param 2)
+$8D = SpeedTable[Y+2]   ; (speed param 3)
+$8E = SpeedTable[Y+3]   ; (speed param 4)
+```
+
+SpeedTable ($E6A9) raw data (4 bytes per entry, increasing speed → smaller first byte):
+| Entry ($85) | Byte0 | Byte1 | Byte2 | Byte3 |
+|-------------|-------|-------|-------|-------|
+| 1 (slowest) | $12 | $02 | $00 | $00 |
+| 2 | $10 | $02 | $00 | $02 |
+| 3 | $05 | $05 | $05 | $05 |
+| 4 | $08 | $05 | $04 | $03 |
+| 5 | $05 | $02 | $08 | $05 |
+| … | … | … | … | … |
+
+### EntityMovement ($DC9F) — corrected full description
+
+```
+$5A = 7  (entity loop 7→0)
+
+EnemyFreezeDecrement:
+  if $0100 != 0 AND ($0B & $3F == 0): DEC $0100  (tick freeze timer every 64 frames)
+
+Entity loop (X = $5A, 7→0):
+  if X < 2 (player):
+    process if ($0B & 1 != 0) OR ($0B & 3 == 0)  (odd frame or frame%4==0)
+    else skip
+  if X >= 2 (enemy):
+    if $0100 != 0 AND state active ($80–$DF): skip (frozen)
+    if EntityType & $F0 == $A0: always process
+    if $85 >= $41: always process (max speed)
+    else: process only if ($5A XOR $0B) & 1 != 0  (alternating frame)
+  → JSR EntityDispatch
+DEC $5A; BPL loop
+```
 
 ### GameUpdate2 Subsystem Call Sequence ($C29F)
 Each game frame invokes these 18 subsystems in order:
@@ -411,9 +512,17 @@ RAM address = $0400 + tileY*32 + tileX
 
 **Sub-tile mask** (`$D745`): computes 1-bit mask (1, 2, or 4) from within-tile position bits, identifying which quarter of an 8×8 tile the entity/bullet is in. Collision only triggers if that specific brick quarter is still intact.
 
+**Key RAM flags at $0100+**:
+| Address | Purpose |
+|---------|---------|
+| $0100 | EnemyFreezeTimer — Timer/Clock power-up counter; set to 10 by $EB9A; decremented every 64 frames by EntityMovement; non-zero = enemy movement and firing disabled |
+| $0101,X | EntityStarLevel — per-entity weapon upgrade level (0, $20, $40, $60 = max); updated by Star power-up $EBAC |
+| $0103,X | ShieldCountRaw — per-player inner shield counter (bit 7 set = shielded; decremented by ShieldHandler) |
+
 **Key RAM flags at $0300+**:
 | Address | Purpose |
 |---------|---------|
+| $0304-$030A | EntitySlotData — 7-byte entity fill data (copied from $0409–$040F by $8B69) |
 | $0307 | CriticalHitFlag — set by: (a) BulletTileCollision hitting eagle tile; (b) HUDDraw when enemy bullet hits unshielded player; (c) level-init bank 0 code; triggers game-over sequence |
 | $030B | Eagle flash trigger |
 | $030C | Player bullet wall-penetration flag |
@@ -755,20 +864,22 @@ else:
 
 ## Next Tasks
 
-- [ ] Disassemble $D763 / $D7A4 (tile destruction routines) — understand brick bit-clearing
-- [ ] Disassemble bank 0 level init routines ($874D, $8A6E, $896A, etc.) — understand how tile map is populated at level start
+- [ ] Disassemble bank 0 level init routines ($8A6E, $896A, $91E8, $8B48 etc.) — understand how tile map is populated at level start ($874D partially decoded: has multi-phase sub-stage controller; continues in $B1E4, $8ADD)
 - [ ] Decode inner formation data tables at $8034+ (per-stage enemy sprite/position blocks)
-- [ ] Dump SpeedTable ($E6A9, 4-byte entries × 36 stages) — decode $8B–$8E meaning from MoveTank / MoveGridSnap callers
-- [ ] Disassemble $8B69+ (entity slot fill / enemy queue setup)
-- [ ] Disassemble $DA31 / $DA62 — called from LivesDraw area-kill handler
-- [ ] Disassemble $C9BB / $C912 — power-up activate/spawn routines
-- [ ] Validate tile map at game start — what values does level loader write to $0400–$07FF?
+- [ ] Decode $8B–$8E SpeedParams meaning: confirm byte semantics (spawn delay, move rate, fire rate, etc.) from callsites in MoveGridSnap / SpeedCtrlMove
+- [ ] Disassemble $8B9F+ / $8C00+ (entity slot fill secondary routines; read $82FA/$8300/$8306 tables)
+- [ ] Decode tables at $82F4, $82FA, $8300, $8306, $8348 (formation data arrays in bank 0)
+- [ ] Disassemble $B1E4 and $8ADD (level init continuation / game-over from bank 0)
+- [ ] Validate tile map at game start — trace what values level loaders write to $0400–$07FF
 - [ ] Identify and label CHR tiles by visual inspection of `tiles/chr_pt0.png` + `tiles/chr_pt1.png`
-- [ ] Disassemble $D745 (sub-tile bitmask) and $D75C (tile-collidable check) — used by BulletTileCollision
-- [ ] Disassemble LivesDraw ($EB17) — area-kill handler (checks effect pos $86/$87 against entities)
-- [ ] Disassemble $CA25 — called on eagle hit (explosion / game-over trigger?)
+- [ ] Disassemble $E3BA dispatch full: eagle animation handlers $E3C6/$E3CB/$E3D0/$E3E2/$E3EA — done above; disassemble callers to understand $68 initialization
+- [ ] Decode power-up type 2 (Shovel $EBA0) fully — understand how $C9BB triggers fortify base and what $68 timing does
+- [ ] Disassemble $CF44 (called in LivesDraw/$EB60) — unknown game-state side effect
+- [ ] Disassemble $C33D (STA $0100 in bank 1) — another writer to EnemyFreezeTimer
+- [ ] Confirm EntityType tier semantics: what does $0101,X high-nibble $A0/$A0+$20/etc map to in tile graphics
 
 ### Completed
+- [x] **Session 6**: Tile cluster ($D745–$D7CA), EntityMovement freeze, PowerUpCollision, full power-up dispatch table (6 types), eagle state handlers, ScoreAdd/ScoreSetup, EntitySlotFill, SetSpeedPtr
 - [x] ROM identification: iNES, mapper 99, 32KB PRG, 16KB CHR
 - [x] Interrupt vectors mapped ($C070 reset, $D300 NMI)
 - [x] Zero page variable map (~45 variables now known; corrected direction/bullet entries)
@@ -809,3 +920,16 @@ else:
 - [x] $0307 = CriticalHitFlag (eagle hit AND player body hit AND level-init)
 - [x] $E4C6 = ClearBulletSlots, $E4D0 = ClearEntitySlots (game init routines)
 - [x] HUD kill-counter: $C79F/$C7AE draw icons; $C7F8 animates HUD tank countdown
+- [x] Tile cluster ($D745–$D791): SubTileBitmask, TileCollidableCheck, TileDestroyBrick, TileDestroyIfNoEntity, TileSetBrick, TileSetIfNoEntity, PPUWriteDirect, WriteTileQueueUpdate, AdvanceTilePtr — brick quarter bit manipulations fully decoded
+- [x] $0100 = EnemyFreezeTimer: Timer/Clock power-up; non-zero freezes all enemy movement and firing; decremented every 64 frames by EntityMovement
+- [x] PowerUpCollision ($EB17 — previously LivesDraw): proximity check 12px; dispatches via $EB87 table indexed by $88 (PowerUpType)
+- [x] Power-up dispatch table ($EB87): 6 types — Helmet, Timer, Shovel, Star, Grenade, 1-Up — all handlers disassembled ($EB95–$EBED)
+- [x] Eagle state handlers ($E3C6/$E3CB/$E3D0/$E3E2/$E3EA): tile draws + 4-wall composite sprites around eagle base
+- [x] PowerUpSpawn ($E35D) fully decoded: 16-frame tick, 64-frame DEC timer, flash pattern when $45<4, eagle $68 counter + dispatch
+- [x] SetSpeedPtr ($E4E8) corrected: 2P mode always uses entry 35; 1P uses $85; loads 4 bytes into $8B–$8E
+- [x] ScoreAdd ($DA31): 7-digit BCD addition with carry propagation, capped at all-9s
+- [x] ScoreSetup ($DA62): unpack byte to $39/$3A; zero $35–$3C buffer
+- [x] ZP score storage: P1Score at $15–$1B, P2Score at $1C–$22, increment buffer at $35–$3C
+- [x] EntityMovement ($DC9F) corrected: freeze check + player/enemy throttle logic fully documented
+- [x] $C9BB/$C912: power-up sprite ON/OFF animators; palette flash via $07F3/$07F4
+- [x] $CA44: shovel effect — 64-byte attribute table write to PPU $23C0
