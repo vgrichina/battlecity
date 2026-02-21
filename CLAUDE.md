@@ -131,3 +131,31 @@ python3 -m http.server 8000
 - Intermediate disassembly output goes in `disasm/` directory
 - Extracted assets go in `gfx/`, `tiles/`, `output_gfx/`, etc.
 - Python venv at `.venv/` with `pypng` for image output
+
+---
+
+## Autonomous RE Loop
+
+`re_loop.sh` drives repeated short Claude sessions until all Next Tasks are resolved.
+
+```bash
+./re_loop.sh                 # default: up to 50 sessions, 3 tasks each
+./re_loop.sh --max 10        # limit iterations
+./re_loop.sh --tasks 5       # tasks per session
+./re_loop.sh --dry-run       # print prompt only
+```
+
+### How each session works
+1. Claude reads REVERSE.md, picks the top `--tasks` unchecked items
+2. Investigates each with `dis.py` / `xref.py` / `search_bytes.py`
+3. Updates REVERSE.md (Code Map, algorithms, marks tasks `[x]`, adds new `[ ]`)
+4. Updates `labels.csv` and `comments.csv`
+5. Outputs `SESSION_SUMMARY: <one line>` at end
+
+The script commits after each session using the summary as the message, then loops.
+Stops automatically when: no tasks remain, no files changed, or `--max` hit.
+
+### Session prompt rules (enforced in re_loop.sh)
+- Scoped tools only: `Bash(python dis.py*)`, `Bash(python xref.py*)`, `Bash(python search_bytes.py*)`, `Bash(python decode_tables.py*)`, `Read`, `Edit`, `Write`
+- Stop after N tasks (keeps context small for reliable restarts)
+- Do not re-document already-covered addresses
