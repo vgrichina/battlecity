@@ -45,7 +45,7 @@
 | $0100–$017F   | Stack (128 bytes; SP initialised to $7F) |
 | $0180–$01FF   | PPU write queue (applied during VBlank by NMI) |
 | $0200–$02FF   | OAM shadow buffer (DMA'd to PPU at NMI) |
-| $0300–$031B   | Sound slot priority array: 28 bytes; $0300,X (X=0–27) is the active-priority counter for sound slot X; 0=inactive, >0=active; zeroed by SoundResetInit ($EBF6); $0300=CoinEventFlag/slot 0, $0304–$0305=life-gained/HUD, $0310=enemy fire slot 16, $0313–$0314=kill event slots 19–20; dual-use during level init as PPU tile write queue (head index + entries) |
+| $0300–$031B   | Sound slot priority array: 28 bytes; $0300,X (X=0–27) is the active-priority counter for sound slot X; 0=inactive, >0=active; zeroed by SoundResetInit ($EBF6); **slot 0** ($0300)=CoinEventFlag; **slots 1–3** ($0301–$0303)=main game music channels (all set to $01 simultaneously at GameLoopTop $C18A to trigger sq1/sq2/triangle music; during gameplay Level0Init also continuously writes $D4/$D3/$60 to these); **slots 4–5** ($0304–$0305)=life-gained jingle (set to $01 at $EBE7/$EBEA for P1 and $CF8F/$CF92 for P2); $0310=enemy fire slot 16; $0313–$0314=kill event slots 19–20; **dual-use during level init as PPU tile write queue**: $0300 = queue head index (set to $12 by PPUQueueHeadInit $974A), $0301+$12=$0313 onward = queue entries (format: PPU_hi, PPU_lo, count, N×tile_bytes, $00-terminator); queue built by BuildPPUWriteQueue ($992E, capacity $3E entries); head reset and $0313 cleared at LevelScreenInit ($9764) via PPUQueueHeadInit |
 | $031C–$03F3   | Sound slot data structures: 28×8 bytes; slot N at $031C+(N×8); each entry: [channel_select, 4×APU_regs, duration, ...]; channel_select 1–4=write ch 0–3, 5–8=silence ch 0–3; zeroed by SoundResetInit |
 | $03F4–$03FF   | Possibly unused / padding at end of sound workspace |
 | $0400–$07FF   | Sprite work buffer (4 pages, zeroed each frame) |
@@ -441,7 +441,7 @@ Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique
 | $EC80 | SoundAPUWrite | `STA $4000,X` — core APU register write; X=channel_base (0=sq1,4=sq2,8=tri,12=noise); writes 4 consecutive regs from sequence data at ($F0),Y |
 | $EE54 | SoundSeqPtrLoad | Load sound sequence pointer for channel $F4 from table $EEA3 → ZP $F2/$F3 |
 | $EE63 | SoundSeqReadByte | Read one byte from sound sequence at ($F2),Y; advance sequence offset in ($F0)+5 |
-| $EEA3 | SoundSeqPtrTable | 14 × 2-byte little-endian pointers to sound sequence data (one per slot) |
+| $EEA3 | SoundSeqPtrTable | 28 × 2-byte little-endian pointers to sound sequence data (one per slot 0–27); slot 0→$EFD1 (coin), slot 1→$EEDB (music sq1), slot 2→$EF02 (music sq2), slot 3→$EF2D (music tri), slot 4→$F044 (life-jingle A), slot 5→$F053 (life-jingle B) |
 # New routines (Sessions 3–4)
 | $C912 | PowerUpSprite_Off | Draw power-up "OFF" sprite frames (4×DrawSprites) + clear palette at $07F3/$07F4 |
 | $C9BB | PowerUpSprite_On | Draw power-up "ON" sprite frames (4×DrawSprites) + set $3F palette flash at $07F3/$07F4 |
