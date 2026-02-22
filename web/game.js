@@ -168,6 +168,22 @@ function passable(col, row) {
   return t === T.EMPTY || t >= 13 || t === T.ICE || t === T.TREES;
 }
 
+// ROM MoveGridSnap ($DD4B–$DDBC): probe a single 8×8 pixel point at 8px tile resolution
+// Checks sub-quadrant for partial brick tiles (BRICK_TL/TR/BL/BR)
+function passable8(px, py) {
+  const col = Math.floor((px - FX) / META);
+  const row = Math.floor((py - FY) / META);
+  if (col < 0 || col >= GW || row < 0 || row >= GH) return false;
+  const t = grid[row][col];
+  if (t === T.EMPTY || t === T.ICE || t === T.TREES) return true;
+  if (t <= T.BRICK) {  // BRICK_TL=0 .. BRICK=4: check 8px sub-quadrant
+    const qx = Math.floor(((px - FX) % META) / 8);
+    const qy = Math.floor(((py - FY) % META) / 8);
+    return !(brickBits[row][col] & (1 << (qy * 2 + qx)));
+  }
+  return false;  // STEEL variants, WATER block
+}
+
 // ─── NES color palette approximations  ────────────────────────────────────────
 // ROM $D44A PaletteData  $D475 PaletteColorTable
 const C = {
@@ -379,13 +395,13 @@ function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
   return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
 }
 
-// Can entity e move 2 px in direction d?
-// ROM $DD30 MoveGridSnap: probes next tile positions
-const TANK_SZ = 14;  // effective hitbox (matches ROM 16px sprite with 1px inset)
+// Can entity e move 1 px in direction d?
+// ROM $DD30 MoveGridSnap: probes 2 leading-edge points at 8px tile resolution
+const TANK_SZ = 16;  // ROM 16×16 tank; entity_X/Y are center coords
 
 function canMove(e, d) {
-  const nx = e.x + DX[d] * 2;
-  const ny = e.y + DY[d] * 2;
+  const nx = e.x + DX[d];
+  const ny = e.y + DY[d];
 
   // Playfield boundary  ROM $DE22 ClampXMove  $DE2A ClampYMove
   // nx/ny are center coords; top-left = nx-8, ny-8
@@ -395,18 +411,16 @@ function canMove(e, d) {
   // Eagle zone  ROM $E838 eagle tile check ($C8)
   if (eagleAlive && rectsOverlap(nx - 8, ny - 8, TANK_SZ, TANK_SZ, EAGLE.x - 8, EAGLE.y - 8, 24, 16)) return false;
 
-  // Tile collision: check 4 corners + leading edge midpoint
-  const pts = [
-    [nx - 8,               ny - 8],
-    [nx - 8 + TANK_SZ - 1, ny - 8],
-    [nx - 8,               ny - 8 + TANK_SZ - 1],
-    [nx - 8 + TANK_SZ - 1, ny - 8 + TANK_SZ - 1],
-  ];
-  for (const [cx, cy] of pts) {
-    const col = Math.floor((cx - FX) / META);
-    const row = Math.floor((cy - FY) / META);
-    if (!passable(col, row)) return false;
-  }
+  // Tile collision: 2 leading-edge probe points at 8px tile resolution
+  // ROM MoveGridSnap ($DD4B–$DDBC): probes top and bottom of leading edge
+  // UP: (nx-8,ny-8),(nx+7,ny-8)  LEFT: (nx-8,ny-8),(nx-8,ny+7)
+  // DOWN: (nx-8,ny+7),(nx+7,ny+7)  RIGHT: (nx+7,ny-8),(nx+7,ny+7)
+  let p1x, p1y, p2x, p2y;
+  if      (d === 0) { p1x = nx - 8; p1y = ny - 8; p2x = nx + 7; p2y = ny - 8; }  // UP
+  else if (d === 1) { p1x = nx - 8; p1y = ny - 8; p2x = nx - 8; p2y = ny + 7; }  // LEFT
+  else if (d === 2) { p1x = nx - 8; p1y = ny + 7; p2x = nx + 7; p2y = ny + 7; }  // DOWN
+  else              { p1x = nx + 7; p1y = ny - 8; p2x = nx + 7; p2y = ny + 7; }  // RIGHT
+  if (!passable8(p1x, p1y) || !passable8(p2x, p2y)) return false;
 
   // Entity–entity collision  ROM $DC23 position-snap prevents overlap
   for (let i = 0; i < 8; i++) {
@@ -1063,7 +1077,7 @@ function drawEntity(e) {
     }
     const tx = e.x - 4, ty = e.y - 4;
     fillRect(tx, ty, 6, 6, shadeColor(col, 20));
-    const bx = e.x - 1, by = e.y - 1;
+    const bx = e.x, by = e.y;
     const bl = 7;
     if (e.dir === 0) fillRect(bx - 1, by - bl, 2, bl, shadeColor(col, 20));
     if (e.dir === 1) fillRect(bx - bl, by - 1, bl, 2, shadeColor(col, 20));
