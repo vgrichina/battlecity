@@ -268,6 +268,7 @@ function makeEntity(slot) {
     powerUpTank: false,// flashing tank carrying power-up  ROM $E417 $7F==17/10/3
     blinkFrame: 0,    // armor-hit blink countdown
     spawnAnim: 0,     // spawn star animation frames  ROM $DF09 StateIncSlot
+    animBit: 0,       // track animation frame: 0 or 4; XOR'd each 8px movement step  ROM $DD18/$DDE1 EOR #$04
     aiTimer: 0,       // AI direction-change countdown  ROM $DDFC RandomDirChange
     fireTimer: 0,     // enemy fire interval
     isPlayer: slot < 2,
@@ -496,8 +497,10 @@ function moveEntities() {
         e.dir = d;
       }
       if (canMove(e, e.dir)) {
+        const px = e.x, py = e.y;
         e.x += DX[e.dir];
         e.y += DY[e.dir];
+        if (((e.x ^ px) | (e.y ^ py)) & 8) e.animBit ^= 4;  // ROM $DD18/$DDE1: EOR #$04 each 8px step
       }
     } else {
       // Enemy: frozen during Timer power-up  ROM $0100 EnemyFreezeTimer
@@ -524,8 +527,10 @@ function moveEntities() {
         e.aiTimer = 20 + Math.floor(Math.random() * 80);
       }
       if (canMove(e, e.dir)) {
+        const px = e.x, py = e.y;
         e.x += DX[e.dir];   // enemies 1 px/step vs player 2 px/step
         e.y += DY[e.dir];
+        if (((e.x ^ px) | (e.y ^ py)) & 8) e.animBit ^= 4;  // ROM $DD18/$DDE1: EOR #$04 each 8px step
       }
     }
   }
@@ -1097,12 +1102,13 @@ function drawEntity(e) {
   // Armor blink on hit  ROM $EA63
   if (e.blinkFrame > 0 && (frameCount & 3) < 2) return;
 
-  // ROM $DB02 DrawTank2x2: T = (entityBase & $F0) + dir×8; left OAM=T, right OAM=T+2
+  // ROM $DB02 DrawTank2x2: T = (entityBase & $F0) + dir×8 + animBit×4; left OAM=T, right OAM=T+2
   // 8×16 OAM → top half tile T, bottom half tile T+1 (NES 8×16 sprite mode)
   // Player base = starLevel (0/$20/$40/$60); enemy base = $80 + type×$20
+  // animBit = 0 or 4, XOR'd each 8px step  ROM $E0A9: ADC $B0,X where $B0,X = dir×8 + animBit
   // All sprite bank tiles → PNG index 256+T
   const entityBase = e.isPlayer ? e.starLevel : (0x80 + e.type * 0x20);
-  const tileBase   = entityBase + e.dir * 8;
+  const tileBase   = entityBase + e.dir * 8 + e.animBit;
   // ROM $E0B7 AnimPalTable: palette cycles SP0/SP1/SP2 for track animation
   // SP0=palIdx 4 (yellow), SP1=5 (lime), SP2=6 (grey/white), SP3=7 (red)
   const palIdx = e.slot === 0 ? 4 : e.slot === 1 ? 5 :
