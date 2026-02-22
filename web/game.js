@@ -333,7 +333,7 @@ function spawnPlayer(slot) {
   e.dir         = 0;      // UP  ROM $E53B InitState players=$A0
   e.alive       = true;
   e.spawnAnim   = 60;     // spawn star anim  ROM $DF09 StateIncSlot/$DF18 StateIncFire
-  e.shieldTimer = 180;    // brief invincibility after spawn  ROM $EB95 Helmet gives 640
+  e.shieldTimer = 3;      // spawn shield: 3 ticks × 64 frames = 192 frames  ROM $89,X
   e.starLevel   = 0;      // ROM $0101,X reset on death
   e.blinkFrame  = 0;
 }
@@ -744,8 +744,8 @@ function checkPowerUpCollision() {
 // ROM $EB87 power-up dispatch: 6 handlers indexed by $88
 function applyPowerUp(e, type) {
   switch (type) {
-    case 0:  // Helmet   ROM $EB95: $89,X = 10 (~640 frames shield)
-      e.shieldTimer = 640;
+    case 0:  // Helmet   ROM $EB95: $89,X = 10 (10 ticks × 64 frames = 640 frames shield)
+      e.shieldTimer = 10;
       break;
     case 1:  // Timer/Clock  ROM $EB9A: $0100 = 10 (~640 frames freeze)
       freezeTimer = 10;
@@ -782,7 +782,7 @@ function tickEnemySpawn() {
 function tickTimers() {
   for (let i = 0; i < 2; i++) {
     const e = entities[i];
-    if (e.shieldTimer > 0) e.shieldTimer--;
+    if (e.shieldTimer > 0 && (frameCount & 63) === 0) e.shieldTimer--;
   }
   if (freezeTimer > 0 && (frameCount & 63) === 0) freezeTimer--;
   if (shovelTimer > 0) shovelTimer--;

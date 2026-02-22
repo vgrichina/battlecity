@@ -2554,7 +2554,7 @@ The following bugs are fully documented from ROM disassembly. Tasks are implemen
 
 - [x] Fix bullet speed alternation: ROM `$E7A9 BulletMoveCollision` skips bullet movement every other frame via `TXA EOR $0B AND #$01 BEQ skip` — bullet slot index XOR framecount parity → only half the frames do 4px move = 2px/frame effective. Fixed in game.js `moveBullets()`: added `if ((b.slot ^ frameCount) & 1) continue;` before the position update, replacing the "Simplified: all bullets move every frame" stub.
 
-- [ ] Fix shield timer decrement frequency: ROM `$E330 PlayerShieldDraw` decrements `$89,X` only when `frameCount & $3F === 0` (every 64 frames). Web decrements every frame. Fix: add `(frameCount & 63) === 0` guard around `e.shieldTimer--`. Also fix magnitudes: spawn shield should be `shieldTimer=3` (3×64=192 frames); helmet power-up sets `shieldTimer=10` (10×64=640 frames). Current web sets spawn=180, helmet=640 — helmet is accidentally correct in duration only because it decrements every frame.
+- [x] Fix shield timer decrement frequency: ROM `$E330 PlayerShieldDraw` decrements `$89,X` only when `frameCount & $3F === 0` (every 64 frames). Web decrements every frame. Fixed: added `(frameCount & 63) === 0` guard in `tickTimers()` (game.js:785); spawn shield changed to `shieldTimer=3` (game.js:336); helmet power-up changed to `shieldTimer=10` (game.js:748). Shield durations now correct: spawn=192 frames, helmet=640 frames.
 
 - [x] Fix spawn delay formula: ROM `LevelStart ($C33D, $C35F–$C387)` computes `SpawnDelayMax = 190 − stageNum × 4` (capped at min 50). Web uses fixed 120. Fixed: `spawnDelay = Math.max(50, 190 - stageIdx * 4)` at level start (game.js:304) and after each spawn (game.js:776).
 
