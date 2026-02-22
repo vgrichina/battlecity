@@ -1073,13 +1073,13 @@ function drawEntity(e) {
     // e.x/e.y are center coords; top-left = e.x-8, e.y-8
     fillRect(e.x - 8, e.y - 8, TANK_SZ, TANK_SZ, C.FIELD);
     if (chrOff) {
-      const SPAWN_SEQ = [0xA1,0xA3,0xA5,0xA7,0xA9,0xAB,0xAD,0xAF,0xAD,0xAB,0xA9,0xA7,0xA5,0xA3,0xA1];
+      const SPAWN_SEQ = [0xAD,0xAD,0xA9,0xA9,0xA5,0xA5,0xA1,0xA1,0xA1,0xA5,0xA5,0xA9,0xA9,0xAD,0xAD];
       const seqIdx = Math.min(14, Math.floor((60 - e.spawnAnim) / 4));
       const T = SPAWN_SEQ[seqIdx];
-      // 8×16 sprite centered in 16×16 entity area; palIdx 4 = SP0
+      // 8×16 sprite centered in 16×16 entity area; palIdx 7 = SP3  ROM DrawShootSprite ($E0BF) sets $04=3
       const sx = e.x - 4, sy = e.y - 8;
-      drawCHRTile(T & 0xFE,       4, sx, sy,     true);
-      drawCHRTile((T & 0xFE) + 1, 4, sx, sy + 8, true);
+      drawCHRTile(T & 0xFE,       7, sx, sy,     true);
+      drawCHRTile((T & 0xFE) + 1, 7, sx, sy + 8, true);
     } else {
       const phase = Math.floor(e.spawnAnim / 10) % 4;
       const cols  = [C.SPAWN_A, C.SPAWN_B, C.SPAWN_C, C.SPAWN_D];
