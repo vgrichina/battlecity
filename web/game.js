@@ -552,8 +552,9 @@ function moveBullets() {
     const b = bullets[i];
     if (!b.active) continue;
 
-    // Alternating-frame skip for non-player double-shot bullets  ROM $E7A9
-    // (Simplified: all bullets move every frame for now)
+    // Alternating-frame skip  ROM $E7A9: TXA EOR $0B AND #$01 BEQ skip
+    // slot index XOR frameLo parity → move only on even (slot^frame) frames
+    if ((b.slot ^ frameCount) & 1) continue;
 
     b.x += DX[b.dir] * BULLET_SPD;
     b.y += DY[b.dir] * BULLET_SPD;
