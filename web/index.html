@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battle City — Web Port</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #111;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: monospace;
+      color: #888;
+    }
+    h1 {
+      color: #f8e800;
+      font-size: 14px;
+      letter-spacing: 4px;
+      margin-bottom: 8px;
+    }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border: 2px solid #333;
+    }
+    p {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <h1>BATTLE CITY</h1>
+  <canvas id="game"></canvas>
+  <p>RE ref: commit 973e914 &nbsp;|&nbsp; VS. Battle City (1985) Namco</p>
+  <script src="levels.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

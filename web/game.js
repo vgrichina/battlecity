@@ -1,0 +1,1165 @@
+'use strict';
+/* ================================================================
+ * Battle City — Web Port  (v1)
+ * RE reference commit: 973e914
+ * ROM: VS. Battle City (1985)(Namco).nes  iNES mapper 99  32KB PRG  16KB CHR
+ * All ROM addresses cited as // ROM $XXXX  label
+ * ================================================================ */
+
+// ─── Canvas  ─────────────────────────────────────────────────────────────────
+const SCALE   = 3;
+const NES_W   = 292;   // 256 NES + 36 HUD strip
+const NES_H   = 240;
+const canvas  = document.getElementById('game');
+canvas.width  = NES_W * SCALE;
+canvas.height = NES_H * SCALE;
+const ctx     = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// ─── CHR tile engine ──────────────────────────────────────────────────────────
+// Tile sheet: ../tiles/chr_pt0.png — 512 tiles in 32×16 grid, 9px cell (8px+1px border)
+// BG tile N: col=N%32 row=N/32   Sprite tile N: abs=N+256
+const CHR_CELL = 9, CHR_BORDER = 1;
+
+// ROM $D44A PaletteData (8 NES palette slots)
+const NES_PAL = [
+  ['#000000','#8A4600','#7B0E00','#626262'],  // BG0 brick
+  ['#000000','#B3F9E1','#ABABAB','#424DC6'],  // BG1 trees
+  ['#000000','#84CC00','#1E5200','#006A18'],  // BG2 water
+  ['#000000','#626262','#ABABAB','#FFFFFF'],  // BG3 steel/ice
+  ['#000000','#616300','#F48F25','#F0E070'],  // SP0 P1 yellow
+  ['#000000','#006000','#008F38','#B2FCBA'],  // SP1 P2 green
+  ['#000000','#005E52','#ABABAB','#FFFFFF'],  // SP2 enemy/eagle
+  ['#000000','#730D68','#AF2B1C','#FFFFFF'],  // SP3 special/PU
+];
+
+// Grayscale level → palette index (extract_tiles.py: 0→0, 0x55→1, 0xAA→2, 0xFF→3)
+function grayToIdx(r) { return r < 0x2B ? 0 : r < 0x7F ? 1 : r < 0xD5 ? 2 : 3; }
+
+let chrOff = null;                // offscreen canvas 2d context for CHR sheet
+const tileCache = new Map();      // cached ImageData keyed by "abs_pal_transp"
+
+function initCHR() {
+  const img = new Image();
+  img.src = '../tiles/chr_pt0.png';
+  img.onload = () => {
+    const oc = document.createElement('canvas');
+    oc.width = img.width; oc.height = img.height;
+    chrOff = oc.getContext('2d');
+    chrOff.drawImage(img, 0, 0);
+    tileCache.clear();
+  };
+}
+
+// Draw one 8×8 CHR tile at NES pixel (destX, destY).
+// tileAbs: 0–255 = BG bank, 256–511 = sprite bank.
+// transparent: skip color-0 pixels (sprites show BG underneath).
+function drawCHRTile(tileAbs, palIdx, destX, destY, transparent = false) {
+  if (!chrOff) return;
+  const key = `${tileAbs}_${palIdx}_${transparent ? 1 : 0}`;
+  let idata = tileCache.get(key);
+  if (!idata) {
+    const tcol = tileAbs % 32, trow = (tileAbs / 32) | 0;
+    const sx = tcol * CHR_CELL + CHR_BORDER;
+    const sy = trow * CHR_CELL + CHR_BORDER;
+    const pdata = chrOff.getImageData(sx, sy, 8, 8).data;
+    const pal = NES_PAL[palIdx];
+    idata = ctx.createImageData(8 * SCALE, 8 * SCALE);
+    for (let py = 0; py < 8; py++) {
+      for (let px2 = 0; px2 < 8; px2++) {
+        const cidx = grayToIdx(pdata[(py * 8 + px2) * 4]);
+        if (transparent && cidx === 0) continue;
+        const hex = pal[cidx];
+        const rr = parseInt(hex.slice(1, 3), 16);
+        const gg = parseInt(hex.slice(3, 5), 16);
+        const bb = parseInt(hex.slice(5, 7), 16);
+        for (let sy2 = 0; sy2 < SCALE; sy2++)
+          for (let sx2 = 0; sx2 < SCALE; sx2++) {
+            const i = ((py * SCALE + sy2) * (8 * SCALE) + (px2 * SCALE + sx2)) * 4;
+            idata.data[i] = rr; idata.data[i+1] = gg; idata.data[i+2] = bb; idata.data[i+3] = 255;
+          }
+      }
+    }
+    tileCache.set(key, idata);
+  }
+  ctx.putImageData(idata, Math.round(destX * SCALE), Math.round(destY * SCALE));
+}
+
+// Draw 2×2 BG metatile (16×16px): chrTiles = [TL, TR, BL, BR] BG tile indices
+function drawMetatile(chrTiles, palIdx, px, py) {
+  drawCHRTile(chrTiles[0], palIdx, px,   py);
+  drawCHRTile(chrTiles[1], palIdx, px+8, py);
+  drawCHRTile(chrTiles[2], palIdx, px,   py+8);
+  drawCHRTile(chrTiles[3], palIdx, px+8, py+8);
+}
+
+// Draw 2×2 sprite (16×16px): sprTiles = [TL, TR, BL, BR] sprite bank tile indices (0–255)
+function drawSprite16(sprTiles, palIdx, px, py) {
+  drawCHRTile(256+sprTiles[0], palIdx, px,   py,   true);
+  drawCHRTile(256+sprTiles[1], palIdx, px+8, py,   true);
+  drawCHRTile(256+sprTiles[2], palIdx, px,   py+8, true);
+  drawCHRTile(256+sprTiles[3], palIdx, px+8, py+8, true);
+}
+
+// ─── Playfield geometry  ──────────────────────────────────────────────────────
+// ROM $D5FC TileAddrCompute, ROM $F27D LevelMapData comment (16 px origin)
+const FX   = 16;   // ROM $10 — playfield left edge (NES pixels)
+const FY   = 16;   // ROM $10 — playfield top edge
+const META = 16;   // 2×2 CHR tiles × 8 px = 16 px per metatile
+const GW   = 13;   // ROM $F27D grid columns
+const GH   = 13;   // ROM $F27D grid rows
+
+// ─── Key positions  ───────────────────────────────────────────────────────────
+// ROM $E537 PlayerSpawnX  $E539 PlayerSpawnY  $E531 EnemySpawnX  $E3E2 eagle pos
+const P1_SPAWN   = { x: 0x58, y: 0xD8 };   // (88, 216)
+const P2_SPAWN   = { x: 0x98, y: 0xD8 };   // (152, 216)
+const EAGLE      = { x: 0x78, y: 0xD8 };   // (120, 216)
+const EN_SPAWN_X = [0x18, 0x78, 0xD8];     // ROM $E531 — 3 X positions (24,120,216)
+const EN_SPAWN_Y = 0x18;                    // 24
+
+// ─── Direction encoding  ──────────────────────────────────────────────────────
+// ROM $E529 DirDeltaTable  $E50E DecodeDirection
+// 0=UP  1=LEFT  2=DOWN  3=RIGHT
+const DX = [ 0, -1,  0,  1];
+const DY = [-1,  0,  1,  0];
+
+// ─── Tile type constants  ─────────────────────────────────────────────────────
+// ROM $DB79 CHR table  extract_level_maps.py
+const T = {
+  BRICK_TL:0, BRICK_TR:1, BRICK_BL:2, BRICK_BR:3,
+  BRICK:4,
+  STEEL_TL:5, STEEL_TR:6, STEEL_BL:7, STEEL_BR:8,
+  STEEL:9,
+  WATER:10, TREES:11, ICE:12,
+  EMPTY:13,
+};
+
+// ROM $DB69 TileAttrTable: tile type → BG palette index (indexed by game.js T values)
+const TILE_PAL = [0,0,0,0,0, 3,3,3,3,3, 1,2,3];
+
+// ROM $DB79 TileCHRTable: tile type → [TL,TR,BL,BR] BG CHR tile indices
+// Brick types (0–4) are null — handled via brickBits in drawTile().
+const TILE_CHR = [
+  null, null, null, null, null,       // T.BRICK_TL=0 .. T.BRICK=4
+  [0x20,0x10,0x20,0x10],              // T.STEEL_TL=5  ROM $DB8D right-col partial
+  [0x20,0x20,0x10,0x10],              // T.STEEL_TR=6  ROM $DB91 bottom-row partial
+  [0x10,0x20,0x10,0x20],              // T.STEEL_BL=7  ROM $DB95 left-col partial
+  [0x10,0x10,0x20,0x20],              // T.STEEL_BR=8  ROM $DB99 top-row partial
+  [0x10,0x10,0x10,0x10],              // T.STEEL=9     ROM $DB9D full solid
+  [0x12,0x12,0x12,0x12],              // T.WATER=10
+  [0x22,0x22,0x22,0x22],              // T.TREES=11
+  [0x21,0x21,0x21,0x21],              // T.ICE=12
+];
+
+// Brick quadrant CHR tiles from BRICK_FULL metatile [TL,TR,BL,BR]
+// ROM $DB89: BRICK_FULL (type4) = [0x0F, 0x0F, 0x0F, 0x0F] (all solid-brick CHR)
+// (ROM $DB79 is type0 right-col = [0x00,0x0F,0x00,0x0F] — was incorrectly used before)
+const BRICK_QUAD = [0x0F, 0x0F, 0x0F, 0x0F];
+
+// ─── Passability  ─────────────────────────────────────────────────────────────
+// ROM $DD30 MoveGridSnap: passable if tile byte >= $12 in ROM tile map
+// Our mapping: EMPTY(13), TREES(10), ICE(12) passable; brick/steel/water block
+function passable(col, row) {
+  if (col < 0 || col >= GW || row < 0 || row >= GH) return false;
+  const t = grid[row][col];
+  return t === T.EMPTY || t >= 13 || t === T.ICE || t === T.TREES;
+}
+
+// ─── NES color palette approximations  ────────────────────────────────────────
+// ROM $D44A PaletteData  $D475 PaletteColorTable
+const C = {
+  BG:        '#000000',
+  FIELD:     '#080808',
+  BORDER:    '#404040',
+  BRICK:     '#b03000',
+  BRICK_HL:  '#e84000',
+  STEEL:     '#607090',
+  STEEL_HL:  '#a0c0d8',
+  TREES:     '#006000',
+  TREES_DK:  '#003800',
+  WATER:     '#0000b8',
+  WATER_HL:  '#2244ff',
+  ICE:       '#98c8f8',
+  ICE_HL:    '#ffffff',
+  EAGLE_OK:  '#c0b000',
+  EAGLE_DEAD:'#600000',
+  BASE_WALL: '#808080',
+  BASE_FORT: '#607090',   // steel walls during shovel power-up
+  P1:        '#f8e800',   // yellow
+  P2:        '#48c840',   // green
+  ENEMY:     '#c8c8c8',
+  ENEMY_PU:  '#ff8800',   // flashing power-up tank
+  BULLET:    '#ffffff',
+  SHIELD:    '#ffff80',
+  SPAWN_A:   '#ffffff',
+  SPAWN_B:   '#ffff00',
+  SPAWN_C:   '#ff8800',
+  SPAWN_D:   '#ff4400',
+  POWERUP:   ['#ffff40','#40ffff','#ff8800','#ff4040','#ff40ff','#40ff40'],
+  PU_LABEL:  '#000000',
+  HUD_BG:    '#282828',
+  HUD_TEXT:  '#e8e8e8',
+  SCORE_COL: '#f8e800',
+  GAMEOVER:  '#f80000',
+};
+
+// ─── Game state  ──────────────────────────────────────────────────────────────
+let stageIdx;       // ROM $41 StageNum
+let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
+let gamePhase;      // 'start' | 'play' | 'clear' | 'gameover'
+let p1Score;        // ROM $15–$1B P1Score (int; BCD in ROM)
+let p1Lives;        // ROM $51 P1Lives
+let enemiesLeft;    // ROM $7F EnemiesRemaining (total to spawn)
+let activeEnemyCount;
+let freezeTimer;    // ROM $0100 EnemyFreezeTimer (Timer power-up)
+let shovelTimer;    // ROM $45 PowerUpTimer for shovel/fortify
+let eagleAlive;
+let spawnRot;       // ROM $6A SpawnRotIdx (0→1→2→0 cycling)
+let spawnDelay;     // ROM $82 SpawnDelay countdown
+let phaseTimer;     // stage-start / clear / gameover display timer
+let powerUp;        // { x, y, type } or null
+let grid;           // GH×GW array of tile types (mutable, brick quarters get cleared)
+let brickBits;      // GH×GW 4-bit brick sub-tile masks  ROM $D745 SubTileBitmask
+let entities;       // 8 entity objects (slots 0-7)
+let bullets;        // 10 bullet slots (0-7 primary per entity; 8-9 player double-shot)
+let playerRespawnTimer = 0;
+
+// ─── Brick sub-tile init  ─────────────────────────────────────────────────────
+// ROM $D745 SubTileBitmask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
+function brickInitBits(t) {
+  if (t === T.BRICK_TL) return 0b0001;
+  if (t === T.BRICK_TR) return 0b0010;
+  if (t === T.BRICK_BL) return 0b0100;
+  if (t === T.BRICK_BR) return 0b1000;
+  if (t === T.BRICK)    return 0b1111;
+  return 0;
+}
+
+// ─── Entity factory  ──────────────────────────────────────────────────────────
+function makeEntity(slot) {
+  return {
+    slot,
+    x: 0, y: 0,
+    dir: 0,           // ROM $A0,X bits 1:0  (0=UP 1=LEFT 2=DOWN 3=RIGHT)
+    alive: false,
+    type: 0,          // ROM $A8,X enemy tier 0-3 (affects score + armor)
+    starLevel: 0,     // ROM $0101,X  0/$20/$40/$60 — player weapon upgrade
+    shieldTimer: 0,   // ROM $89,X  countdown; >0 = shielded
+    armorHits: 0,     // remaining armor hits before death  ROM $E8B1
+    powerUpTank: false,// flashing tank carrying power-up  ROM $E417 $7F==17/10/3
+    blinkFrame: 0,    // armor-hit blink countdown
+    spawnAnim: 0,     // spawn star animation frames  ROM $DF09 StateIncSlot
+    aiTimer: 0,       // AI direction-change countdown  ROM $DDFC RandomDirChange
+    fireTimer: 0,     // enemy fire interval
+    isPlayer: slot < 2,
+  };
+}
+
+// ─── Bullet factory  ──────────────────────────────────────────────────────────
+// ROM $CC,X BulletState  $B8,X BulletX  $C2,X BulletY  $D6,X BulletDouble
+function makeBullet(slot) {
+  return { slot, x: 0, y: 0, dir: 0, active: false, armor: false, owner: -1 };
+}
+
+// ─── Level init  ──────────────────────────────────────────────────────────────
+// ROM $F239 LevelTileLoader  $E4D0 ClearEntitySlots  $E4C6 ClearBulletSlots
+// ROM $C33D LevelStart  $C625 ClearKillTallies
+function initLevel(idx) {
+  stageIdx          = Math.min(idx, LEVEL_MAPS.length - 1);
+  frameCount        = 0;
+  gamePhase         = 'start';
+  phaseTimer        = 180;   // ~3 s stage-start banner  ROM $CFAA PreGameDraw
+  eagleAlive        = true;
+  freezeTimer       = 0;
+  shovelTimer       = 0;
+  powerUp           = null;
+  spawnRot          = 0;     // ROM $6A SpawnRotIdx
+  spawnDelay        = 120;   // ROM $84 SpawnDelayMax (difficulty-dependent; we use fixed)
+  enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
+  activeEnemyCount  = 0;
+  playerRespawnTimer = 0;
+
+  // Copy level grid from ROM data  ROM $F27D LevelMapData
+  const raw = LEVEL_MAPS[stageIdx];
+  grid      = raw.map(r => [...r]);
+
+  // Brick sub-tile bits  ROM $D745
+  brickBits = grid.map(r => r.map(t => brickInitBits(t)));
+
+  // Init entity slots  ROM $E4D0 ClearEntitySlots
+  entities = Array.from({ length: 8 }, (_, i) => makeEntity(i));
+
+  // Init bullet slots  ROM $E4C6 ClearBulletSlots
+  bullets  = Array.from({ length: 10 }, (_, i) => makeBullet(i));
+
+  // Spawn P1  ROM $E417 PlayerRespawn
+  spawnPlayer(0);
+}
+
+// ─── Player respawn  ──────────────────────────────────────────────────────────
+// ROM $E417 PlayerRespawn (player branch)  $E539 PlayerSpawnX/Y
+function spawnPlayer(slot) {
+  const e   = entities[slot];
+  const pos = slot === 0 ? P1_SPAWN : P2_SPAWN;
+  e.x           = pos.x;
+  e.y           = pos.y;
+  e.dir         = 0;      // UP  ROM $E53B InitState players=$A0
+  e.alive       = true;
+  e.spawnAnim   = 60;     // spawn star anim  ROM $DF09 StateIncSlot/$DF18 StateIncFire
+  e.shieldTimer = 180;    // brief invincibility after spawn  ROM $EB95 Helmet gives 640
+  e.starLevel   = 0;      // ROM $0101,X reset on death
+  e.blinkFrame  = 0;
+}
+
+// ─── Enemy spawn  ─────────────────────────────────────────────────────────────
+// ROM $DBF6 EnemySpawnDispatch  $E417 PlayerRespawn (enemy branch)  $E531 EnemySpawnX
+function spawnEnemy() {
+  if (enemiesLeft <= 0)        return;
+  if (activeEnemyCount >= 4)   return;   // max 4 on screen simultaneously
+
+  for (let i = 2; i <= 7; i++) {
+    const e = entities[i];
+    if (e.alive) continue;
+
+    e.x          = EN_SPAWN_X[spawnRot % 3];  // ROM $6A SpawnRotIdx → $E531
+    e.y          = EN_SPAWN_Y;
+    e.dir        = 2;     // DOWN  ROM $E53B InitState enemies=$A2
+    e.alive      = true;
+    e.spawnAnim  = 60;
+
+    // Enemy type: tier increases every ~5 kills  ROM $A8,X EntityType
+    const killed = 20 - enemiesLeft;
+    e.type       = Math.min(3, Math.floor(killed / 5));
+
+    // Power-up tank: flag at 17/10/3 remaining  ROM $E417 $7F==17/10/3
+    e.powerUpTank = (enemiesLeft === 17 || enemiesLeft === 10 || enemiesLeft === 3);
+
+    // Armor hits for tier-3 (heavy) tanks  ROM $A8,X bit2 + $E8B1 armor check
+    e.armorHits  = e.type >= 3 ? 3 : (e.type >= 2 ? 1 : 0);
+    e.shieldTimer = 0;
+    e.aiTimer    = 40 + Math.floor(Math.random() * 80);
+    e.fireTimer  = 60 + Math.floor(Math.random() * 120);
+    e.blinkFrame = 0;
+
+    spawnRot = (spawnRot + 1) % 3;   // ROM $6A INC SpawnRotIdx
+    enemiesLeft--;
+    activeEnemyCount++;
+    return;
+  }
+}
+
+// ─── Input  ───────────────────────────────────────────────────────────────────
+// ROM $D68A NMI_Sub2  $DC23 PlayerInputUpdate
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.code] = true;  e.preventDefault(); });
+window.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+// Returns direction (0-3) or -1 if no d-pad held
+function p1Dir() {
+  if (keys['ArrowUp']    || keys['KeyW']) return 0;
+  if (keys['ArrowLeft']  || keys['KeyA']) return 1;
+  if (keys['ArrowDown']  || keys['KeyS']) return 2;
+  if (keys['ArrowRight'] || keys['KeyD']) return 3;
+  return -1;
+}
+
+// ─── Collision helpers  ───────────────────────────────────────────────────────
+function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+// Can entity e move 2 px in direction d?
+// ROM $DD30 MoveGridSnap: probes next tile positions
+const TANK_SZ = 14;  // effective hitbox (matches ROM 16px sprite with 1px inset)
+
+function canMove(e, d) {
+  const nx = e.x + DX[d] * 2;
+  const ny = e.y + DY[d] * 2;
+
+  // Playfield boundary  ROM $DE22 ClampXMove  $DE2A ClampYMove
+  if (nx < FX || nx + TANK_SZ > FX + GW * META) return false;
+  if (ny < FY || ny + TANK_SZ > FY + GH * META) return false;
+
+  // Eagle zone  ROM $E838 eagle tile check ($C8)
+  if (eagleAlive && rectsOverlap(nx, ny, TANK_SZ, TANK_SZ, EAGLE.x - 8, EAGLE.y - 8, 24, 16)) return false;
+
+  // Tile collision: check 4 corners + leading edge midpoint
+  const pts = [
+    [nx,              ny],
+    [nx + TANK_SZ - 1, ny],
+    [nx,              ny + TANK_SZ - 1],
+    [nx + TANK_SZ - 1, ny + TANK_SZ - 1],
+  ];
+  for (const [cx, cy] of pts) {
+    const col = Math.floor((cx - FX) / META);
+    const row = Math.floor((cy - FY) / META);
+    if (!passable(col, row)) return false;
+  }
+
+  // Entity–entity collision  ROM $DC23 position-snap prevents overlap
+  for (let i = 0; i < 8; i++) {
+    const o = entities[i];
+    if (!o.alive || o === e || o.spawnAnim > 0) continue;
+    if (rectsOverlap(nx, ny, TANK_SZ, TANK_SZ, o.x, o.y, TANK_SZ, TANK_SZ)) return false;
+  }
+  return true;
+}
+
+// ─── Entity movement  ─────────────────────────────────────────────────────────
+// ROM $DC23 PlayerInputUpdate  $E06A MoveTank  $DD30 MoveGridSnap
+function moveEntities() {
+  for (let i = 0; i < 8; i++) {
+    const e = entities[i];
+    if (!e.alive || e.spawnAnim > 0) continue;
+
+    if (e.isPlayer) {
+      // ROM $DC23 frame throttle: process on 3 of every 4 frames
+      if ((frameCount & 3) === 2) continue;
+
+      const d = p1Dir();
+      if (d === -1) continue;
+
+      // Direction change: snap to 8-px grid  ROM $DC23  (+4)&$F8
+      if (d !== e.dir) {
+        e.x = (e.x + 4) & 0xF8;
+        e.y = (e.y + 4) & 0xF8;
+        e.dir = d;
+      }
+      if (canMove(e, e.dir)) {
+        e.x += DX[e.dir] * 2;
+        e.y += DY[e.dir] * 2;
+      }
+    } else {
+      // Enemy: frozen during Timer power-up  ROM $0100 EnemyFreezeTimer
+      if (freezeTimer > 0) continue;
+
+      // Alternating frame skip  ROM $DC9F: ($5A XOR $0B) & 1
+      if ((i ^ frameCount) & 1) continue;
+
+      // AI: change direction when blocked or timer expires
+      // ROM $DDFC RandomDirChange  $DE48 DirTowardHQ
+      e.aiTimer--;
+      const blocked = !canMove(e, e.dir);
+      if (blocked || e.aiTimer <= 0) {
+        // 50% navigate toward eagle, 50% random  ROM $DF26 SpeedCtrlMove
+        if (Math.random() < 0.5) {
+          e.dir = dirToward(e.x, e.y, EAGLE.x, EAGLE.y);
+        } else {
+          // ROM $DDFC: 25% turn right, 25% turn left, 50% random
+          const r = Math.random();
+          if (r < 0.33)      e.dir = (e.dir + 1) & 3;
+          else if (r < 0.66) e.dir = (e.dir + 3) & 3;
+          else               e.dir = Math.floor(Math.random() * 4);
+        }
+        e.aiTimer = 20 + Math.floor(Math.random() * 80);
+      }
+      if (canMove(e, e.dir)) {
+        e.x += DX[e.dir];   // enemies 1 px/step vs player 2 px/step
+        e.y += DY[e.dir];
+      }
+    }
+  }
+}
+
+// ROM $DE56 CalcDirToTarget: sign(targetX-entityX)×dx + sign(targetY-entityY)×dy
+function dirToward(ex, ey, tx, ty) {
+  const adx = Math.abs(tx - ex), ady = Math.abs(ty - ey);
+  if (adx > ady) return tx > ex ? 3 : 1;  // horizontal dominant
+  return ty > ey ? 2 : 0;                  // vertical dominant
+}
+
+// ─── Firing  ──────────────────────────────────────────────────────────────────
+// ROM $E140 FireBullet  $E1D6 PlayerFireCheck  $E216 EnemyFireCheck
+let fireHeld = false;
+
+function handlePlayerFire() {
+  const pressing = !!(keys['Space'] || keys['KeyX'] || keys['KeyJ']);
+  if (pressing && !fireHeld) {
+    const e = entities[0];
+    if (e.alive && e.spawnAnim === 0) tryFire(e);
+  }
+  fireHeld = pressing;
+}
+
+// ROM $E216 EnemyFireCheck: enemies fire with ~1/32 chance per active enemy per frame
+function handleEnemyFire() {
+  if (freezeTimer > 0) return;
+  for (let i = 2; i <= 7; i++) {
+    const e = entities[i];
+    if (!e.alive || e.spawnAnim > 0) continue;
+    e.fireTimer--;
+    if (e.fireTimer <= 0) {
+      tryFire(e);
+      e.fireTimer = 30 + Math.floor(Math.random() * 90); // ~ROM 1/32 per frame ≈ avg 50
+    }
+  }
+}
+
+// ROM $E140 FireBullet: set $CC,X = dir|$40; compute start pos from entity center
+function tryFire(e) {
+  // Primary bullet slot = entity index  ROM $CC,X BulletState
+  let b = bullets[e.slot];
+  if (b.active) {
+    // Double-shot: starLevel >= $40  ROM $D6,X bit0  $0101,X >= $40
+    if (e.starLevel < 0x40) return;
+    const sec = e.slot < 2 ? 8 + e.slot : null;
+    if (sec === null || bullets[sec].active) return;
+    b = bullets[sec];
+  }
+  // Bullet spawn position: from entity center toward direction  ROM $E140
+  b.x      = e.x + 7 + DX[e.dir] * 9;
+  b.y      = e.y + 7 + DY[e.dir] * 9;
+  b.dir    = e.dir;
+  b.active = true;
+  b.armor  = e.starLevel >= 0x60;  // armor-piercing at max star  ROM $D6,X bit1
+  b.owner  = e.slot;
+}
+
+// ─── Bullet movement + tile collision  ────────────────────────────────────────
+// ROM $E7A9 BulletMoveCollision  $E838 BulletTileCollision
+const BULLET_SPD = 4;   // ROM $E117 BulletDelta: applies delta × 4
+
+function moveBullets() {
+  for (let i = 0; i < bullets.length; i++) {
+    const b = bullets[i];
+    if (!b.active) continue;
+
+    // Alternating-frame skip for non-player double-shot bullets  ROM $E7A9
+    // (Simplified: all bullets move every frame for now)
+
+    b.x += DX[b.dir] * BULLET_SPD;
+    b.y += DY[b.dir] * BULLET_SPD;
+
+    // Out of field bounds  ROM $E838 boundary
+    if (b.x < FX - 4 || b.x > FX + GW * META + 4 ||
+        b.y < FY - 4 || b.y > FY + GH * META + 4) {
+      b.active = false;
+      continue;
+    }
+
+    // Eagle hit  ROM $E838: eagle tile $C8 → set $68=$27 eagle-destruction
+    if (eagleAlive &&
+        Math.abs(b.x - EAGLE.x) < 12 &&
+        Math.abs(b.y - EAGLE.y) < 8) {
+      eagleAlive = false;
+      b.active = false;
+      continue;
+    }
+
+    // Tile collision  ROM $E838 BulletTileCollision
+    if (bulletHitsTile(b)) {
+      b.active = false;
+    }
+  }
+}
+
+// ROM $E838 BulletTileCollision: checks tile at bullet position
+// Returns true if bullet should be stopped
+function bulletHitsTile(b) {
+  const col = Math.floor((b.x - FX) / META);
+  const row = Math.floor((b.y - FY) / META);
+  if (col < 0 || col >= GW || row < 0 || row >= GH) return false;
+
+  const t = grid[row][col];
+
+  // Steel: stop bullet  ROM $E838 steel check  $030D=1 if player bullet
+  if (t === T.STEEL || (t >= T.STEEL_TL && t <= T.STEEL_BR)) return true;
+
+  // Water: stop bullet, no destroy  ROM $E838 water check
+  if (t === T.WATER) return true;
+
+  // Brick: destroy quarter  ROM $D763 TileDestroyBrick  $D745 SubTileBitmask
+  if (t === T.BRICK || (t >= T.BRICK_TL && t <= T.BRICK_BR)) {
+    destroyBrick(row, col, b.x, b.y);
+    return true;
+  }
+  return false;
+}
+
+// ROM $D763 TileDestroyBrick  $D745 SubTileBitmask
+// Quarter mask: bit0=TL  bit1=TR  bit2=BL  bit3=BR
+function destroyBrick(row, col, bx, by) {
+  const localX = bx - (FX + col * META);
+  const localY = by - (FY + row * META);
+  const qx = localX >= 8 ? 1 : 0;
+  const qy = localY >= 8 ? 1 : 0;
+  const mask = 1 << (qy * 2 + qx);
+
+  brickBits[row][col] &= ~mask;
+  const bits = brickBits[row][col];
+
+  // Update tile type to reflect remaining quarters  ROM $D763
+  if      (bits === 0)      grid[row][col] = T.EMPTY;
+  else if (bits === 0b0001) grid[row][col] = T.BRICK_TL;
+  else if (bits === 0b0010) grid[row][col] = T.BRICK_TR;
+  else if (bits === 0b0100) grid[row][col] = T.BRICK_BL;
+  else if (bits === 0b1000) grid[row][col] = T.BRICK_BR;
+  else                      grid[row][col] = T.BRICK;
+}
+
+// ─── Bullet–entity collision  ─────────────────────────────────────────────────
+// ROM $E8B1 EnemyBulletPlayerHit: 10×10 px proximity check
+function bulletEntityCollision() {
+  for (let bi = 0; bi < bullets.length; bi++) {
+    const b = bullets[bi];
+    if (!b.active) continue;
+
+    const isPlayerBullet = b.owner < 2;
+
+    for (let ei = 0; ei < 8; ei++) {
+      const e = entities[ei];
+      if (!e.alive || e.spawnAnim > 0) continue;
+      if ((ei < 2) === isPlayerBullet) continue;  // same team
+      if (ei === b.owner) continue;
+
+      // 10×10 px hit check  ROM $E8B1
+      if (Math.abs(b.x - (e.x + 7)) >= 10) continue;
+      if (Math.abs(b.y - (e.y + 7)) >= 10) continue;
+
+      b.active = false;
+
+      if (!isPlayerBullet) {
+        // Enemy bullet → player  ROM $E8B1
+        if (e.shieldTimer > 0) continue;  // shield deflects
+        killEntity(e);
+      } else {
+        // Player bullet → enemy  ROM $E8B1 armor check  $EA63 flash
+        if (e.armorHits > 0) {
+          e.armorHits--;
+          e.blinkFrame = 20;   // brief blink to signal hit  ROM $EA63
+        } else {
+          killEntity(e);
+        }
+      }
+    }
+  }
+}
+
+// ─── Bullet–bullet cancel  ────────────────────────────────────────────────────
+// ROM $EAB5 BulletVsBulletCancel: player bullet vs enemy bullet within 6 px
+function bulletBulletCancel() {
+  // Player bullet slots: 0, 1, 8, 9  ROM $EAB5: slot&$06==0
+  const playerSlots = [0, 8];
+  for (const pi of playerSlots) {
+    const pb = bullets[pi];
+    if (!pb.active) continue;
+    for (let ei = 2; ei <= 7; ei++) {
+      const eb = bullets[ei];
+      if (!eb.active) continue;
+      if (Math.abs(pb.x - eb.x) < 6 && Math.abs(pb.y - eb.y) < 6) {
+        pb.active = false;
+        eb.active = false;
+      }
+    }
+  }
+}
+
+// ─── Entity death  ────────────────────────────────────────────────────────────
+// ROM $DEBA PlayerKilled  $DEC9 EnemyKilled
+function killEntity(e) {
+  if (!e.alive) return;
+  e.alive = false;
+
+  if (e.isPlayer) {
+    // ROM $DEBA: DEC $51 P1Lives
+    p1Lives--;
+    if (p1Lives < 0) {
+      gamePhase  = 'gameover';
+      phaseTimer = 240;   // ROM $C53E DrawGameOverScreen timer
+    } else {
+      playerRespawnTimer = 120;  // ~2 s delay before respawn
+    }
+  } else {
+    // ROM $DEC9: DEC $80 EnemyKillsPool; ROM $D2C2 KillScoreTable
+    activeEnemyCount--;
+    const pts = (1 + Math.min(e.type, 3)) * 100;  // 100/200/300/400
+    p1Score += pts;
+
+    // Power-up tank drops power-up  ROM $E35D PowerUpSpawn
+    if (e.powerUpTank && !powerUp) {
+      spawnPowerUp(e.x, e.y);
+    }
+  }
+}
+
+// ─── Power-ups  ───────────────────────────────────────────────────────────────
+// ROM $E35D PowerUpSpawn  $EB17 PowerUpCollision  $EB87 dispatch table
+function spawnPowerUp(x, y) {
+  powerUp = { x, y, type: Math.floor(Math.random() * 6) };
+}
+
+function checkPowerUpCollision() {
+  if (!powerUp) return;
+  for (let i = 0; i < 2; i++) {
+    const e = entities[i];
+    if (!e.alive || e.spawnAnim > 0) continue;
+    // ROM $EB17: within 12 px of effect position ($86/$87)
+    if (Math.abs(e.x + 7 - powerUp.x) < 12 && Math.abs(e.y + 7 - powerUp.y) < 12) {
+      applyPowerUp(e, powerUp.type);
+      powerUp = null;
+      return;
+    }
+  }
+}
+
+// ROM $EB87 power-up dispatch: 6 handlers indexed by $88
+function applyPowerUp(e, type) {
+  switch (type) {
+    case 0:  // Helmet   ROM $EB95: $89,X = 10 (~640 frames shield)
+      e.shieldTimer = 640;
+      break;
+    case 1:  // Timer/Clock  ROM $EB9A: $0100 = 10 (~640 frames freeze)
+      freezeTimer = 10;
+      break;
+    case 2:  // Shovel  ROM $EBA0: $45=20 (fortify base)
+      shovelTimer = 20 * 60;
+      break;
+    case 3:  // Star  ROM $EBAC: $0101,X += $20 (max $60)
+      e.starLevel = Math.min(e.starLevel + 0x20, 0x60);
+      break;
+    case 4:  // Grenade  ROM $EBBC: all 8 entities → state $73 (instant kill-all)
+      for (let i = 2; i <= 7; i++) {
+        if (entities[i].alive) killEntity(entities[i]);
+      }
+      break;
+    case 5:  // Tank/1-Up  ROM $EBE3: INC $51
+      p1Lives++;
+      break;
+  }
+}
+
+// ─── Enemy spawn dispatch  ────────────────────────────────────────────────────
+// ROM $DBF6 EnemySpawnDispatch: dec $82 SpawnDelay; if $7F>0 find free slot
+function tickEnemySpawn() {
+  if (enemiesLeft <= 0 || activeEnemyCount >= 4) return;
+  if (spawnDelay > 0) { spawnDelay--; return; }
+  spawnEnemy();
+  spawnDelay = 120;  // ROM $84 SpawnDelayMax
+}
+
+// ─── Shield + freeze tick  ────────────────────────────────────────────────────
+// ROM $E330 DrawPlayerShield: shieldTimer decremented every 64 frames
+// ROM $DC9F EnemyFreezeDecrement: freezeTimer dec every 64 frames
+function tickTimers() {
+  for (let i = 0; i < 2; i++) {
+    const e = entities[i];
+    if (e.shieldTimer > 0) e.shieldTimer--;
+  }
+  if (freezeTimer > 0 && (frameCount & 63) === 0) freezeTimer--;
+  if (shovelTimer > 0) shovelTimer--;
+  for (const e of entities) {
+    if (e.spawnAnim > 0)  e.spawnAnim--;
+    if (e.blinkFrame > 0) e.blinkFrame--;
+  }
+  if (playerRespawnTimer > 0) {
+    playerRespawnTimer--;
+    if (playerRespawnTimer === 0 && !entities[0].alive) {
+      spawnPlayer(0);  // ROM $DEE8 SpawnP1
+    }
+  }
+}
+
+// ─── Stage-clear check  ───────────────────────────────────────────────────────
+// ROM $DEC9: when $80 EnemyKillsPool → 0 → stage clear
+function checkStageClear() {
+  if (gamePhase !== 'play') return;
+  if (enemiesLeft === 0 && activeEnemyCount === 0) {
+    gamePhase  = 'clear';
+    phaseTimer = 180;   // ROM $CAF1 StageClearTallyScreen
+  }
+}
+
+// ─── Main update  ─────────────────────────────────────────────────────────────
+// ROM $C402 GameFrame  $C29F GameUpdate2 — 18-subsystem sequence
+function update() {
+  frameCount++;
+
+  if (gamePhase === 'start') {
+    phaseTimer--;
+    if (phaseTimer <= 0) gamePhase = 'play';
+    return;
+  }
+  if (gamePhase === 'clear') {
+    phaseTimer--;
+    if (phaseTimer <= 0) initLevel(stageIdx + 1);
+    return;
+  }
+  if (gamePhase === 'gameover') {
+    phaseTimer--;
+    if (phaseTimer <= 0 && (keys['Space'] || keys['Enter'])) initLevel(stageIdx);
+    return;
+  }
+
+  // ── Active gameplay subsystems  ROM $C29F GameUpdate2 order ──────────────
+  tickTimers();                   // shield/freeze/spawn timers
+  moveEntities();                 // ROM $DC9F EntityMovement
+  moveBullets();                  // ROM $E7A9 BulletMoveCollision
+  bulletBulletCancel();           // ROM $EAB5 BulletVsBulletCancel
+  bulletEntityCollision();        // ROM $E8B1 EnemyBulletPlayerHit
+  tickEnemySpawn();               // ROM $DBF6 EnemySpawnDispatch
+  handlePlayerFire();             // ROM $E1D6 PlayerFireCheck
+  handleEnemyFire();              // ROM $E216 EnemyFireCheck
+  checkPowerUpCollision();        // ROM $EB17 PowerUpCollision
+
+  if (!eagleAlive) {
+    gamePhase  = 'gameover';      // ROM $C1A0 StageEndHandler eagle-destruction
+    phaseTimer = 240;
+  }
+  checkStageClear();              // ROM $DEC9 EnemyKillsPool → 0
+}
+
+// ─── Rendering helpers  ───────────────────────────────────────────────────────
+function fillRect(nx, ny, nw, nh, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(nx * SCALE, ny * SCALE, nw * SCALE, nh * SCALE);
+}
+function fillRectI(nx, ny, nw, nh, color) {  // integer snap
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(nx * SCALE), Math.round(ny * SCALE),
+               Math.round(nw * SCALE), Math.round(nh * SCALE));
+}
+function text(str, nx, ny, color, sz = 7) {
+  ctx.fillStyle = color;
+  ctx.font = `bold ${sz * SCALE}px monospace`;
+  ctx.fillText(str, nx * SCALE, ny * SCALE);
+}
+
+// ─── Tile rendering  ──────────────────────────────────────────────────────────
+// ROM $D82B DrawNametableTile  $DB79 CHR tile table  $D745 SubTileBitmask
+function drawTile(col, row) {
+  const t  = grid[row][col];
+  const px = FX + col * META;
+  const py = FY + row * META;
+
+  fillRect(px, py, META, META, C.FIELD);  // always fill black first
+  if (t === T.EMPTY || t >= 13) return;
+
+  if (chrOff) {
+    if (t <= T.BRICK) {
+      // Brick (full or partial): draw only present quadrants from brickBits
+      // ROM $DB89 BRICK_FULL (type4) = [TL=$0F, TR=$0F, BL=$0F, BR=$0F]
+      const bits = brickBits[row][col];
+      for (let q = 0; q < 4; q++) {
+        if (bits & (1 << q)) {
+          drawCHRTile(BRICK_QUAD[q], TILE_PAL[T.BRICK], px + ((q & 1) ? 8 : 0), py + (q >= 2 ? 8 : 0));
+        }
+      }
+      return;
+    }
+    const chr = TILE_CHR[t];
+    if (chr) { drawMetatile(chr, TILE_PAL[t], px, py); return; }
+  }
+
+  // ── Fallback: colored-rect rendering ─────────────────────────────────────
+  if (t === T.BRICK || (t >= T.BRICK_TL && t <= T.BRICK_BR)) {
+    const bits = brickBits[row][col];
+    const drawQ = (mask, ox, oy) => {
+      if (!(bits & mask)) return;
+      fillRect(px + ox,     py + oy,     8, 8, C.BRICK);
+      fillRect(px + ox + 1, py + oy + 1, 6, 3, C.BRICK_HL);
+      fillRect(px + ox + 1, py + oy + 4, 6, 3, C.BRICK);
+    };
+    drawQ(1, 0, 0); drawQ(2, 8, 0); drawQ(4, 0, 8); drawQ(8, 8, 8);
+    return;
+  }
+  if (t === T.STEEL || (t >= T.STEEL_TL && t <= T.STEEL_BR)) {
+    fillRect(px, py, META, META, C.STEEL);
+    fillRect(px + 1, py + 1, 6, 6, C.STEEL_HL);
+    fillRect(px + 9, py + 9, 6, 6, C.STEEL_HL);
+    fillRect(px + 1, py + 8, 6, 1, C.STEEL);
+    fillRect(px + 8, py + 1, 1, 6, C.STEEL);
+    return;
+  }
+  if (t === T.TREES) {
+    fillRect(px, py, META, META, C.TREES);
+    ctx.fillStyle = C.TREES_DK;
+    ctx.fillRect((px + 2) * SCALE, (py + 2)  * SCALE, 3 * SCALE, 3 * SCALE);
+    ctx.fillRect((px + 9) * SCALE, (py + 2)  * SCALE, 3 * SCALE, 3 * SCALE);
+    ctx.fillRect((px + 5) * SCALE, (py + 6)  * SCALE, 3 * SCALE, 3 * SCALE);
+    ctx.fillRect((px + 1) * SCALE, (py + 10) * SCALE, 3 * SCALE, 3 * SCALE);
+    ctx.fillRect((px +10) * SCALE, (py + 10) * SCALE, 3 * SCALE, 3 * SCALE);
+    return;
+  }
+  if (t === T.WATER) {
+    fillRect(px, py, META, META, C.WATER);
+    if ((frameCount >> 4) & 1) {
+      fillRect(px + 2, py + 5,  4, 2, C.WATER_HL);
+      fillRect(px + 9, py + 11, 4, 2, C.WATER_HL);
+    } else {
+      fillRect(px + 2, py + 11, 4, 2, C.WATER_HL);
+      fillRect(px + 9, py + 5,  4, 2, C.WATER_HL);
+    }
+    return;
+  }
+  if (t === T.ICE) {
+    fillRect(px, py, META, META, C.ICE);
+    fillRect(px + 1, py + 1, 8, 1, C.ICE_HL);
+    fillRect(px + 9, py + 3, 5, 1, C.ICE_HL);
+    fillRect(px + 2, py + 9, 4, 1, '#c8e8ff');
+    return;
+  }
+}
+
+// ROM $F239 LevelTileLoader: draws all 13×13 metatiles
+function drawField() {
+  // Border rectangle  ROM NES PPU nametable borders
+  fillRect(FX - 4, FY - 4, GW * META + 8, GH * META + 8 + 8, C.BORDER);
+  fillRect(FX, FY, GW * META, GH * META + 8, C.FIELD);
+
+  for (let row = 0; row < GH; row++)
+    for (let col = 0; col < GW; col++)
+      drawTile(col, row);
+
+  drawEagleBase();
+}
+
+// ROM $E3F2 DrawEagleWalls  $E3E2 EagleWallClosed  EAGLE_POS (120,216)
+function drawEagleBase() {
+  const ex = EAGLE.x, ey = EAGLE.y;
+
+  // Surrounding wall tiles (3 × 8×8): brick normally, steel during shovel power-up
+  // ROM $E3F2 positions: (ex-8,ey-8), (ex+8,ey-8), (ex-8,ey); bottom-right left open
+  if (chrOff) {
+    const wTile = shovelTimer > 0 ? 0x10 : 0x0F;  // steel or brick CHR tile
+    const wPal  = shovelTimer > 0 ? 3 : 0;         // BG3 steel or BG0 brick
+    drawCHRTile(wTile, wPal, ex - 8, ey - 8);
+    drawCHRTile(wTile, wPal, ex + 8, ey - 8);
+    drawCHRTile(wTile, wPal, ex - 8, ey);
+  } else {
+    const wc = shovelTimer > 0 ? C.BASE_FORT : C.BASE_WALL;
+    fillRect(ex - 8, ey - 8, 8, 8, wc);
+    fillRect(ex + 8, ey - 8, 8, 8, wc);
+    fillRect(ex - 8, ey,     8, 8, wc);
+  }
+
+  // Eagle sprite (2×2 OAM → 16×16px at ex-8, ey-8)
+  // ROM $E3F2: tiles $D1/$D5/$D9/$DD (intact) or $E1/$E5/$E9/$ED (dead), palette SP2
+  if (eagleAlive) {
+    if (chrOff) {
+      drawSprite16([0xD1, 0xD5, 0xD9, 0xDD], 6, ex - 8, ey - 8);
+    } else {
+      fillRect(ex - 4, ey - 4, 8, 8, '#000000');
+      fillRect(ex - 2, ey - 4, 4, 8, C.EAGLE_OK);
+      fillRect(ex - 4, ey,     8, 4, C.EAGLE_OK);
+    }
+  } else {
+    if (chrOff) {
+      drawSprite16([0xE1, 0xE5, 0xE9, 0xED], 6, ex - 8, ey - 8);
+    } else {
+      fillRect(ex - 4, ey - 4, 8, 8, C.EAGLE_DEAD);
+      ctx.fillStyle = '#ff0000';
+      ctx.font = `bold ${6 * SCALE}px monospace`;
+      ctx.fillText('✕', (ex - 5) * SCALE, (ey + 4) * SCALE);
+    }
+  }
+}
+
+// ROM $DB02 DrawTank2x2  $DABA DrawEntityTile  $DF81 DrawMovingSprite
+function drawEntity(e) {
+  if (!e.alive) return;
+
+  if (e.spawnAnim > 0) {
+    // Spawn star animation  ROM $DFB1 DrawSpawnSprite  CHR $C3-$CF tiles
+    const phase = Math.floor(e.spawnAnim / 10) % 4;
+    const cols  = [C.SPAWN_A, C.SPAWN_B, C.SPAWN_C, C.SPAWN_D];
+    fillRect(e.x, e.y, TANK_SZ, TANK_SZ, C.FIELD);
+    const r = 3 + (3 - phase);
+    fillRect(e.x + 7 - r, e.y + 7 - r, r * 2, r * 2, cols[phase]);
+    return;
+  }
+
+  // Shield blink  ROM $E330 DrawPlayerShield  CHR $29/$2B tiles
+  if (e.shieldTimer > 0 && (frameCount >> 1) & 1) {
+    fillRect(e.x - 1, e.y - 1, TANK_SZ + 2, TANK_SZ + 2, C.SHIELD);
+  }
+
+  // Armor blink on hit  ROM $EA63
+  if (e.blinkFrame > 0 && (frameCount & 3) < 2) return;
+
+  // Tank body color
+  let col;
+  if (e.slot === 0) {
+    col = C.P1;
+  } else if (e.slot === 1) {
+    col = C.P2;
+  } else {
+    col = e.powerUpTank ? (((frameCount >> 2) & 1) ? C.ENEMY_PU : C.ENEMY) : C.ENEMY;
+  }
+
+  // ROM $DB02 direction×8+frame → tile; we draw colored rectangle + barrel
+  const sz = TANK_SZ;
+
+  // Body
+  fillRect(e.x + 1, e.y + 1, sz - 2, sz - 2, col);
+  // Tracks (darker stripes)
+  const trackCol = shadeColor(col, -40);
+  if (e.dir === 0 || e.dir === 2) {
+    fillRect(e.x + 1,      e.y + 1, 3, sz - 2, trackCol);
+    fillRect(e.x + sz - 4, e.y + 1, 3, sz - 2, trackCol);
+  } else {
+    fillRect(e.x + 1, e.y + 1,      sz - 2, 3, trackCol);
+    fillRect(e.x + 1, e.y + sz - 4, sz - 2, 3, trackCol);
+  }
+  // Turret
+  const tx = e.x + 4, ty = e.y + 4;
+  fillRect(tx, ty, 6, 6, shadeColor(col, 20));
+  // Barrel  ROM $DB02 direction-based sprite
+  const bx = e.x + 7, by = e.y + 7;
+  const bl = 7;
+  if (e.dir === 0) fillRect(bx - 1, by - bl, 2, bl, shadeColor(col, 20));
+  if (e.dir === 1) fillRect(bx - bl, by - 1, bl, 2, shadeColor(col, 20));
+  if (e.dir === 2) fillRect(bx - 1, by,      2, bl, shadeColor(col, 20));
+  if (e.dir === 3) fillRect(bx,     by - 1,  bl, 2, shadeColor(col, 20));
+
+  // Enemy type indicator  ROM $A8,X EntityType
+  if (!e.isPlayer && e.type > 0) {
+    ctx.fillStyle = '#000';
+    ctx.font = `bold ${5 * SCALE}px monospace`;
+    ctx.fillText(e.type, (e.x + 4) * SCALE, (e.y + 10) * SCALE);
+  }
+
+  // Star level dots for player  ROM $0101,X
+  if (e.isPlayer && e.starLevel > 0) {
+    const dots = e.starLevel / 0x20;
+    for (let d = 0; d < dots; d++) {
+      fillRect(e.x + 1 + d * 3, e.y - 3, 2, 2, '#ffff00');
+    }
+  }
+}
+
+function shadeColor(hex, amount) {
+  const r = Math.max(0, Math.min(255, parseInt(hex.slice(1,3),16) + amount));
+  const g = Math.max(0, Math.min(255, parseInt(hex.slice(3,5),16) + amount));
+  const b = Math.max(0, Math.min(255, parseInt(hex.slice(5,7),16) + amount));
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+
+// ROM $E1C6 BulletTravel  $DABA DrawEntityTile  2×6 px sprite
+function drawBullet(b) {
+  if (!b.active) return;
+  const horiz = b.dir === 1 || b.dir === 3;
+  if (horiz) fillRect(b.x - 3, b.y - 1, 6, 3, C.BULLET);
+  else       fillRect(b.x - 1, b.y - 3, 3, 6, C.BULLET);
+}
+
+// ROM $C912/$C9BB PowerUpSprite_Off/On  6 power-up types
+const PU_LABELS = ['H','T','S','★','B','♥'];
+function drawPowerUp() {
+  if (!powerUp) return;
+  if ((frameCount >> 3) & 1) return;  // blink  ROM $C912 off/on frames
+  const x = powerUp.x, y = powerUp.y;
+  fillRect(x - 7, y - 7, 14, 14, C.POWERUP[powerUp.type]);
+  ctx.fillStyle = C.PU_LABEL;
+  ctx.font      = `bold ${8 * SCALE}px monospace`;
+  ctx.fillText(PU_LABELS[powerUp.type], (x - 5) * SCALE, (y + 4) * SCALE);
+}
+
+// ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawHUDTanks  $D8F7 DrawRowTiles
+function drawHUD() {
+  const hx = FX + GW * META + 6;
+  const hy = FY;
+
+  fillRect(hx, hy, 36, GH * META + 8, C.HUD_BG);
+
+  // Enemy count  ROM $C7BD DrawAllHUDKillIcons: 10 pairs of tank icons (2 columns)
+  // ROM: BG tile $6A = small enemy tank icon; $11 = blank (erased on spawn)
+  text('ENEMY', hx + 1, hy + 8, C.HUD_TEXT, 5);
+  const total = enemiesLeft + activeEnemyCount;
+  for (let i = 0; i < Math.min(total, 20); i++) {
+    const col = i % 2, row = Math.floor(i / 2);
+    if (chrOff) {
+      drawCHRTile(0x6A, 3, hx + 1 + col * 9, hy + 12 + row * 9);
+    } else {
+      fillRect(hx + 2 + col * 10, hy + 12 + row * 8, 8, 6, C.ENEMY);
+      fillRect(hx + 3 + col * 10, hy + 13 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 7 + col * 10, hy + 13 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+    }
+  }
+
+  // Stage number  ROM $41 StageNum
+  text(`S${stageIdx + 1}`, hx + 3, hy + 108, C.HUD_TEXT, 6);
+
+  // P1 lives  ROM $51 P1Lives
+  text('P1', hx + 3, hy + 124, C.P1, 6);
+  fillRect(hx + 3, hy + 127, 8, 6, C.P1);  // life tank icon
+  text(`×${p1Lives + 1}`, hx + 13, hy + 133, C.HUD_TEXT, 6);
+
+  // Score  ROM $15-$1B P1Score (BCD in ROM; plain int here)
+  text('SCORE', hx + 1, hy + 152, C.HUD_TEXT, 5);
+  text(p1Score.toString().padStart(6, '0'), hx + 1, hy + 162, C.SCORE_COL, 6);
+
+  // Freeze indicator  ROM $0100 EnemyFreezeTimer
+  if (freezeTimer > 0) {
+    text('FREEZE', hx + 1, hy + 175, '#40ffff', 5);
+  }
+}
+
+// ROM $CFAA PreGameDraw — "STAGE XX" banner
+function drawStageBanner() {
+  const bx = 42, by = 96, bw = 160, bh = 28;
+  fillRect(bx, by, bw, bh, '#000');
+  ctx.fillStyle = C.SCORE_COL;
+  ctx.font = `bold ${11 * SCALE}px monospace`;
+  ctx.fillText(`STAGE  ${stageIdx + 1}`, (bx + 12) * SCALE, (by + 20) * SCALE);
+}
+
+// ROM $C53E DrawGameOverScreen
+function drawGameOver() {
+  fillRect(42, 88, 160, 40, '#000');
+  ctx.fillStyle = C.GAMEOVER;
+  ctx.font = `bold ${14 * SCALE}px monospace`;
+  ctx.fillText('GAME', 58 * SCALE, 112 * SCALE);
+  ctx.fillText('OVER', 58 * SCALE, 128 * SCALE);
+  ctx.fillStyle = '#888';
+  ctx.font      = `${6 * SCALE}px monospace`;
+  ctx.fillText('SPACE/ENTER to retry', 20 * SCALE, 148 * SCALE);
+}
+
+// ROM $CAF1 StageClearTallyScreen
+function drawStageClear() {
+  fillRect(34, 102, 170, 20, '#000');
+  ctx.fillStyle = '#00ff00';
+  ctx.font = `bold ${10 * SCALE}px monospace`;
+  ctx.fillText('STAGE CLEAR!', 38 * SCALE, 118 * SCALE);
+}
+
+// ─── Main render  ─────────────────────────────────────────────────────────────
+// ROM $D96D FlushPPUQueue  NMI OAM DMA
+function render() {
+  ctx.fillStyle = C.BG;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawField();
+
+  // Draw entities (enemies behind trees, players on top)
+  // ROM: trees drawn as BG tiles, so sprites appear underneath — we skip z-ordering in v1
+  for (let i = 2; i < 8; i++) drawEntity(entities[i]);
+  for (let i = 0; i < 2; i++) drawEntity(entities[i]);
+
+  for (const b of bullets) drawBullet(b);
+  drawPowerUp();
+  drawHUD();
+
+  if (gamePhase === 'start')    drawStageBanner();
+  if (gamePhase === 'gameover') drawGameOver();
+  if (gamePhase === 'clear')    drawStageClear();
+
+  // Controls reminder
+  ctx.fillStyle = '#404040';
+  ctx.font = `${4 * SCALE}px monospace`;
+  ctx.fillText('WASD/ARROWS: move  SPACE/X: fire', 8 * SCALE, 235 * SCALE);
+}
+
+// ─── Boot  ────────────────────────────────────────────────────────────────────
+// ROM $C070 Reset  $EBF6 SoundResetInit  $D3BF Init
+p1Score  = 0;
+p1Lives  = 2;  // display shows +1 (3 lives)
+initLevel(0);
+initCHR();     // load CHR tile sheet (../tiles/chr_pt0.png); renders CHR immediately on load
+
+// ROM $C402 GameFrame loop — requestAnimationFrame at 60 fps
+(function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+})();

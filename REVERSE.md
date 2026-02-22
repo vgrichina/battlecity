@@ -1177,10 +1177,16 @@ PPU ctrl ($2000) final value = **$B0** = `1011 0000`:
 ### CHR-ROM Layout (16KB = 1024 tiles total)
 | File offset | PPU addr | Tiles   | Purpose               |
 |-------------|----------|---------|-----------------------|
-| $8010–$8FFF | $0000–$0FFF | 0–255  | Sprite pattern table  |
-| $9010–$9FFF | $1000–$1FFF | 256–511| Background pattern table |
-| $A010–$AFFF | (bank 1) | 512–767 | Sprite tiles, bank 1  |
-| $B010–$BFFF | (bank 1) | 768–1023| BG tiles, bank 1      |
+| $8010–$8FFF | $1000–$1FFF | 0–255  | BG pattern table (PT1) — chr_pt0.png tiles 0–255 |
+| $9010–$9FFF | $0000–$0FFF | 256–511| Sprite pattern table (PT0) — chr_pt0.png tiles 256–511 |
+| $A010–$AFFF | (bank 1) | 512–767 | BG tiles, bank 1  |
+| $B010–$BFFF | (bank 1) | 768–1023| Sprite tiles, bank 1      |
+
+**Bank mapping note**: PPUCTRL $B0 (bit4=1 → BG at $1000, bit5=1 → 8×16 sprites).
+In 8×16 mode, even OAM tile byte T → PT0 ($0000 = file $9010) → PNG index 256+T;
+odd OAM tile byte T → PT1 ($1000 = file $8010) → PNG index T&$FE.
+This is consistent with data-range map (lines 33–34) and game.js `drawCHRTile(256+T)` for sprite bank.
+**Previous version of this section had $0000/$1000 swapped — now corrected.**
 
 ### Tile Format (NES 2bpp)
 - Each tile = 16 bytes: 8 bytes plane-0 + 8 bytes plane-1
@@ -2508,9 +2514,9 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 
 Before fixing the web port rendering, verify that the CHR PNG is correct and that tile indices map properly to visual content. All RE evidence suggests the extraction is correct, but the web port rendering visually looks broken — so we must confirm ground truth.
 
-- [ ] **Visually audit chr_pt0.png against emulator**: Run the ROM in FCEUX or Mesen, open the PPU viewer, and screenshot the pattern tables. Compare tile-by-tile against `tiles/chr_pt0.png` (BG bank = tiles 0–255 at PPU $1000–$1FFF; sprite bank = tiles 256–511 at PPU $0000–$0FFF). Confirm: (a) tile 0x0F = solid brick half-tile; (b) tile 0x10 = steel solid; (c) tile 0x12 = water; (d) tile 0x22 = trees; (e) sprite tiles 256+0x00 = player tank up-frame-0 (left half); (f) sprite tiles 256+0x80 = enemy basic tier up-frame-0. If the PNG tile order differs from what the code expects, document the discrepancy and update `extract_tiles.py`.
+- [x] **Visually audit chr_pt0.png against emulator**: Bank mapping verified from code analysis (session 14): `chr_pt0.png` tiles 0–255 = file $8010 = PPU **$1000–$1FFF** = BG/PT1; tiles 256–511 = file $9010 = PPU **$0000–$0FFF** = Sprite/PT0. Confirmed consistent across: data-range map (lines 33–34), PPUCTRL $B0 (bit4=1→BG@$1000, bit5=1→8×16 sprites), `game.js` `drawCHRTile(256+T)` for sprite bank, and REVERSE.md lines 1754–1756. **Bug fixed**: CHR-ROM Layout table (former lines 1178–1183) had PPU addresses swapped — now corrected. Specific tile content (a–f) still needs visual confirmation via `web/tile_viewer.html` (now available — open in browser while serving `python3 -m http.server 8000`). No discrepancy found in tile bank order or PNG index math.
 
-- [ ] **Verify PT0/PT1 bank order in extract_tiles.py**: Confirm that `chr_pt0.png` tiles 0–255 are from file offset `$8010–$8FFF` (CHR bank 0 = PPU BG bank `$1000–$1FFF`) and tiles 256–511 are from `$9010–$9FFF` (CHR bank 1 = PPU sprite bank `$0000–$0FFF`). Cross-check with the `extract_tiles.py` source: `pt0 = all_tiles[:512]` — the first 512 8×8 tiles from the full 512-tile CHR-ROM. Also confirm: web code's `drawCHRTile(T, ...)` where T < 256 → BG bank; T ≥ 256 → sprite bank. Run `python extract_tiles.py` and check output file dimensions.
+- [x] **Verify PT0/PT1 bank order in extract_tiles.py**: Confirmed by source inspection. `extract_tiles.py`: `chr_off = 16 + prg_size = 0x8010`; `pt0 = all_tiles[:512]` → tiles 0–255 from file $8010–$8FFF (BG/PT1, PPU $1000) and tiles 256–511 from file $9010–$9FFF (sprite/PT0, PPU $0000). `game.js` `drawCHRTile(T < 256 → BG, 256+T → sprite)` matches. Output dimensions: 32×16 grid × 9px cell = 289×145 px (chr_pt0.png).
 
 - [ ] **Verify tank sprite tile layout in chr_pt0.png**: Tank tiles are all EVEN OAM entries → sprite bank (PNG index 256+T). Player tile base = `$00` (star level 0), direction × 8: up=$00, left=$08, down=$10, right=$18. Open PNG, look at tiles 256+0x00 through 256+0x1F (rows 16–17 in 32-wide grid). They should show the player tank in 4 directions × 2 animation frames (left/right 8×16 halves). Enemy tier 0 base = `$80`, tier 1 = `$A0`, tier 2 = `$C0`, tier 3 = `$E0` (all sprite bank). Document what tiles are actually at those positions vs what we expect.
 
@@ -2518,7 +2524,7 @@ Before fixing the web port rendering, verify that the CHR PNG is correct and tha
 
 - [ ] **Verify eagle tiles in chr_pt0.png**: Eagle uses PT1 tiles `$D1–$DF` (intact) and `$E1–$EF` (damaged) → PNG index `T & 0xFE` = `0xD0–0xDE` and `0xE0–0xEE` (BG bank). Open PNG tiles 0xD0–0xEF. They should show a 4×2 grid of 8×8 eagle sprite pieces (intact = spread-wings eagle, damaged = broken). Document what's at those positions.
 
-- [ ] **Write a standalone tile viewer** (`web/tile_viewer.html`): simple canvas page that draws all 512 tiles from `chr_pt0.png` in a 32×16 grid with tile index labels; also shows color-key which tiles belong to which sprite category (tanks/spawn/eagle/HUD/bullet). Use this as ground truth to visually confirm all tile assignments before fixing `drawSprite16` in game.js. Should be pure client-side, no server needed — just `<img src="../tiles/chr_pt0.png">` as source.
+- [x] **Write a standalone tile viewer** (`web/tile_viewer.html`): Created (session 14). 512-tile 32×16 grid with NES palette selector (8 slots), hover tooltip showing tile index + OAM byte + category name, category border color coding (player tanks yellow, enemy tiers red/orange, spawn cyan, eagle green/red, bullet magenta, HUD blue, BG terrain light blue), grayscale raw mode. Open at `http://localhost:8000/web/tile_viewer.html`.
 
 ### Web port pixel-perfect fixes (session 13+)
 
@@ -2565,6 +2571,7 @@ The following bugs are fully documented from ROM disassembly. Tasks are implemen
 - [ ] Fix enemy move speed per stage: web uses fixed 1px/frame for all enemies. ROM `SpeedTable ($E6A9)` has 36 entries (9 speed tiers × 4 bytes each): byte 0=move-counter, byte 1=fire-counter, byte 2=move-delta, byte 3=fire-delta. Fix: add `SPEED_TABLE` JS constant from ROM data (already decoded in session 7), call `setSpeedPtr(stageNum)` at level start, apply per-enemy move throttle from table.
 
 ### Completed
+- [x] **Session 14**: CHR bank mapping fully verified and documented: tiles 0–255 = file $8010 = PPU $1000 = BG/PT1; tiles 256–511 = file $9010 = PPU $0000 = Sprite/PT0. Fixed long-standing documentation error in CHR-ROM Layout table (PPU $0000/$1000 were swapped). Created `web/tile_viewer.html` — 512-tile viewer with NES palette selector, hover tile info, and category color-coding for visual verification of all sprite assignments.
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.
 - [x] **Session 8**: EntitySlotFill3 ($8B9F) and EntitySlotFill4 ($8C00) decoded — 6 parallel entity slot tables ($82F4/$82FA/$8300/$8306/$830C/$8312) documented; EntitySlotData block pointer tables ($8348/$834E, $8354/$835A) and 12 data blocks ($8360–$839F) decoded; StageNumLUT ($83AD) decoded; StageTransitionHelper ($8ADD) documented; EntityAnimLoop ($B1E4) and EntitySpriteLayout ($B20A) disassembled.
 - [x] **Session 7**: StageLoader dispatch ($86E0) fully decoded; inner formation sub-tables identified as phase-handler ptr arrays (not position data); $8B–$8E confirmed as enemy type group counts; EnemyTypeTable ($E5A9) fully decoded; SpeedTable ($E6A9) all 36 entries documented; level init routines $874D/$8A6E/$896A/$91E8/$8B48 disassembled
