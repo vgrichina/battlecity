@@ -2556,7 +2556,7 @@ The following bugs are fully documented from ROM disassembly. Tasks are implemen
 
 - [ ] Fix shield timer decrement frequency: ROM `$E330 PlayerShieldDraw` decrements `$89,X` only when `frameCount & $3F === 0` (every 64 frames). Web decrements every frame. Fix: add `(frameCount & 63) === 0` guard around `e.shieldTimer--`. Also fix magnitudes: spawn shield should be `shieldTimer=3` (3×64=192 frames); helmet power-up sets `shieldTimer=10` (10×64=640 frames). Current web sets spawn=180, helmet=640 — helmet is accidentally correct in duration only because it decrements every frame.
 
-- [ ] Fix spawn delay formula: ROM `LevelStart ($C33D, $C35F–$C387)` computes `SpawnDelayMax = 190 − stageNum × 4` (capped at min 50). Web uses fixed 120. Fix: compute `spawnDelay = Math.max(50, 190 - stageNum * 4)` at level start and after each spawn.
+- [x] Fix spawn delay formula: ROM `LevelStart ($C33D, $C35F–$C387)` computes `SpawnDelayMax = 190 − stageNum × 4` (capped at min 50). Web uses fixed 120. Fixed: `spawnDelay = Math.max(50, 190 - stageIdx * 4)` at level start (game.js:304) and after each spawn (game.js:776).
 
 - [ ] Fix shovel timer: ROM `$EBA0` sets `$45=20`, decremented every 16 frames → 20×16=320 frames (~5.3s). Web sets 1200 frames (~20s, 3.75× too long). Fix: store shovel countdown as a 64-frame tick counter; decrement every 16 frames; at `shovelTicks < 4` flash fortify/restore alternately; at 0 restore normal walls.
 

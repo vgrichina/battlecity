@@ -301,7 +301,7 @@ function initLevel(idx) {
   shovelTimer       = 0;
   powerUp           = null;
   spawnRot          = 0;     // ROM $6A SpawnRotIdx
-  spawnDelay        = 120;   // ROM $84 SpawnDelayMax (difficulty-dependent; we use fixed)
+  spawnDelay        = Math.max(50, 190 - stageIdx * 4); // ROM $84 SpawnDelayMax: 190 - stageNum*4, min 50
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
   activeEnemyCount  = 0;
   playerRespawnTimer = 0;
@@ -773,7 +773,7 @@ function tickEnemySpawn() {
   if (enemiesLeft <= 0 || activeEnemyCount >= 4) return;
   if (spawnDelay > 0) { spawnDelay--; return; }
   spawnEnemy();
-  spawnDelay = 120;  // ROM $84 SpawnDelayMax
+  spawnDelay = Math.max(50, 190 - stageIdx * 4); // ROM $84 SpawnDelayMax
 }
 
 // ─── Shield + freeze tick  ────────────────────────────────────────────────────
