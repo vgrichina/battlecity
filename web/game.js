@@ -1045,8 +1045,8 @@ function drawEagleBase() {
     for (let row = 0; row < 2; row++) {
       for (let col = 0; col < 4; col++) {
         const T = oamTiles[row * 4 + col];
-        drawCHRTile(T & 0xFE,        6, xs[col], ys[row],     true);
-        drawCHRTile((T & 0xFE) + 1,  6, xs[col], ys[row] + 8, true);
+        drawCHRTile(T & 0xFE,        7, xs[col], ys[row],     true);
+        drawCHRTile((T & 0xFE) + 1,  7, xs[col], ys[row] + 8, true);
       }
     }
   } else {

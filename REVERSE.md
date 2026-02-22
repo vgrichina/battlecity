@@ -2635,7 +2635,7 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 - [x] **Fix bullet explosion palette**: ROM `BulletExplode ($E1AF)` sets $04=2 → SP2 (palIdx 6). Change game.js `drawBullet` from `palIdx=4` to `palIdx=6`. **Done (game.js:1174): palIdx changed 4→6 (SP2).**
 
-- [ ] **Fix eagle sprite palette**: ROM `EagleStateUpdate ($E386)` sets $04=3 → SP3 (palIdx 7) for all eagle OAM draws (intact, damaged, explosion). Change game.js `drawEagleBase` from `palIdx=6` to `palIdx=7`.
+- [x] **Fix eagle sprite palette**: ROM `EagleStateUpdate ($E386)` sets $04=3 → SP3 (palIdx 7) for all eagle OAM draws (intact, damaged, explosion). Change game.js `drawEagleBase` from `palIdx=6` to `palIdx=7`. **Done (game.js:1048–1049): palIdx changed 6→7 (SP3).**
 
 - [ ] **Fix tank sprite `tileBase` animation frame**: ROM `$DB02 DrawTank2x2` uses `($A8,X & $F0) + dir×8 + animBit×4` where `animBit = $B0,X & 4` (alternates every ~8 frames via XOR). Game.js uses `entityBase + dir*8` with no animation frame offset → always draws frame 0. Add `animBit = ((frameCount >> 3) & 1) ? 4 : 0` to tileBase formula. (Investigate whether this is the cause of garbled appearance first.)
 
