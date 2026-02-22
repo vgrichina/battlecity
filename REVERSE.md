@@ -1555,7 +1555,11 @@ JMP via EagleHandlerTable[$E3BA, Y]
 | 8  | $E3E2   | Eagle intact ($69=0) — draw 4-tile 2×2 HQ sprite |
 | 10 | $E3EA   | Eagle damaged ($69=$10) — draw HQ with +$10 tile offset |
 
-**Eagle draw** (`$E3F2`): draws 4 × 8×8 sprite tiles at fixed screen positions (X=$70/$80 ≈ 112/128 px, Y=$D0/$E0 ≈ 208/224 px) using `DrawEntityTile ($DABA)`.  Base tile = $D1 (intact) or $E1 (damaged).
+**Eagle draw** (`$E3F2`): draws **8 OAM entries in a 4×2 grid** (32×32px) at fixed screen positions using `$DB0A` (each call draws 2 side-by-side 8×16 entries):
+- 4 calls × 2 OAM entries each = 8 entries: X=104/112/120/128 px, Y=200/216 (OAM Y= Y−8)
+- OAM tile bytes (all ODD → PT1 / BG bank): intact=$D1,$D3,$D5,$D7,$D9,$DB,$DD,$DF; damaged=$E1,$E3,$E5,$E7,$E9,$EB,$ED,$EF
+- PT1 tiles used: intact=$D0–$DF (PNG BG-bank indices 208–223); damaged=$E0–$EF (224–239)
+- `$69=0` (intact) or `$69=$10` (damaged): added to base tile byte $D1 before draw.
 
 **Animation sequence** (39 frames total from $68=$27 to 0):
 - Frames 1–12: explosion flash (tiles $F1/$F5/$F9, ~4 frames each)
@@ -1745,26 +1749,52 @@ JMP $97BC    ; set PPU$2000 + scroll from $12/$13/$68
 
 ### CHR sprite tile number map (from code analysis)
 
-All numbers are OAM sprite tile indices (sprite pattern table, PPU $0000–$0FFF):
+#### 8×16 OAM mode tile byte → CHR index rule (`$2000=$B0` → bit5=1)
 
-| Tile(s) | Game object |
-|---------|-------------|
-| $79–$7B | HUD P1 lives tank icon (2 tiles horizontal) |
-| $7D–$7F | HUD P2 lives tank icon (2 tiles horizontal) |
-| $B1 + dir×2 | Bullet explosion (4 directional variants) |
-| $C3–$CF | Spawn sparkle animation: 3 frames × 4 tiles (`$A8,X`→`(>>3 & $FC)−$10+$B9`) |
-| $D1,$D5,$D9,$DD | Eagle HQ 2×2 sprite (intact): TL, TR, BL, BR |
-| $E1,$E5,$E9,$ED | Eagle HQ 2×2 sprite (damaged/black): TL, TR, BL, BR |
-| $F1 | Eagle explosion animation frame 1 (8×8, center) |
-| $F5 | Eagle explosion animation frame 2 |
-| $F9 | Eagle explosion animation frame 3 |
-| $08–$10 | Basic enemy tank sprite (3×3 OAM grid, all 9 slots filled) |
-| $10–$18 | Player tier-1 tank sprite (3×3 OAM grid) |
-| $11–$19 | Player tier-2 tank sprite (1-star upgrade) |
-| $82–$8A | Player tier-3 tank sprite (2-star upgrade) |
-| $85–$8D | Fast enemy tank sprite (3×3 grid, 2 slots transparent) |
-| $F6–$FE | Power enemy tank sprite (CHR tile base $F6; overlaps eagle-expl range) |
-| $AC–$B4 | Armor enemy tank sprite (base $AC; tier changes on each hit) |
+For every OAM sprite, the tile byte selects which 4KB pattern table and which tile pair:
+- **Even tile byte T** (bit0=0) → **PT0** (CHR $0000, sprite bank):  top=PT0[T], bottom=PT0[T+1] → PNG indices 256+T, 256+T+1
+- **Odd tile byte T** (bit0=1) → **PT1** (CHR $1000, BG bank):  top=PT1[T&$FE], bottom=PT1[(T&$FE)+1] → PNG indices T&$FE, (T&$FE)+1
+
+All numbers below are **OAM sprite tile bytes** (not raw PT0/PT1 indices):
+
+#### Tank sprites — all EVEN tile bytes → PT0 (sprite bank, PNG 256+T)
+
+Formula (`$E06A` MoveTank): tile = (`$A8,X` & $F0) + dir×8; two OAM entries: T (left) and T+2 (right).
+
+| `$A8,X` | Type | Up | Left | Down | Right | PT0 tile range |
+|---------|------|-----|------|------|-------|----------------|
+| $00 | Player star-0 | $00 | $08 | $10 | $18 | $00–$1F |
+| $20 | Player star-1 | $20 | $28 | $30 | $38 | $20–$3F |
+| $40 | Player star-2 | $40 | $48 | $50 | $58 | $40–$5F |
+| $60 | Player star-3 | $60 | $68 | $70 | $78 | $60–$7F |
+| $80 | Enemy tier-0 (basic) | $80 | $88 | $90 | $98 | $80–$9F |
+| $A0 | Enemy tier-1 (fast) | $A0 | $A8 | $B0 | $B8 | $A0–$BF |
+| $C0 | Enemy tier-2 (power) | $C0 | $C8 | $D0 | $D8 | $C0–$DF |
+| $E0/$E3 | Enemy tier-3 (armor) | $E0 | $E8 | $F0 | $F8 | $E0–$FF |
+
+Each direction: 2 side-by-side 8×16 OAM entries using tile bytes T and T+2 (drawing 4 PT0 CHR tiles: T, T+1, T+2, T+3 = 16×16px).  Animation: attribute-only cycle via `$E0B7[Y]` table (palette index 0/1/2), no tile change.
+
+`$A8,X` set by: `$E4B7` ORA for enemy type; `$E419` init=0; `$EBBA` star power-up (+$20 each).  `$B0,X` always=0 (`$E4C3`).
+
+#### Other sprites — ODD tile bytes → PT1 (BG bank, PNG index T&$FE)
+
+| OAM tile byte(s) | Game object | PT1 tiles | PNG BG-bank |
+|-----------------|-------------|-----------|-------------|
+| $79, $7B | HUD P1 tank icon left half | $78–$7B | 120–123 |
+| $7D, $7F | HUD P2 tank icon right half (+$10 from left) | $7C–$7F | 124–127 |
+| $B1+dir×2 ($B1/$B3/$B5/$B7) | Bullet explosion up/left/down/right | $B0–$B7 | 176–183 |
+| $A1,$A3,$A5,$A7,$A9,$AB,$AD,$AF | Spawn animation (triangle-wave, 8 frames: N=7→0→7) | $A0–$AF | 160–175 |
+| $D1,$D3,$D5,$D7,$D9,$DB,$DD,$DF | Eagle intact (8 OAM entries, 4×2 grid, 32×32px) | $D0–$DF | 208–223 |
+| $E1,$E3,$E5,$E7,$E9,$EB,$ED,$EF | Eagle damaged (+$10 from intact) | $E0–$EF | 224–239 |
+| $F1 | Eagle explosion frame 1 (center, single 8×16 OAM) | $F0–$F1 | 240–241 |
+| $F5 | Eagle explosion frame 2 | $F4–$F5 | 244–245 |
+| $F9 | Eagle explosion frame 3 | $F8–$F9 | 248–249 |
+
+**Spawn animation** (`$E0BF`): called for entity states $F0–$FE; tile = `(|lower_nibble − 7| × 2) + $A1` → triangle wave from $AF (state $F0) → $A1 (state $F7) → $AF (state $FE).  **Previous docs claimed $C3–$CF → INCORRECT.**
+
+**Eagle** (`$E3F2`/$DABA): 4 calls to draw 2 OAM entries each = 8 entries, 4 wide × 2 tall. Covers 32×32px (NOT 2×2=16×16px as previously stated).
+
+**HUD tank** (`$C7CD`): $53=$79 → $DB0A → entry1=$79, entry2=$7B; then $53=$7D → entry3=$7D, entry4=$7F. Two separate 16×16px icons at X=$0105 and X=$0105+$10.
 
 ### HUD Pixel Layout (for web port)
 
@@ -2377,7 +2407,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [ ] Fix web TILE_CHR for steel types 5–9 — confirmed from ROM dump: STEEL(type 9)=[$10,$10,$10,$10]; web has types 5–9 cycled one step (web[5]=ROM[6], web[6]=ROM[7], web[7]=ROM[8], web[8]=ROM[9], web[9]=ROM[5]); fix all 5 entries: type5=[$20,$10,$20,$10], type6=[$20,$20,$10,$10], type7=[$10,$20,$10,$20], type8=[$10,$10,$20,$20], type9=[$10,$10,$10,$10]
 - [ ] Verify chr_pt0.png tile layout — confirm whether it is 256 tiles (PT0 only) or 512 tiles (PT0+PT1 combined); the web code treats indices 0–255 as "BG" and 256–511 as "sprite" assuming a 512-tile sheet, but if it's only 256 tiles sprite drawing breaks; verify with `python extract_tiles.py --info` or check image dimensions (256-tile sheet: 32×8 × 9px = 288×72 px; 512-tile: 32×16 × 9px = 288×144 px)
 - [ ] Verify entity position convention — confirm whether ROM entity coords ($90,X/$98,X) are center-pixel or top-left corner; web code uses them as top-left of a 14×14 hitbox; if ROM uses center then spawn/collision offsets are off by 7–8px; check MoveGridSnap ($DD30) probe formulas vs web `canMove()`
-- [ ] Decode sprite tile layout for 8×16 OAM mode — ROM uses $2000=$B0 (8×16 sprites), tile byte bit0=CHR bank; tile $D1 → bank1=PT1, tile pair $D0/$D1; web code passes tile bytes directly as PT0 indices which is wrong for odd tile bytes (bank-1 sprites); decode exact PT0 tile indices for: player tank (all 4 dirs × 2 animation frames × 4 star levels), enemy tanks (4 types × 4 dirs × 2 frames), bullet explosion ($B1+dir×2), spawn animation ($C3–$CF), eagle intact ($D1/$D5 → ?), eagle dead ($E1/$E5 → ?), HUD tank ($79/$7D → ?)
+- [x] Decode sprite tile layout for 8×16 OAM mode — **DONE** (Session 10): even OAM byte T→PT0 (PNG 256+T); odd OAM byte T→PT1 (PNG T&$FE). Tank tiles all EVEN (→PT0): formula `($A8,X&$F0)+dir×8`, left OAM=T, right OAM=T+2; player star 0/1/2/3→bases $00/$20/$40/$60; enemy tier 0/1/2/3→bases $80/$A0/$C0/$E0; animation is attribute-only (palette $E0B7, no tile change). Non-tank sprites all ODD (→PT1/BG-bank): spawn animation ($E0BF) uses $A1–$AF (triangle wave, NOT $C3–$CF as previously stated); bullet expl ($E1AF) uses $B1/$B3/$B5/$B7; eagle ($E3F2) uses $D1–$DF intact / $E1–$EF damaged, 8 OAM entries 4×2=32×32px (NOT 2×2=16×16px); HUD tank ($C7CD) uses $79/$7B / $7D/$7F, 4 entries = 2 icons of 16×16px. Web bugs: eagle drawn as 16×16 (should be 32×32), uses sprite-bank (+256) for PT1 tiles (should use BG-bank, no offset), tile byte T used directly instead of T&$FE for top half.
 - [ ] Audit all web/game.js ROM references — for every subsystem (movement, collision, bullet, spawn, entity death, score, power-ups, HUD, rendering), verify: (a) each JS function has a correct `// ROM $XXXX label` comment pointing to the right address, (b) the implementation logic matches the disassembly notes in REVERSE.md; flag any discrepancy as a sub-bug to fix; check particularly: bullet speed (BULLET_SPD=4 vs ROM delta), player move speed (2px/step vs ROM), enemy move speed (1px/step vs ROM), spawnDelay=120 vs ROM $84, shield decrement rate (every frame vs ROM every 64 frames)
 - [ ] Meta-audit: verify web port completeness and ROM fidelity — re-read all REVERSE.md subsystem sections and cross-check against web/game.js; confirm no subsystem is missing or silently stubbed; produce a checklist of: fully correct, partially correct (with specific deltas), and missing/unimplemented features; update REVERSE.md with findings
 
