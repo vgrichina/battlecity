@@ -1019,53 +1019,61 @@ function drawEntity(e) {
   // Armor blink on hit  ROM $EA63
   if (e.blinkFrame > 0 && (frameCount & 3) < 2) return;
 
-  // Tank body color
-  let col;
-  if (e.slot === 0) {
-    col = C.P1;
-  } else if (e.slot === 1) {
-    col = C.P2;
+  // ROM $DB02 DrawTank2x2: T = (entityBase & $F0) + dir×8; left OAM=T, right OAM=T+2
+  // 8×16 OAM → top half tile T, bottom half tile T+1 (NES 8×16 sprite mode)
+  // Player base = starLevel (0/$20/$40/$60); enemy base = $80 + type×$20
+  // All sprite bank tiles → PNG index 256+T
+  const entityBase = e.isPlayer ? e.starLevel : (0x80 + e.type * 0x20);
+  const tileBase   = entityBase + e.dir * 8;
+  // ROM $E0B7 AnimPalTable: palette cycles SP0/SP1/SP2 for track animation
+  // SP0=palIdx 4 (yellow), SP1=5 (lime), SP2=6 (grey/white), SP3=7 (red)
+  const palIdx = e.slot === 0 ? 4 : e.slot === 1 ? 5 :
+                 (e.powerUpTank && ((frameCount >> 2) & 1)) ? 7 : 6;
+
+  if (chrOff) {
+    const T = 256 + tileBase;
+    drawCHRTile(T,   palIdx, e.x,   e.y,   true);  // top-left
+    drawCHRTile(T+2, palIdx, e.x+8, e.y,   true);  // top-right
+    drawCHRTile(T+1, palIdx, e.x,   e.y+8, true);  // bottom-left
+    drawCHRTile(T+3, palIdx, e.x+8, e.y+8, true);  // bottom-right
   } else {
-    col = e.powerUpTank ? (((frameCount >> 2) & 1) ? C.ENEMY_PU : C.ENEMY) : C.ENEMY;
-  }
-
-  // ROM $DB02 direction×8+frame → tile; we draw colored rectangle + barrel
-  const sz = TANK_SZ;
-
-  // Body
-  fillRect(e.x + 1, e.y + 1, sz - 2, sz - 2, col);
-  // Tracks (darker stripes)
-  const trackCol = shadeColor(col, -40);
-  if (e.dir === 0 || e.dir === 2) {
-    fillRect(e.x + 1,      e.y + 1, 3, sz - 2, trackCol);
-    fillRect(e.x + sz - 4, e.y + 1, 3, sz - 2, trackCol);
-  } else {
-    fillRect(e.x + 1, e.y + 1,      sz - 2, 3, trackCol);
-    fillRect(e.x + 1, e.y + sz - 4, sz - 2, 3, trackCol);
-  }
-  // Turret
-  const tx = e.x + 4, ty = e.y + 4;
-  fillRect(tx, ty, 6, 6, shadeColor(col, 20));
-  // Barrel  ROM $DB02 direction-based sprite
-  const bx = e.x + 7, by = e.y + 7;
-  const bl = 7;
-  if (e.dir === 0) fillRect(bx - 1, by - bl, 2, bl, shadeColor(col, 20));
-  if (e.dir === 1) fillRect(bx - bl, by - 1, bl, 2, shadeColor(col, 20));
-  if (e.dir === 2) fillRect(bx - 1, by,      2, bl, shadeColor(col, 20));
-  if (e.dir === 3) fillRect(bx,     by - 1,  bl, 2, shadeColor(col, 20));
-
-  // Enemy type indicator  ROM $A8,X EntityType
-  if (!e.isPlayer && e.type > 0) {
-    ctx.fillStyle = '#000';
-    ctx.font = `bold ${5 * SCALE}px monospace`;
-    ctx.fillText(e.type, (e.x + 4) * SCALE, (e.y + 10) * SCALE);
-  }
-
-  // Star level dots for player  ROM $0101,X
-  if (e.isPlayer && e.starLevel > 0) {
-    const dots = e.starLevel / 0x20;
-    for (let d = 0; d < dots; d++) {
-      fillRect(e.x + 1 + d * 3, e.y - 3, 2, 2, '#ffff00');
+    // Fallback: colored rectangle + barrel when CHR not loaded
+    let col;
+    if (e.slot === 0) {
+      col = C.P1;
+    } else if (e.slot === 1) {
+      col = C.P2;
+    } else {
+      col = e.powerUpTank ? (((frameCount >> 2) & 1) ? C.ENEMY_PU : C.ENEMY) : C.ENEMY;
+    }
+    const sz = TANK_SZ;
+    fillRect(e.x + 1, e.y + 1, sz - 2, sz - 2, col);
+    const trackCol = shadeColor(col, -40);
+    if (e.dir === 0 || e.dir === 2) {
+      fillRect(e.x + 1,      e.y + 1, 3, sz - 2, trackCol);
+      fillRect(e.x + sz - 4, e.y + 1, 3, sz - 2, trackCol);
+    } else {
+      fillRect(e.x + 1, e.y + 1,      sz - 2, 3, trackCol);
+      fillRect(e.x + 1, e.y + sz - 4, sz - 2, 3, trackCol);
+    }
+    const tx = e.x + 4, ty = e.y + 4;
+    fillRect(tx, ty, 6, 6, shadeColor(col, 20));
+    const bx = e.x + 7, by = e.y + 7;
+    const bl = 7;
+    if (e.dir === 0) fillRect(bx - 1, by - bl, 2, bl, shadeColor(col, 20));
+    if (e.dir === 1) fillRect(bx - bl, by - 1, bl, 2, shadeColor(col, 20));
+    if (e.dir === 2) fillRect(bx - 1, by,      2, bl, shadeColor(col, 20));
+    if (e.dir === 3) fillRect(bx,     by - 1,  bl, 2, shadeColor(col, 20));
+    if (!e.isPlayer && e.type > 0) {
+      ctx.fillStyle = '#000';
+      ctx.font = `bold ${5 * SCALE}px monospace`;
+      ctx.fillText(e.type, (e.x + 4) * SCALE, (e.y + 10) * SCALE);
+    }
+    if (e.isPlayer && e.starLevel > 0) {
+      const dots = e.starLevel / 0x20;
+      for (let d = 0; d < dots; d++) {
+        fillRect(e.x + 1 + d * 3, e.y - 3, 2, 2, '#ffff00');
+      }
     }
   }
 }
