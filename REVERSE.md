@@ -2562,7 +2562,7 @@ The following bugs are fully documented from ROM disassembly. Tasks are implemen
 
 **Game logic:**
 
-- [ ] Fix power-up type distribution: line ~688 `Math.floor(Math.random() * 6)` allows type 5 (1-Up) randomly. ROM `PowerUpTypeRNG ($EA9F)` weight table: `[0,1,2,3,4,0,4,3]` — 8 entries, only types 0–4. 1-Up (type 5) never spawns randomly; it only appears via `LivesGrantCheck ($CF44)`. Fix: `POWERUP_RNG=[0,1,2,3,4,0,4,3]; type=POWERUP_RNG[Math.floor(Math.random()*8)]`.
+- [x] Fix power-up type distribution: line ~688 `Math.floor(Math.random() * 6)` allows type 5 (1-Up) randomly. ROM `PowerUpTypeRNG ($EA9F)` weight table: `[0,1,2,3,4,0,4,3]` — 8 entries, only types 0–4. 1-Up (type 5) never spawns randomly; it only appears via `LivesGrantCheck ($CF44)`. Fixed: added `const POWERUP_RNG=[0,1,2,3,4,0,4,3]` and changed `spawnPowerUp` to `type=POWERUP_RNG[Math.floor(Math.random()*8)]` (game.js:727–730).
 
 - [ ] Fix power-up spawn position: line ~680 `spawnPowerUp(e.x, e.y)` spawns at dead entity location. ROM `PowerUpSpawnPickPos ($EA63)` picks independently: `RNG & 0x03 → RNGToCoord`: `coord = ((A+1)*6)*8` → values `{48,96,144,192}` for both X and Y, with collision retry if overlaps existing power-up. Fix: pick random from `[48,96,144,192]` for both x and y, independent of entity position.
 

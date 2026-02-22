@@ -723,8 +723,11 @@ function killEntity(e) {
 
 // ─── Power-ups  ───────────────────────────────────────────────────────────────
 // ROM $E35D PowerUpSpawn  $EB17 PowerUpCollision  $EB87 dispatch table
+// ROM $EA9F PowerUpTypeRNG weight table: 8 entries, types 0–4 only; type 5 (1-Up) never random
+const POWERUP_RNG = [0, 1, 2, 3, 4, 0, 4, 3];
 function spawnPowerUp(x, y) {
-  powerUp = { x, y, type: Math.floor(Math.random() * 6) };
+  const type = POWERUP_RNG[Math.floor(Math.random() * 8)];
+  powerUp = { x, y, type };
 }
 
 function checkPowerUpCollision() {
