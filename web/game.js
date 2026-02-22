@@ -1223,9 +1223,10 @@ function drawHUD() {
   // Stage number  ROM $41 StageNum
   text(`S${stageIdx + 1}`, hx + 3, hy + 108, C.HUD_TEXT, 6);
 
-  // P1 lives  ROM $51 P1Lives
+  // P1 lives  ROM $51 P1Lives; icon = BG tile $14 (PT1), BG3 palette (palIdx 3)
   text('P1', hx + 3, hy + 124, C.P1, 6);
-  fillRect(hx + 3, hy + 127, 8, 6, C.P1);  // life tank icon
+  if (chrOff) drawCHRTile(0x14, 3, hx + 3, hy + 127);
+  else fillRect(hx + 3, hy + 127, 8, 6, C.P1);  // life tank icon fallback
   text(`×${p1Lives + 1}`, hx + 13, hy + 133, C.HUD_TEXT, 6);
 
   // Score  ROM $15-$1B P1Score (BCD in ROM; plain int here)
@@ -1282,6 +1283,13 @@ function render() {
 
   for (const b of bullets) drawBullet(b);
   drawPowerUp();
+
+  // ROM $C7CD DrawHUDTanks: 2×8×16 OAM sprites tiles $79/$7B (left) $7D/$7F (right)
+  // at NES pixel ($0105−8,$0106−8)/($0105,$0106−8); init $0105=$0106=$70 → (104,104).
+  // Visible while gamePhase='play'/'start' (ROM: visible while $0108≥$0A).
+  if (chrOff && (gamePhase === 'play' || gamePhase === 'start'))
+    drawSprite16([0x79, 0x7D, 0x7B, 0x7F], 7, 104, 104, true);
+
   drawHUD();
 
   if (gamePhase === 'start')    drawStageBanner();
