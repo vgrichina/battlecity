@@ -338,6 +338,49 @@ function spawnPlayer(slot) {
   e.blinkFrame  = 0;
 }
 
+// ─── Enemy type table  ────────────────────────────────────────────────────────
+// ROM $E5A9 EnemyTypeTable (140 B) + $E6A9 SpeedTable (36 entries × 4 B)
+// EnemySpawn ($E46C): slot counts from SpeedTable[$85-1]; type = EnemyTypeTable[($85-1)*4+slot]
+// $80=Basic(0), $A0=Fast(1), $C0=Power(2), $E0=Armor(3)
+// 35 stages × 20 enemies; slots emitted in order (slot0 count times, then slot1, etc.)
+const ENEMY_TYPE_TABLE = [
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1],  // stage 1
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,3,3],  // stage 2
+  [1,1,1,1,1,2,2,2,2,2,3,3,3,3,3,0,0,0,0,0],  // stage 3
+  [2,2,2,2,2,2,2,2,1,1,1,1,1,0,0,0,0,3,3,3],  // stage 4
+  [2,2,2,2,2,3,3,0,0,0,0,0,0,0,0,1,1,1,1,1],  // stage 5
+  [3,3,3,1,1,1,1,2,2,2,2,2,2,0,0,0,0,0,0,0],  // stage 6
+  [0,0,0,0,0,0,0,0,1,1,1,1,1,1,2,2,2,2,3,3],  // stage 7
+  [2,2,2,2,2,2,2,3,3,1,1,1,1,0,0,0,0,0,0,0],  // stage 8
+  [2,2,2,2,2,2,2,2,1,1,1,1,1,1,3,3,3,3,3,3],  // stage 9
+  [1,1,1,1,1,3,3,3,3,2,2,2,2,2,2,1,1,1,1,1],  // stage 10
+  [2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,3,3,3,3],  // stage 11
+  [2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,3,3,3,3],  // stage 12
+  [2,2,2,2,2,2,2,2,3,3,3,3,1,1,1,1,1,0,0,0],  // stage 13
+  [0,0,0,0,0,0,0,0,1,1,1,2,2,2,2,2,2,2,3,3],  // stage 14
+  [0,0,1,1,1,1,1,1,1,1,1,1,3,3,3,3,3,3,3,3],  // stage 15
+  [0,0,0,0,0,0,2,2,1,1,1,1,1,1,1,1,3,3,3,3],  // stage 16
+  [3,3,1,1,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0],  // stage 17
+  [3,3,3,3,3,0,0,2,2,2,2,1,1,1,1,1,1,1,1,1],  // stage 18
+  [1,1,1,1,3,3,3,3,3,3,3,3,0,0,0,0,2,2,2,2],  // stage 19
+  [1,1,1,1,1,1,3,3,3,3,3,3,3,3,2,2,1,1,1,1],  // stage 20
+  [2,2,2,2,2,2,2,1,1,1,0,0,0,0,0,0,0,0,3,3],  // stage 21
+  [1,1,1,1,1,1,1,1,1,0,0,2,2,2,2,2,3,3,3,3],  // stage 22
+  [3,3,3,3,3,3,2,2,2,2,1,1,1,1,1,1,1,1,1,1],  // stage 23
+  [2,2,3,3,3,3,3,3,1,1,1,1,1,1,1,1,1,1,1,1],  // stage 24
+  [2,2,1,1,1,1,1,1,1,1,3,3,3,3,3,3,3,3,3,3],  // stage 25
+  [3,3,3,3,3,3,3,3,1,1,1,1,1,1,1,1,0,0,2,2],  // stage 26
+  [2,2,3,3,3,3,3,3,3,3,1,1,1,1,1,1,1,1,1,1],  // stage 27
+  [1,1,1,1,1,1,1,3,3,3,3,0,0,0,0,2,2,2,2,2],  // stage 28
+  [2,2,2,2,2,2,2,2,2,2,1,1,1,1,3,3,3,3,3,3],  // stage 29
+  [0,0,1,1,1,1,1,1,1,1,2,2,3,3,3,3,3,3,3,3],  // stage 30
+  [2,2,2,1,1,1,1,1,1,1,1,3,3,3,3,3,3,2,2,2],  // stage 31
+  [3,3,3,3,3,3,3,3,0,0,0,0,2,2,1,1,1,1,1,1],  // stage 32
+  [1,1,1,1,1,1,1,1,3,3,3,3,1,1,1,1,1,1,1,1],  // stage 33
+  [2,2,1,1,1,1,1,1,1,1,1,1,1,3,3,3,3,3,3,3],  // stage 34
+  [2,2,2,2,1,1,1,1,1,1,3,3,3,3,3,3,3,3,3,3],  // stage 35
+];
+
 // ─── Enemy spawn  ─────────────────────────────────────────────────────────────
 // ROM $DBF6 EnemySpawnDispatch  $E417 PlayerRespawn (enemy branch)  $E531 EnemySpawnX
 function spawnEnemy() {
@@ -354,9 +397,10 @@ function spawnEnemy() {
     e.alive      = true;
     e.spawnAnim  = 60;
 
-    // Enemy type: tier increases every ~5 kills  ROM $A8,X EntityType
-    const killed = 20 - enemiesLeft;
-    e.type       = Math.min(3, Math.floor(killed / 5));
+    // Enemy type: per-stage sequence from ROM $E5A9 EnemyTypeTable + $E6A9 SpeedTable
+    // spawnIdx = enemies already spawned = 20 - enemiesLeft (0..19)
+    const typeRow = ENEMY_TYPE_TABLE[Math.min(stageIdx, ENEMY_TYPE_TABLE.length - 1)];
+    e.type       = typeRow[20 - enemiesLeft];
 
     // Power-up tank: flag at 17/10/3 remaining  ROM $E417 $7F==17/10/3
     e.powerUpTank = (enemiesLeft === 17 || enemiesLeft === 10 || enemiesLeft === 3);
