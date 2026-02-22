@@ -388,18 +388,19 @@ function canMove(e, d) {
   const ny = e.y + DY[d] * 2;
 
   // Playfield boundary  ROM $DE22 ClampXMove  $DE2A ClampYMove
-  if (nx < FX || nx + TANK_SZ > FX + GW * META) return false;
-  if (ny < FY || ny + TANK_SZ > FY + GH * META) return false;
+  // nx/ny are center coords; top-left = nx-8, ny-8
+  if (nx - 8 < FX || nx - 8 + TANK_SZ > FX + GW * META) return false;
+  if (ny - 8 < FY || ny - 8 + TANK_SZ > FY + GH * META) return false;
 
   // Eagle zone  ROM $E838 eagle tile check ($C8)
-  if (eagleAlive && rectsOverlap(nx, ny, TANK_SZ, TANK_SZ, EAGLE.x - 8, EAGLE.y - 8, 24, 16)) return false;
+  if (eagleAlive && rectsOverlap(nx - 8, ny - 8, TANK_SZ, TANK_SZ, EAGLE.x - 8, EAGLE.y - 8, 24, 16)) return false;
 
   // Tile collision: check 4 corners + leading edge midpoint
   const pts = [
-    [nx,              ny],
-    [nx + TANK_SZ - 1, ny],
-    [nx,              ny + TANK_SZ - 1],
-    [nx + TANK_SZ - 1, ny + TANK_SZ - 1],
+    [nx - 8,               ny - 8],
+    [nx - 8 + TANK_SZ - 1, ny - 8],
+    [nx - 8,               ny - 8 + TANK_SZ - 1],
+    [nx - 8 + TANK_SZ - 1, ny - 8 + TANK_SZ - 1],
   ];
   for (const [cx, cy] of pts) {
     const col = Math.floor((cx - FX) / META);
@@ -411,7 +412,7 @@ function canMove(e, d) {
   for (let i = 0; i < 8; i++) {
     const o = entities[i];
     if (!o.alive || o === e || o.spawnAnim > 0) continue;
-    if (rectsOverlap(nx, ny, TANK_SZ, TANK_SZ, o.x, o.y, TANK_SZ, TANK_SZ)) return false;
+    if (rectsOverlap(nx - 8, ny - 8, TANK_SZ, TANK_SZ, o.x - 8, o.y - 8, TANK_SZ, TANK_SZ)) return false;
   }
   return true;
 }
@@ -518,8 +519,9 @@ function tryFire(e) {
     b = bullets[sec];
   }
   // Bullet spawn position: from entity center toward direction  ROM $E140
-  b.x      = e.x + 7 + DX[e.dir] * 9;
-  b.y      = e.y + 7 + DY[e.dir] * 9;
+  // e.x/e.y are center coords (ROM convention)
+  b.x      = e.x + DX[e.dir] * 9;
+  b.y      = e.y + DY[e.dir] * 9;
   b.dir    = e.dir;
   b.active       = true;
   b.explodeTimer = 0;
@@ -631,9 +633,9 @@ function bulletEntityCollision() {
       if ((ei < 2) === isPlayerBullet) continue;  // same team
       if (ei === b.owner) continue;
 
-      // 10×10 px hit check  ROM $E8B1
-      if (Math.abs(b.x - (e.x + 7)) >= 10) continue;
-      if (Math.abs(b.y - (e.y + 7)) >= 10) continue;
+      // 10×10 px hit check  ROM $E8B1  (e.x/e.y are center coords)
+      if (Math.abs(b.x - e.x) >= 10) continue;
+      if (Math.abs(b.y - e.y) >= 10) continue;
 
       triggerBulletExplosion(b);
       b.active = false;
@@ -715,8 +717,8 @@ function checkPowerUpCollision() {
   for (let i = 0; i < 2; i++) {
     const e = entities[i];
     if (!e.alive || e.spawnAnim > 0) continue;
-    // ROM $EB17: within 12 px of effect position ($86/$87)
-    if (Math.abs(e.x + 7 - powerUp.x) < 12 && Math.abs(e.y + 7 - powerUp.y) < 12) {
+    // ROM $EB17: within 12 px of effect position ($86/$87)  (e.x/e.y are center coords)
+    if (Math.abs(e.x - powerUp.x) < 12 && Math.abs(e.y - powerUp.y) < 12) {
       applyPowerUp(e, powerUp.type);
       powerUp = null;
       return;
@@ -993,27 +995,28 @@ function drawEntity(e) {
   if (e.spawnAnim > 0) {
     // Spawn star animation  ROM $E0BF DrawSpawnSprite  CHR PT1 tiles $A0-$AF
     // Triangle wave: $A1,$A3,$A5,$A7,$A9,$AB,$AD,$AF,$AD,$AB,$A9,$A7,$A5,$A3,$A1
-    fillRect(e.x, e.y, TANK_SZ, TANK_SZ, C.FIELD);
+    // e.x/e.y are center coords; top-left = e.x-8, e.y-8
+    fillRect(e.x - 8, e.y - 8, TANK_SZ, TANK_SZ, C.FIELD);
     if (chrOff) {
       const SPAWN_SEQ = [0xA1,0xA3,0xA5,0xA7,0xA9,0xAB,0xAD,0xAF,0xAD,0xAB,0xA9,0xA7,0xA5,0xA3,0xA1];
       const seqIdx = Math.min(14, Math.floor((60 - e.spawnAnim) / 4));
       const T = SPAWN_SEQ[seqIdx];
       // 8×16 sprite centered in 16×16 entity area; palIdx 4 = SP0
-      const sx = e.x + 4, sy = e.y;
+      const sx = e.x - 4, sy = e.y - 8;
       drawCHRTile(T & 0xFE,       4, sx, sy,     true);
       drawCHRTile((T & 0xFE) + 1, 4, sx, sy + 8, true);
     } else {
       const phase = Math.floor(e.spawnAnim / 10) % 4;
       const cols  = [C.SPAWN_A, C.SPAWN_B, C.SPAWN_C, C.SPAWN_D];
       const r = 3 + (3 - phase);
-      fillRect(e.x + 7 - r, e.y + 7 - r, r * 2, r * 2, cols[phase]);
+      fillRect(e.x - r, e.y - r, r * 2, r * 2, cols[phase]);
     }
     return;
   }
 
   // Shield blink  ROM $E330 DrawPlayerShield  CHR $29/$2B tiles
   if (e.shieldTimer > 0 && (frameCount >> 1) & 1) {
-    fillRect(e.x - 1, e.y - 1, TANK_SZ + 2, TANK_SZ + 2, C.SHIELD);
+    fillRect(e.x - 9, e.y - 9, TANK_SZ + 2, TANK_SZ + 2, C.SHIELD);
   }
 
   // Armor blink on hit  ROM $EA63
@@ -1031,11 +1034,12 @@ function drawEntity(e) {
                  (e.powerUpTank && ((frameCount >> 2) & 1)) ? 7 : 6;
 
   if (chrOff) {
+    // e.x/e.y are center coords; top-left = e.x-8, e.y-8
     const T = 256 + tileBase;
-    drawCHRTile(T,   palIdx, e.x,   e.y,   true);  // top-left
-    drawCHRTile(T+2, palIdx, e.x+8, e.y,   true);  // top-right
-    drawCHRTile(T+1, palIdx, e.x,   e.y+8, true);  // bottom-left
-    drawCHRTile(T+3, palIdx, e.x+8, e.y+8, true);  // bottom-right
+    drawCHRTile(T,   palIdx, e.x - 8, e.y - 8, true);  // top-left
+    drawCHRTile(T+2, palIdx, e.x,     e.y - 8, true);  // top-right
+    drawCHRTile(T+1, palIdx, e.x - 8, e.y,     true);  // bottom-left
+    drawCHRTile(T+3, palIdx, e.x,     e.y,     true);  // bottom-right
   } else {
     // Fallback: colored rectangle + barrel when CHR not loaded
     let col;
@@ -1046,19 +1050,20 @@ function drawEntity(e) {
     } else {
       col = e.powerUpTank ? (((frameCount >> 2) & 1) ? C.ENEMY_PU : C.ENEMY) : C.ENEMY;
     }
+    // e.x/e.y are center coords; top-left = e.x-8, e.y-8
     const sz = TANK_SZ;
-    fillRect(e.x + 1, e.y + 1, sz - 2, sz - 2, col);
+    fillRect(e.x - 7, e.y - 7, sz - 2, sz - 2, col);
     const trackCol = shadeColor(col, -40);
     if (e.dir === 0 || e.dir === 2) {
-      fillRect(e.x + 1,      e.y + 1, 3, sz - 2, trackCol);
-      fillRect(e.x + sz - 4, e.y + 1, 3, sz - 2, trackCol);
+      fillRect(e.x - 7,          e.y - 7, 3, sz - 2, trackCol);
+      fillRect(e.x + sz - 12,    e.y - 7, 3, sz - 2, trackCol);
     } else {
-      fillRect(e.x + 1, e.y + 1,      sz - 2, 3, trackCol);
-      fillRect(e.x + 1, e.y + sz - 4, sz - 2, 3, trackCol);
+      fillRect(e.x - 7, e.y - 7,          sz - 2, 3, trackCol);
+      fillRect(e.x - 7, e.y + sz - 12,    sz - 2, 3, trackCol);
     }
-    const tx = e.x + 4, ty = e.y + 4;
+    const tx = e.x - 4, ty = e.y - 4;
     fillRect(tx, ty, 6, 6, shadeColor(col, 20));
-    const bx = e.x + 7, by = e.y + 7;
+    const bx = e.x - 1, by = e.y - 1;
     const bl = 7;
     if (e.dir === 0) fillRect(bx - 1, by - bl, 2, bl, shadeColor(col, 20));
     if (e.dir === 1) fillRect(bx - bl, by - 1, bl, 2, shadeColor(col, 20));
@@ -1067,12 +1072,12 @@ function drawEntity(e) {
     if (!e.isPlayer && e.type > 0) {
       ctx.fillStyle = '#000';
       ctx.font = `bold ${5 * SCALE}px monospace`;
-      ctx.fillText(e.type, (e.x + 4) * SCALE, (e.y + 10) * SCALE);
+      ctx.fillText(e.type, (e.x - 4) * SCALE, (e.y + 2) * SCALE);
     }
     if (e.isPlayer && e.starLevel > 0) {
       const dots = e.starLevel / 0x20;
       for (let d = 0; d < dots; d++) {
-        fillRect(e.x + 1 + d * 3, e.y - 3, 2, 2, '#ffff00');
+        fillRect(e.x - 7 + d * 3, e.y - 11, 2, 2, '#ffff00');
       }
     }
   }
