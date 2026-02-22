@@ -437,8 +437,8 @@ function moveEntities() {
         e.dir = d;
       }
       if (canMove(e, e.dir)) {
-        e.x += DX[e.dir] * 2;
-        e.y += DY[e.dir] * 2;
+        e.x += DX[e.dir];
+        e.y += DY[e.dir];
       }
     } else {
       // Enemy: frozen during Timer power-up  ROM $0100 EnemyFreezeTimer

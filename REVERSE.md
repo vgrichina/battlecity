@@ -2550,7 +2550,7 @@ The following bugs are fully documented from ROM disassembly. Tasks are implemen
 
 **Physics — speed and timing:**
 
-- [ ] Fix player move speed: line ~429 `e.x += DX[e.dir] * 2` should be `* 1`. ROM `MoveGridSnap` advances 1px per step; combined with 3/4 frame skip (every 4th frame idle) = 0.75px/frame average. Current web = 1.5px/frame (2×).
+- [x] Fix player move speed: changed `e.x += DX[e.dir] * 2` → `e.x += DX[e.dir]` (and Y). ROM `MoveGridSnap` advances 1px per step; with 3/4 frame skip = 0.75px/frame average. Fixed in game.js line ~440.
 
 - [ ] Fix bullet speed alternation: ROM `$E7A9 BulletMoveCollision` skips bullet movement every other frame via `TXA EOR $0B AND #$01 BEQ skip` — bullet slot index XOR framecount parity → only half the frames do 4px move = 2px/frame effective. Current web applies 4px every frame (2×). Fix: add `if ((b.slot ^ frameCount) & 1) continue;` guard before bullet position update.
 
