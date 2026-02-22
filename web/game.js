@@ -716,7 +716,7 @@ function killEntity(e) {
 
     // Power-up tank drops power-up  ROM $E35D PowerUpSpawn
     if (e.powerUpTank && !powerUp) {
-      spawnPowerUp(e.x, e.y);
+      spawnPowerUp();
     }
   }
 }
@@ -725,8 +725,18 @@ function killEntity(e) {
 // ROM $E35D PowerUpSpawn  $EB17 PowerUpCollision  $EB87 dispatch table
 // ROM $EA9F PowerUpTypeRNG weight table: 8 entries, types 0–4 only; type 5 (1-Up) never random
 const POWERUP_RNG = [0, 1, 2, 3, 4, 0, 4, 3];
-function spawnPowerUp(x, y) {
+// ROM $EA63 PowerUpSpawnPickPos: RNG & 0x03 → RNGToCoord: coord = ((A+1)*6)*8
+// → 4 possible values: {48, 96, 144, 192} for both X and Y, independent of entity position
+// Collision retry if new position overlaps existing power-up.
+const POWERUP_COORDS = [48, 96, 144, 192];
+function spawnPowerUp() {
   const type = POWERUP_RNG[Math.floor(Math.random() * 8)];
+  let x, y;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    x = POWERUP_COORDS[Math.floor(Math.random() * 4)];
+    y = POWERUP_COORDS[Math.floor(Math.random() * 4)];
+    if (!powerUp || Math.abs(x - powerUp.x) >= 8 || Math.abs(y - powerUp.y) >= 8) break;
+  }
   powerUp = { x, y, type };
 }
 
