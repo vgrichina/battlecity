@@ -503,8 +503,8 @@ function moveEntities() {
       // Enemy: frozen during Timer power-up  ROM $0100 EnemyFreezeTimer
       if (freezeTimer > 0) continue;
 
-      // Alternating frame skip  ROM $DC9F: ($5A XOR $0B) & 1
-      if ((i ^ frameCount) & 1) continue;
+      // ROM $DC9F: Fast type ($A0, EntityType&$F0==$A0) always processes; others alternate
+      if (e.type !== 1 && ((i ^ frameCount) & 1)) continue;
 
       // AI: change direction when blocked or timer expires
       // ROM $DDFC RandomDirChange  $DE48 DirTowardHQ
