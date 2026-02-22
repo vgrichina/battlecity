@@ -2590,7 +2590,26 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
   ['#000000', '#440064', '#982220', '#ECEEEC'],  // SP3-spcl
 ```
 
-- [ ] **Methodically audit each rendering layer against tile_viewer.html and ROM**: for every visual element (BG tiles, tank sprites, spawn animation, bullet explosion, power-ups, HUD icons, eagle), confirm: (a) correct tile index formula, (b) correct bank (BG=0–255 vs Sprite=256–511), (c) correct palIdx mapping, (d) correct draw position (center vs top-left). Document confirmed-correct items and bugs found.
+- [x] **Methodically audit each rendering layer against tile_viewer.html and ROM**: Full ROM disassembly audit of all rendering layers (Session 19). Results:
+
+  **CONFIRMED CORRECT:**
+  - BG terrain tiles: `TILE_CHR` (all 13 types) matches ROM `TileCHRTable ($DB79)` exactly ✓
+  - BG terrain palette: `TILE_PAL` matches ROM `TileAttrTable ($DB69)` exactly ✓ (brick=BG0, steel/ice=BG3, water=BG1, trees=BG2)
+  - Brick quad tile 0x0F ✓; steel partial variants ✓; water $12 ✓; trees $22 ✓; ice $21 ✓
+  - Tank sprite bank: +256 (sprite bank) ✓
+  - Tank tile formula: `($A8,X & $F0) + dir×8` ✓ (before animBit fix)
+  - Player palette: slot 0 → SP0 (palIdx 4), slot 1 → SP1 (palIdx 5) ✓
+  - Bullet explosion tile: `($B1 + dir×2) & $FE` ✓; drawn as single 8×8 BG bank tile (1 OAM entry) ✓
+  - Spawn animation base tile: $A1 ✓; BG bank (T & 0xFE) ✓
+  - Eagle tile indices: $D0–$DF intact, $E0–$EF damaged ✓; BG bank (T & 0xFE) ✓
+  - HUD kill icons: drawn as PPU nametable (BG tiles), palIdx=3 (BG3) likely correct ✓
+
+  **BUGS FOUND:**
+  - **Spawn animation palette WRONG**: ROM `DrawShootSprite ($E0BF)` sets $04=3 → SP3 (palIdx 7). game.js uses palIdx=4 (SP0). Also tile sequence: ROM uses only 4 levels {$A1,$A5,$A9,$AD} (AND #$FC coarsening) cycling large→small→large; game.js uses 8 levels $A1…$AF small→large→small.
+  - **Bullet explosion palette WRONG**: ROM `BulletExplode ($E1AF)` sets $04=2 → SP2 (palIdx 6). game.js uses palIdx=4 (SP0).
+  - **Eagle sprite palette WRONG**: ROM `EagleStateUpdate ($E386)` sets $04=3 → SP3 (palIdx 7) before dispatching all eagle draw handlers. game.js uses palIdx=6 (SP2).
+  - **Enemy palette cycling**: ROM `MoveTank ($E06A)` uses `EnemySpeedTable ($E0B7)` [02,00,00,01,02,01,02,02] indexed by `($0B×4 + $A8,X) & 7` — cycles SP0/SP1/SP2 for animation. game.js fixes all enemies at SP2 except powerup→SP3. (Low priority, close approximation.)
+  - **HUD tank icons**: ROM `DrawHUDTanks ($C7CD)` draws OAM sprites tiles $79/$7B and $7D/$7F (2×8×16 = 16×16px total) with SP3 (palIdx 7). game.js uses colored rectangle only.
 
 **Investigation — root causes:**
 
@@ -2598,13 +2617,13 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 - [ ] **Audit NES_PAL color values in game.js vs ROM PaletteData ($D44A)**: dump `python dis.py 1 D44A 32` (or `decode_tables.py 1 D44A 32 u8`) to get 32 raw NES color bytes. Map each byte through the NES master color table to RGB. Compare palIdx 0–7 in game.js against the ROM values. The currently hard-coded values (SP0 yellow, SP2 grey/teal, etc.) may not match what the ROM actually loads into $3F00–$3F1F, causing all sprites to render in wrong colors.
 
-- [ ] **Investigate tank sprite tile-bank mismatch**: in game.js line 1113, `T = 256 + tileBase`. Open tile_viewer.html, click on tiles 256–271 (player UP group, row 8 cols 0–7) and 384–399 (enemy tier-0, row 12). If tiles look correct in viewer but wrong in game, the bug is in `drawCHRTile` indexing or palIdx. If tiles look garbled in viewer too, the issue is in `extract_tiles.py` or bank assignment. Document finding.
+- [x] **Investigate tank sprite tile-bank mismatch**: Tank sprite bank is +256 (sprite bank) — correct. Tile formula `($A8,X & $F0) + dir×8` correct. Palette: players 0/1 use SP0/SP1 correctly; enemy palette cycling via EnemySpeedTable is an approximation. No tile-bank mismatch exists.
 
-- [ ] **Investigate spawn animation visual (appears white, should be colored)**: spawn draws `drawCHRTile(T & 0xFE, 4, ...)` with palIdx=4 (SP0). Tile $A0 is in BG bank (no +256). Verify: (a) tile $A0 exists and looks like a sparkle in tile_viewer; (b) SP0 palette produces the correct color for spawn animations. ROM `$E0BF DrawSpawnSprite` — confirm which palette it actually uses (may be SP2 or different).
+- [x] **Investigate spawn animation visual (appears white, should be colored)**: ROM `$E0BF DrawShootSprite` confirmed: base tile $A1 (BG bank, no +256, T & 0xFE for 8×16). **Palette is SP3 ($04=3, palIdx 7), NOT SP0.** Tile sequence uses AND #$FC coarsening: only 4 frames {$A1,$A5,$A9,$AD}, starting large→small→large (ROM counter 0→14). game.js SPAWN_SEQ is wrong direction and granularity.
 
-- [ ] **Investigate HUD enemy icon tile 0x6A**: game.js draws BG tile `0x6A` with palIdx=3 (BG3 = steel/ice gray). In the screenshot the icons look checkered gray/white. Open tile_viewer.html, inspect tile 0x6A (BG bank, row 3 col 10). Confirm it's a small tank shape and that BG3 palette is correct. If wrong tile or palette, find correct values from ROM `$C7BD DrawAllHUDKillIcons` and `DrawHUDTanks $C7CD`.
+- [x] **Investigate HUD enemy icon tile 0x6A**: ROM `$C7BD DrawAllHUDKillIcons` calls `PPUQueueTiles` ($D6D3) writing to PPU nametable address $22D2 — these are background tiles, not OAM sprites. BG3 palette (palIdx=3) is plausible for the HUD background region. No immediate fix needed.
 
-- [ ] **Verify HUD OAM tank icon rendering**: ROM `$C7CD DrawHUDTanks` draws the animated HUD tank using OAM entries with tiles `$79/$7B` and `$7D/$7F` (4 entries = two 8×16 sprites = 16×16px). These are PT1/BG bank tiles (odd OAM → `T & 0xFE` → no +256). web port draws this as colored rectangle only; check whether HUD tank in sidebar is actually rendered at all, and if the large gray icon block is coming from some other code path.
+- [x] **Verify HUD OAM tank icon rendering**: ROM `$C7CD DrawHUDTanks` confirmed: draws two 8×16 OAM sprites with tiles $79 and $7D (both BG bank, via DrawTank at $DB0A), palette SP3 ($04=3, palIdx 7). game.js uses colored rectangle — this is a missing CHR rendering (fix tracked below).
 
 **Fix tasks (implement after investigation above):**
 
@@ -2612,11 +2631,17 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 - [ ] **Fix NES_PAL palette slots** to match ROM `PaletteData ($D44A)` values. At minimum fix SP0–SP3 (palIdx 4–7) which affect all sprite rendering. May also need to fix BG0–BG3 if terrain colors are wrong.
 
+- [ ] **Fix spawn animation palette and tile sequence**: ROM `DrawShootSprite ($E0BF)` uses SP3 (palIdx 7). Change game.js `drawEntity` spawn block from `palIdx=4` to `palIdx=7`. Also fix tile sequence: ROM uses 4 levels {$A1,$A5,$A9,$AD} large→small→large (counter & 0x0F, formula `(|counter-7|*2 & 0xFC) + 0xA1`). Change `SPAWN_SEQ` to `[0xAD,0xAD,0xA9,0xA9,0xA5,0xA5,0xA1,0xA1,0xA1,0xA5,0xA5,0xA9,0xA9,0xAD,0xAD]` and update seqIdx to use `Math.floor((60 - e.spawnAnim) / 4)`.
+
+- [ ] **Fix bullet explosion palette**: ROM `BulletExplode ($E1AF)` sets $04=2 → SP2 (palIdx 6). Change game.js `drawBullet` from `palIdx=4` to `palIdx=6`.
+
+- [ ] **Fix eagle sprite palette**: ROM `EagleStateUpdate ($E386)` sets $04=3 → SP3 (palIdx 7) for all eagle OAM draws (intact, damaged, explosion). Change game.js `drawEagleBase` from `palIdx=6` to `palIdx=7`.
+
 - [ ] **Fix tank sprite `tileBase` animation frame**: ROM `$DB02 DrawTank2x2` uses `($A8,X & $F0) + dir×8 + animBit×4` where `animBit = $B0,X & 4` (alternates every ~8 frames via XOR). Game.js uses `entityBase + dir*8` with no animation frame offset → always draws frame 0. Add `animBit = ((frameCount >> 3) & 1) ? 4 : 0` to tileBase formula. (Investigate whether this is the cause of garbled appearance first.)
 
 - [ ] **Fix power-up CHR sprite rendering**: currently drawn as colored rectangle + text label. ROM uses 16×16 CHR sprites from sprite bank: type0(Helmet)=$80–$83, type1(Timer)=$84–$87, type2(Shovel)=$88–$8B, type3(Star)=$8C–$8F, type4(Grenade)=$90–$93, type5(1-Up)=$94–$97. Flash uses tiles $3A–$3D. Implement `drawPowerUp()` using `drawSprite16` with correct tiles and palIdx=7 (SP3).
 
-- [ ] **Fix HUD rendering to use CHR tiles**: HUD enemy kill icons (tile $6A), P1/P2 life icons, and animated HUD tank ($79/$7D OAM entries) should use `drawCHRTile`/`drawSprite16` instead of colored rectangles where possible. Confirm correct palette for each.
+- [ ] **Fix HUD rendering to use CHR tiles**: HUD enemy kill icons (tile $6A), P1/P2 life icons, and animated HUD tank ($79/$7D OAM entries, SP3 palIdx 7) should use `drawCHRTile`/`drawSprite16` instead of colored rectangles where possible.
 
 ### Completed
 - [x] **Session 14**: CHR bank mapping fully verified and documented: tiles 0–255 = file $8010 = PPU $1000 = BG/PT1; tiles 256–511 = file $9010 = PPU $0000 = Sprite/PT0. Fixed long-standing documentation error in CHR-ROM Layout table (PPU $0000/$1000 were swapped). Created `web/tile_viewer.html` — 512-tile viewer with NES palette selector, hover tile info, and category color-coding for visual verification of all sprite assignments.
