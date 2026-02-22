@@ -2248,26 +2248,42 @@ Enemy bullet test: `slot & $06 != 0` OR use slot range 2–7.
 4. Looks up palette via `TileAttrTable` ($DB69, 1 byte per type) and writes attribute byte
 5. Looks up 4 CHR tile IDs from `TileCHRTable` ($DB79, 4 bytes per type = TL/TR/BL/BR) and writes them to the nametable via $D7A4/$D7CA
 
-**TileAttrTable ($DB69, 16 bytes)** — NES palette slot (0–3) per tile type:
+**TileAttrTable ($DB69, 16 bytes)** — NES palette slot (0–3) per tile type (dumped from ROM $DB69–$DB78):
 | Type | Palette | Terrain |
 |------|---------|---------|
-| 0–4  | 0       | Open ground / brick half-variants |
-| 5–9  | 3       | Steel wall variants |
+| 0–4  | 0       | Brick variants (partial and full) |
+| 5–9  | 3       | Steel variants (partial and full) |
 | 10   | 1       | Water / river |
 | 11   | 2       | Trees / forest |
 | 12   | 3       | Ice |
 | 13–15| 0       | Open (empty) |
 
-**TileCHRTable ($DB79, 64 bytes = 16 × 4)** — CHR tile IDs [TL, TR, BL, BR]:
-| Type | TL  | TR  | BL  | BR  | Terrain |
-|------|-----|-----|-----|-----|---------|
-| 4    | $0F | $0F | $0F | $0F | Solid brick |
-| 9    | $10 | $10 | $10 | $10 | Solid steel |
-| 10   | $12 | $12 | $12 | $12 | Water |
-| 11   | $22 | $22 | $22 | $22 | Trees |
-| 12   | $21 | $21 | $21 | $21 | Ice |
-| 15   | $00 | $00 | $00 | $00 | Open ground (blank tiles) |
-(Types 0–3 and 5–8 are half-brick / half-steel variants with mixed CHR IDs)
+**TileCHRTable ($DB79, 64 bytes = 16 × 4)** — CHR tile IDs [TL, TR, BL, BR] (dumped from ROM $DB79–$DBB8):
+| Type | TL  | TR  | BL  | BR  | Terrain | Notes |
+|------|-----|-----|-----|-----|---------|-------|
+| 0    | $00 | $0F | $00 | $0F | Brick: right col only  | TL+BL blank, TR+BR brick |
+| 1    | $00 | $00 | $0F | $0F | Brick: bottom row only | TL+TR blank, BL+BR brick |
+| 2    | $0F | $00 | $0F | $00 | Brick: left col only   | TL+BL brick, TR+BR blank |
+| 3    | $0F | $0F | $00 | $00 | Brick: top row only    | TL+TR brick, BL+BR blank |
+| 4    | $0F | $0F | $0F | $0F | Solid brick (all 4 quads) | |
+| 5    | $20 | $10 | $20 | $10 | Steel: right col solid | $20=open, $10=solid steel |
+| 6    | $20 | $20 | $10 | $10 | Steel: bottom row solid | |
+| 7    | $10 | $20 | $10 | $20 | Steel: left col solid  | |
+| 8    | $10 | $10 | $20 | $20 | Steel: top row solid   | |
+| 9    | $10 | $10 | $10 | $10 | Solid steel (all 4 quads) | |
+| 10   | $12 | $12 | $12 | $12 | Water                  | ROM type 10 = water, NOT trees |
+| 11   | $22 | $22 | $22 | $22 | Trees/forest           | ROM type 11 = trees, NOT water |
+| 12   | $21 | $21 | $21 | $21 | Ice                    | |
+| 13   | $00 | $00 | $00 | $00 | Open (blank)           | |
+| 14   | $00 | $00 | $00 | $00 | Open (blank)           | |
+| 15   | $00 | $00 | $00 | $00 | Open ground            | Used to clear spawn tile |
+
+CHR tile key: $00=blank, $0F=brick quad, $10=solid steel, $20=steel open/frame, $12=water, $22=tree, $21=ice
+
+**Web port bugs confirmed from this dump:**
+- `BRICK_QUAD = [0x00, 0x0F, 0x00, 0x0F]` in web code is ROM type 0 (right-col brick), not full brick; full brick type 4 = [$0F,$0F,$0F,$0F]
+- Steel partial types 5–8 in web are rotated one step vs ROM: web STEEL_TL(5)=[0x20,0x20,0x10,0x10]=ROM type 6; web STEEL(9)=[0x20,0x10,0x20,0x10]=ROM type 5 (partial!)
+- T.TREES=10 and T.WATER=11 are swapped in web: ROM type 10=water ($12 CHR), ROM type 11=trees ($22 CHR); web passability treats type 10 as passable trees when it should block (water)
 
 Tile type $0F (15) = open ground: drawn with CHR tiles $00 everywhere. Used at $E461 to clear the spawn position before an enemy appears, and at $F25B during level tile loading.
 
@@ -2352,6 +2368,18 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Disassemble $030D/$030E sound triggers: **$030D** (slot 13 $EFFB) = player bullet hits steel($10) or water($11) tile, set at $E8AB in BulletTileCollision; pulse2 duty=$D5 sweep=$7F, 2-note C6→C7 ping, 4 frames. **$030E** (slot 14 $F00C) = player bullet hits armored tank (EntityType bit2 set, armor tier>0 after DEC), set at $E991 in PlayerBulletEnemyHit; pulse2 duty=$40 sweep=$7F, E→F rising then D low, ~5 frames. Also decoded: $030B=slot11(eagle hit), $030C=slot12(brick hit), $030A=slot10(entity kill), $0309=slot9(power-up appear). PowerUpSpawnPickPos ($EA63): picks random {48,96,144,192}px X/Y via RNGToCoord($EAA7) with collision retry.
 - [x] Disassemble power-up spawn location logic: **PowerUpSpawnPickPos ($EA63)**: STA $0309=1 (power-up-appear sound); pick X($86)/Y($87) each: RNG&$03 → RNGToCoord($EAA7): A=(A*6+6)*8 → {48,96,144,192}px (grid-aligned quarter-field positions); set $88=$FF/$62=0; call PowerUpCollision($EB17) to test overlap → retry from $EA68 if collision; then pick type: RNG&$07 → PowerUpTypeRNG[$EA9F]: [0,1,2,3,4,0,4,3] (types 0-4 weighted; 1-Up never appears randomly); store type→$88/$62=0. **PowerUpDraw ($E2EF)**: if $86=0 skip; if $62≠0 (collection flash): DEC $62; draw flash-tile $3B/$3D; on zero → clear $86; else if $0B&$08 (blink gate): draw type sprite. **Sprite tiles**: game runs $2000=$B0 → 8×16 OAM mode; $DB0A draws 2 OAM entries side-by-side → 16×16px total; tile = $81+type*4 (left) and tile+2 (right); CHR tiles: type0(Helmet)=$80-$83, type1(Timer)=$84-$87, type2(Shovel)=$88-$8B, type3(Star)=$8C-$8F, type4(Grenade)=$90-$93, type5(1-Up)=$94-$97; flash=$3A-$3D. **PowerUpCollision ($EB17)**: proximity 12px; on hit: $62=$32 (50-frame flash), score+500pts, dispatch to type handler. **ShovelTimerUpdate ($E35D)**: $45=Shovel countdown; every 16 frames: at 64-frame tick DEC $45 (zero→$C912 restore walls); when $45<4: alternate $C9BB fortify/$C912 restore (steel border flashes before expiry). **PlayerShieldDraw ($E330)**: loops X=1→0; $89,X=shield timer; every 64 frames DEC $89,X; draws tile $29 or $2D (alternates on $0B&$02) via $DB0A at player pos.
 - [x] Disassemble NMI handler body ($D300) fully: sequence of sub-calls (save regs → $D304 branch → OAM DMA $4014 → scroll writes → FlushPPUQueue → NMI_Sub2 $D68A → restore → RTI); NMI_Sub1 ($D352) exact flow; needed for accurate frame timing in web port
+
+### Web port rendering fixes (session 12)
+
+- [x] Decode full TileCHRTable ($DB79) for all 16 tile types — **DONE**: dumped all 64 bytes ($DB79–$DBB8); types 0–3=brick partial (right-col/bottom-row/left-col/top-row); type 4=full brick [$0F×4]; types 5–8=steel partial (right-col/bottom-row/left-col/top-row with $10=solid,$20=open); type 9=full steel [$10×4]; type 10=water[$12×4],pal=1; type 11=trees[$22×4],pal=2; type 12=ice[$21×4],pal=3; types 13–15=blank; web port has 3 bugs: (a) BRICK_QUAD wrong, (b) steel types 5–9 cycled by 1, (c) TREES/WATER type numbers swapped
+- [ ] Fix web TREES/WATER type-number swap — ROM type 10=water/$12 tile, type 11=trees/$22 tile; web code has `T.TREES:10` and `T.WATER:11` causing `passable()` to treat water (type 10) as traversable and trees (type 11) as blocking — exactly backwards; fix naming or swap passability condition
+- [ ] Fix web BRICK_QUAD CHR indices — confirmed from ROM dump: type 4 = [$0F,$0F,$0F,$0F] (all solid brick); web code `BRICK_QUAD=[0x00,0x0F,0x00,0x0F]` is ROM type 0 (right-col only); fix BRICK_QUAD to [0x0F,0x0F,0x0F,0x0F]
+- [ ] Fix web TILE_CHR for steel types 5–9 — confirmed from ROM dump: STEEL(type 9)=[$10,$10,$10,$10]; web has types 5–9 cycled one step (web[5]=ROM[6], web[6]=ROM[7], web[7]=ROM[8], web[8]=ROM[9], web[9]=ROM[5]); fix all 5 entries: type5=[$20,$10,$20,$10], type6=[$20,$20,$10,$10], type7=[$10,$20,$10,$20], type8=[$10,$10,$20,$20], type9=[$10,$10,$10,$10]
+- [ ] Verify chr_pt0.png tile layout — confirm whether it is 256 tiles (PT0 only) or 512 tiles (PT0+PT1 combined); the web code treats indices 0–255 as "BG" and 256–511 as "sprite" assuming a 512-tile sheet, but if it's only 256 tiles sprite drawing breaks; verify with `python extract_tiles.py --info` or check image dimensions (256-tile sheet: 32×8 × 9px = 288×72 px; 512-tile: 32×16 × 9px = 288×144 px)
+- [ ] Verify entity position convention — confirm whether ROM entity coords ($90,X/$98,X) are center-pixel or top-left corner; web code uses them as top-left of a 14×14 hitbox; if ROM uses center then spawn/collision offsets are off by 7–8px; check MoveGridSnap ($DD30) probe formulas vs web `canMove()`
+- [ ] Decode sprite tile layout for 8×16 OAM mode — ROM uses $2000=$B0 (8×16 sprites), tile byte bit0=CHR bank; tile $D1 → bank1=PT1, tile pair $D0/$D1; web code passes tile bytes directly as PT0 indices which is wrong for odd tile bytes (bank-1 sprites); decode exact PT0 tile indices for: player tank (all 4 dirs × 2 animation frames × 4 star levels), enemy tanks (4 types × 4 dirs × 2 frames), bullet explosion ($B1+dir×2), spawn animation ($C3–$CF), eagle intact ($D1/$D5 → ?), eagle dead ($E1/$E5 → ?), HUD tank ($79/$7D → ?)
+- [ ] Audit all web/game.js ROM references — for every subsystem (movement, collision, bullet, spawn, entity death, score, power-ups, HUD, rendering), verify: (a) each JS function has a correct `// ROM $XXXX label` comment pointing to the right address, (b) the implementation logic matches the disassembly notes in REVERSE.md; flag any discrepancy as a sub-bug to fix; check particularly: bullet speed (BULLET_SPD=4 vs ROM delta), player move speed (2px/step vs ROM), enemy move speed (1px/step vs ROM), spawnDelay=120 vs ROM $84, shield decrement rate (every frame vs ROM every 64 frames)
+- [ ] Meta-audit: verify web port completeness and ROM fidelity — re-read all REVERSE.md subsystem sections and cross-check against web/game.js; confirm no subsystem is missing or silently stubbed; produce a checklist of: fully correct, partially correct (with specific deltas), and missing/unimplemented features; update REVERSE.md with findings
 
 ### Completed
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.
