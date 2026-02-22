@@ -2504,6 +2504,66 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
   18. **HUD top score strip**: ROM nametable $24 has P1 score + hi-score + P2 score at top rows; web puts score only in side HUD.
   19. **Enemy power-up tank flashing**: ROM uses OAM palette attribute toggle (no tile change); web approximates with color alternation only.
 
+### Sprite / CHR extraction verification (session 13 — do first)
+
+Before fixing the web port rendering, verify that the CHR PNG is correct and that tile indices map properly to visual content. All RE evidence suggests the extraction is correct, but the web port rendering visually looks broken — so we must confirm ground truth.
+
+- [ ] **Visually audit chr_pt0.png against emulator**: Run the ROM in FCEUX or Mesen, open the PPU viewer, and screenshot the pattern tables. Compare tile-by-tile against `tiles/chr_pt0.png` (BG bank = tiles 0–255 at PPU $1000–$1FFF; sprite bank = tiles 256–511 at PPU $0000–$0FFF). Confirm: (a) tile 0x0F = solid brick half-tile; (b) tile 0x10 = steel solid; (c) tile 0x12 = water; (d) tile 0x22 = trees; (e) sprite tiles 256+0x00 = player tank up-frame-0 (left half); (f) sprite tiles 256+0x80 = enemy basic tier up-frame-0. If the PNG tile order differs from what the code expects, document the discrepancy and update `extract_tiles.py`.
+
+- [ ] **Verify PT0/PT1 bank order in extract_tiles.py**: Confirm that `chr_pt0.png` tiles 0–255 are from file offset `$8010–$8FFF` (CHR bank 0 = PPU BG bank `$1000–$1FFF`) and tiles 256–511 are from `$9010–$9FFF` (CHR bank 1 = PPU sprite bank `$0000–$0FFF`). Cross-check with the `extract_tiles.py` source: `pt0 = all_tiles[:512]` — the first 512 8×8 tiles from the full 512-tile CHR-ROM. Also confirm: web code's `drawCHRTile(T, ...)` where T < 256 → BG bank; T ≥ 256 → sprite bank. Run `python extract_tiles.py` and check output file dimensions.
+
+- [ ] **Verify tank sprite tile layout in chr_pt0.png**: Tank tiles are all EVEN OAM entries → sprite bank (PNG index 256+T). Player tile base = `$00` (star level 0), direction × 8: up=$00, left=$08, down=$10, right=$18. Open PNG, look at tiles 256+0x00 through 256+0x1F (rows 16–17 in 32-wide grid). They should show the player tank in 4 directions × 2 animation frames (left/right 8×16 halves). Enemy tier 0 base = `$80`, tier 1 = `$A0`, tier 2 = `$C0`, tier 3 = `$E0` (all sprite bank). Document what tiles are actually at those positions vs what we expect.
+
+- [ ] **Verify spawn animation tiles in chr_pt0.png**: Spawn animation uses PT1 (odd OAM) tiles `$A1–$AF` → PNG index `0xA1 & 0xFE = 0xA0` through `0xAE` (BG bank, tiles 0xA0–0xAE). Open PNG tiles 0xA0–0xAF (row 5, cols 0–15 in 32-wide grid). They should show the expanding star/sparkle animation frames. Document what's actually there.
+
+- [ ] **Verify eagle tiles in chr_pt0.png**: Eagle uses PT1 tiles `$D1–$DF` (intact) and `$E1–$EF` (damaged) → PNG index `T & 0xFE` = `0xD0–0xDE` and `0xE0–0xEE` (BG bank). Open PNG tiles 0xD0–0xEF. They should show a 4×2 grid of 8×8 eagle sprite pieces (intact = spread-wings eagle, damaged = broken). Document what's at those positions.
+
+- [ ] **Write a standalone tile viewer** (`web/tile_viewer.html`): simple canvas page that draws all 512 tiles from `chr_pt0.png` in a 32×16 grid with tile index labels; also shows color-key which tiles belong to which sprite category (tanks/spawn/eagle/HUD/bullet). Use this as ground truth to visually confirm all tile assignments before fixing `drawSprite16` in game.js. Should be pure client-side, no server needed — just `<img src="../tiles/chr_pt0.png">` as source.
+
+### Web port pixel-perfect fixes (session 13+)
+
+The following bugs are fully documented from ROM disassembly. Tasks are implementation-only — no further RE needed unless noted.
+
+**Rendering — CHR sprite tile bank (highest visual impact):**
+
+- [ ] Fix `drawSprite16` PT1 tile bank: odd OAM sprites (spawn $A1–$AF, bullet-expl $B1–$B7, eagle $D1–$EF, HUD $79–$7F) must use PNG index `T & 0xFE` (no +256 offset — these come from PT1/BG bank). Even OAM sprites (tanks) continue to use `256+T`. Current code blindly adds 256 to ALL tiles → wrong CHR tiles rendered for eagle, spawn animation, bullet explosions. Fix: in `drawSprite16`, accept a `pt1` boolean param (or split into two helpers) and pass `T&0xFE` vs `256+T` accordingly.
+
+- [ ] Fix eagle size and tiles: ROM `$E3F2` draws eagle as **8 OAM entries in a 4×2 grid = 32×32 px**, top-left at `(EAGLE.x−16, EAGLE.y−16)`. Tiles intact `$D1/$D5/$D9/$DD/$D3/$D7/$DB/$DF` (4 columns × 2 rows, each entry is an 8×16 sprite), damaged `$E1/$E5/$E9/$ED/$E3/$E7/$EB/$EF`. All are PT1 (no +256). Current `drawSprite16` draws only 2×2=16×16px at `(ex−8, ey−8)` — wrong size and wrong bank. Also fix surrounding wall composite: ROM draws 4 tiles at `(ex−16,ey−16)`, `(ex,ey−16)`, `(ex−16,ey)`, `(ex,ey)` (2×2 = 16×16px each wall section, 4 sections surrounding 32×32 eagle center).
+
+- [ ] Fix spawn animation CHR tiles: ROM `$E0BF DrawSpawnSprite` uses PT1 tiles `$A1–$AF` in an 8-frame triangle wave (`$A1,$A3,$A5,$A7,$A9,$AB,$AD,$AF,$AD,$AB,$A9,$A7,$A5,$A3,$A1`). Each frame draws a single 16×16 sprite (2 OAM entries: top `T`, bottom `T+1`, PT1 bank). Current web draws a colored filled rectangle — no CHR tiles. Fix: render spawn animation using `drawCHRTile(T&0xFE, palIdx, ex−8, ey−8)` + `drawCHRTile((T+1)&0xFE, palIdx, ex−8, ey)` per frame, cycling through the 8 PT1 tiles. Duration: 60 frames / 8 phases = ~7.5 frames per phase (use `Math.floor(spawnAnim/7.5) % 8`).
+
+- [ ] Fix bullet explosion animation: ROM `$E1AF BulletExplode` draws a single 8×8 PT1 sprite at `bullet.x−5, bullet.y` using tile `$B1 + dir*2` ($B1=up, $B3=left, $B5=down, $B7=right), palette SP0, for ~4 frames. Currently no explosion is rendered. Fix: add `explodeTimer` field to bullet; on destruction set `explodeTimer=4`; draw CHR tile `(dir*2+0xB1)&0xFE` (PT1, no +256) centered at bullet hit position for remaining frames.
+
+- [ ] Fix tank CHR sprite rendering: ROM `$DB02 DrawTank2x2` draws a 16×16 tank as 2 OAM entries (8×16 each): left tile `T = ($A8,X & $F0) + dir*8 + anim_bit`, right tile `T+2`. Player 0 base `$00`, player 1 base `$20/$40/$60` (star levels); enemy tier 0/1/2/3 bases `$80/$A0/$C0/$E0`. All even → sprite bank (+256 offset). Current web draws colored rectangles. Fix: compute `tileBase` from entity type/starLevel/direction, call `drawCHRTile(256+tileBase, palIdx, ex−8, ey−8)` + `drawCHRTile(256+tileBase+2, palIdx, ex, ey−8)` (top row), and similarly for bottom row with `tileBase+$10` and `tileBase+$12`.
+
+**Physics — entity position convention:**
+
+- [ ] Fix entity position convention: ROM `MoveGridSnap ($DD30)` uses **center-pixel** coordinates — `entity_X` is the center of the 16×16 tank (spans `entity_X−8` to `entity_X+7`). Web treats `e.x/e.y` as top-left corner. Fix: change all entity spawn positions to center convention (P1 already correct at 88,216; verify all code uses center); update all render calls to draw at `e.x−8, e.y−8`; update all collision/canMove probes to use center-based offsets. Spawn positions `$E537`: P1=(88,216), P2=(152,216) as centers; enemy X=[24,120,216], Y=24 as centers ✓ (no change needed to spawn values, only to render/collision math).
+
+- [ ] Fix TANK_SZ 14→16 and canMove() probe logic: ROM `MoveGridSnap ($DD4B–$DDBC)` checks **2 leading-edge probe points** at 8px NES-tile granularity, not 4 corners at 16px metatile. For RIGHT: probes `(entity_X+8, entity_Y−8)` and `(entity_X+8, entity_Y+7)` — i.e., one past the right edge, top and bottom of tank. Each probe divided by 8 → 8px tile index → check `tileMap[ty][tx]`. Fix: replace the 4-corner loop in `canMove()` with 2 probe points computed from entity center; check at 8px tile resolution; use `TANK_SZ=16`.
+
+**Physics — speed and timing:**
+
+- [ ] Fix player move speed: line ~429 `e.x += DX[e.dir] * 2` should be `* 1`. ROM `MoveGridSnap` advances 1px per step; combined with 3/4 frame skip (every 4th frame idle) = 0.75px/frame average. Current web = 1.5px/frame (2×).
+
+- [ ] Fix bullet speed alternation: ROM `$E7A9 BulletMoveCollision` skips bullet movement every other frame via `TXA EOR $0B AND #$01 BEQ skip` — bullet slot index XOR framecount parity → only half the frames do 4px move = 2px/frame effective. Current web applies 4px every frame (2×). Fix: add `if ((b.slot ^ frameCount) & 1) continue;` guard before bullet position update.
+
+- [ ] Fix shield timer decrement frequency: ROM `$E330 PlayerShieldDraw` decrements `$89,X` only when `frameCount & $3F === 0` (every 64 frames). Web decrements every frame. Fix: add `(frameCount & 63) === 0` guard around `e.shieldTimer--`. Also fix magnitudes: spawn shield should be `shieldTimer=3` (3×64=192 frames); helmet power-up sets `shieldTimer=10` (10×64=640 frames). Current web sets spawn=180, helmet=640 — helmet is accidentally correct in duration only because it decrements every frame.
+
+- [ ] Fix spawn delay formula: ROM `LevelStart ($C33D, $C35F–$C387)` computes `SpawnDelayMax = 190 − stageNum × 4` (capped at min 50). Web uses fixed 120. Fix: compute `spawnDelay = Math.max(50, 190 - stageNum * 4)` at level start and after each spawn.
+
+- [ ] Fix shovel timer: ROM `$EBA0` sets `$45=20`, decremented every 16 frames → 20×16=320 frames (~5.3s). Web sets 1200 frames (~20s, 3.75× too long). Fix: store shovel countdown as a 64-frame tick counter; decrement every 16 frames; at `shovelTicks < 4` flash fortify/restore alternately; at 0 restore normal walls.
+
+**Game logic:**
+
+- [ ] Fix power-up type distribution: line ~688 `Math.floor(Math.random() * 6)` allows type 5 (1-Up) randomly. ROM `PowerUpTypeRNG ($EA9F)` weight table: `[0,1,2,3,4,0,4,3]` — 8 entries, only types 0–4. 1-Up (type 5) never spawns randomly; it only appears via `LivesGrantCheck ($CF44)`. Fix: `POWERUP_RNG=[0,1,2,3,4,0,4,3]; type=POWERUP_RNG[Math.floor(Math.random()*8)]`.
+
+- [ ] Fix power-up spawn position: line ~680 `spawnPowerUp(e.x, e.y)` spawns at dead entity location. ROM `PowerUpSpawnPickPos ($EA63)` picks independently: `RNG & 0x03 → RNGToCoord`: `coord = ((A+1)*6)*8` → values `{48,96,144,192}` for both X and Y, with collision retry if overlaps existing power-up. Fix: pick random from `[48,96,144,192]` for both x and y, independent of entity position.
+
+- [ ] Fix enemy type distribution per stage: web uses `Math.min(3, Math.floor(kills/5))` as universal formula. ROM loads per-stage group counts `$8B–$8E` from `EnemyTypeTable ($E5A9)` via stage-specific blocks (`$8360–$839F`). The 4 bytes encode how many of each tier (basic/fast/power/armor) appear in a stage's 20 enemies. Fix: add `ENEMY_TYPE_TABLE` JS constant from ROM data (already decoded in session 7) and use it to assign type to each spawn.
+
+- [ ] Fix enemy move speed per stage: web uses fixed 1px/frame for all enemies. ROM `SpeedTable ($E6A9)` has 36 entries (9 speed tiers × 4 bytes each): byte 0=move-counter, byte 1=fire-counter, byte 2=move-delta, byte 3=fire-delta. Fix: add `SPEED_TABLE` JS constant from ROM data (already decoded in session 7), call `setSpeedPtr(stageNum)` at level start, apply per-enemy move throttle from table.
+
 ### Completed
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.
 - [x] **Session 8**: EntitySlotFill3 ($8B9F) and EntitySlotFill4 ($8C00) decoded — 6 parallel entity slot tables ($82F4/$82FA/$8300/$8306/$830C/$8312) documented; EntitySlotData block pointer tables ($8348/$834E, $8354/$835A) and 12 data blocks ($8360–$839F) decoded; StageNumLUT ($83AD) decoded; StageTransitionHelper ($8ADD) documented; EntityAnimLoop ($B1E4) and EntitySpriteLayout ($B20A) disassembled.
