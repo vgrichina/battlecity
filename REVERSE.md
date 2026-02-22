@@ -504,8 +504,11 @@ Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique
 | $E595 | BulletDispatch | 16×2 B ptr table: Y=(bulletState>>3)&$FE → bullet handler |
 | $E6A9 | SpeedTable | Difficulty/speed parameters: 2-byte entries indexed by ($85−1)×4 |
 | $E7A9 | BulletMoveCollision | 10-slot loop; for each active bullet ($CC,X&$F0==$40): compute |delta| and |delta|*4 for the direction; probe1 = BulletTileCollision at current (BX,BY); if hit → also probe $E83F at (BX+4*|dy|, BY+4*|dx|); probe2 = BulletTileCollision at (BX−|dx|, BY−|dy|) (1px behind); if hit → also probe (BX−4*|dx|−|dx|, BY−4*|dy|−|dy|); alternating-frame skip for non-double-shot bullets via (X XOR $0B) & $01 |
-| $E838 | BulletTileCollision | (X=px, Y=py) → TilePosLookup → SubTileBitmask → TileCollidableCheck; if eagle tile ($C8) AND $68≠0: set $68=$27 (eagle destruction), $030B=$0307=1, call $CA25, $CC,X=$33; if impassable but not water/steel: brick → TileDestroyBrick, $030C=1 if player bullet (X<2), RTS A=1; if water/steel: $CC,X=$33; if player bullet hits steel: $030D=1; returns A=1 (hit) or A=0 (no hit) |
-| $E8B1 | EnemyBulletPlayerHit | **Dual-purpose bullet-entity collision** — Loop 1 (players X=1→0): check entity active AND state<$E0; inner loop (enemy bullets Y=7→1): if active ($40–$4F) and |BX−EntityX|<10 AND |BY−EntityY|<10 → hit: $CC,Y=$33; if ShieldTimer ($89,X)>0 → deflect ($CC,Y=$00); else → $A0,X=$73 (death), $0307=1, clear $0101/$A8. Loop 2 (enemy entities X=7→2): inner loop (player bullets Y=9→0, Y&$06==0): if active and within 10×10px → $CC,Y=$33; if armor ($A8,X bit2): call $EA63 flash, possibly DEC $A8,X; check $A8,X&$03: if zero → destroy ($A0,X=$73, $030A=1, INC kill tally, ScoreAdd, LivesGrantCheck), else DEC $A8,X, $030E=1 |
+| $E838 | BulletTileCollision | (X=px, Y=py) → TilePosLookup → SubTileBitmask → TileCollidableCheck; flow: (1) eagle tile ($C8) AND $68≠0: set $68=$27, $030B=$0307=1, $CA25, $CC,X=$33, RTS A=0; (2) tile≥$12: no collision, RTS A=0; (3) bullet state→$33 (explode); (4) tile=$11 (water): player bullet → STA $030D=1, RTS A=0; (5) armor-piercing bit ($D6,X&$02): erase tile ($D7A4), $030C=1, RTS A=0; (6) tile=$10 (steel): player bullet → STA $030D=1, RTS A=0; (7) normal brick: $030C=1 if player bullet, JSR TileDestroyBrick ($D763), RTS A=1 |
+| $E8B1 | EnemyBulletPlayerHit | **Dual loop; falls through to PlayerBulletEnemyHit at $E923** — Loop 1 (players $5A=1→0): if entity active AND state<$E0; inner loop (enemy bullets $5B=7→1): if active ($CC&$F0=$40) and within 10×10px → $CC,Y=$33; if ShieldTimer($89,X)>0 → deflect; else → $A0,X=$73, $0307=1, clear $0101/$A8. Falls through to PlayerBulletEnemyHit ($E923): outer $5A=7→2 (enemy entities), inner $5B=9→0 (player bullets Y&$06==0): proximity check; if armor (EntityType bit2): JSR PowerUpSpawnPickPos ($EA63) if type==$E4 then DEC; check EntityType&$03: if 0 → $A0,X=$73 death, $030A=1, kill tally/score; else DEC EntityType, $030E=1 (armor survives). RTS at $EA5E. |
+| $E923 | PlayerBulletEnemyHit | (fall-through from $E8B1) Outer loop enemies $5A=7→2, inner loop player bullets $5B=9→0 (slots with Y&$06==0 = slots 0,1,8,9); 10×10px proximity; armor-hit→$030E; kill→$030A |
+| $EA63 | PowerUpSpawnPickPos | Called when power-up tank first hit: STA $0309=1 (power-up appear sound); RNG loop picks random coord via RNGToCoord ($EAA7) for $86/$87 until PowerUpCollision finds empty spot; STA $88=$FF (flag); continues to complete power-up placement |
+| $EAA7 | RNGToCoord | Maps 2-bit RNG value (0–3) to power-up pixel coordinate: `coord = ((A+1)×6)<<3 = (A+1)×48`; outputs {48, 96, 144, 192} px |
 | $EAB5 | BulletVsBulletCancel | Loop $5A=9→0; only process if $5A&$06==0 (player bullet slots 0,1,8,9); check state $40–$4F; inner loop $5B=9→0 all slots; skip if $5A&$07==$5B&$07 (same entity); if both active and |BX−BX|<6 AND |BY−BY|<6 → both cleared ($CC=0) |
 | $EB17 | PowerUpCollision | Effect-position ($86/$87) vs player proximity check (12px); if EffectTimer ($62)=0: loop players X=1→0; if active and state<$E0 and |EntityX−$86|<12 AND |EntityY−$87|<12: set EffectTimer=50, dispatch via $EB87 power-up table |
 | $EBF6 | SoundResetInit | APU + sound-RAM reset: STA $4015=$0F (enable sq1/sq2/tri/noise), STA $4017=$C0 (5-step frame counter, IRQ inhibit); zero 28 sound slots in $031C–$03F3 (stride 8 via $F0/$F1 ptr) and clear $0300–$031B |
@@ -1790,12 +1793,12 @@ Base octave (shift=0) plays the note at A1–G#2 range. Each +1 octave shift dou
 | 6 | $EFBE | — | SFX slot 6 |
 | 7 | $EF58 | — | SFX slot 7 |
 | 8 | $EF7A | — | SFX slot 8 |
-| 9 | $EFED | — | SFX slot 9 |
-| 10 | $EFA8 | — | SFX slot 10 |
-| 11 | $EF99 | — | SFX slot 11 |
-| 12 | $F003 | — | SFX slot 12 |
-| 13 | $EFFB | — | SFX slot 13 |
-| 14 | $F00C | — | SFX slot 14 |
+| 9 | $EFED | pulse2 | Power-up appear (triggered by $0309=1 at PowerUpSpawnPickPos $EA63) |
+| 10 | $EFA8 | — | Entity kill SFX (triggered by $030A=1 at $E99D when armored tank last armor removed; also bank-0 level-init) |
+| 11 | $EF99 | — | Eagle first-hit SFX (triggered by $030B=1 at $E859 in BulletTileCollision) |
+| 12 | $F003 | — | Brick/pass-through hit (triggered by $030C=1: player bullet hits brick $E89C or armor-piercing pass-through $E88A) |
+| 13 | $EFFB | pulse2 | Steel/water hit: duty=$D5(75%/vol5) sweep=$7F; `dur=2, note[C2/oct4≈C6], note[C2/oct5≈C7], STOP` (4 frames) — triggered by $030D=1 at $E8AB |
+| 14 | $F00C | pulse2 | Armor tank hit (tank survives): duty=$40(25%/envelope) sweep=$7F; `dur=1, note[E2/oct5≈E7], dur=2, note[F2/oct5], CmdModVolHi2($10), note[D2/oct0], STOP` (~5 frames) — triggered by $030E=1 at $E991 |
 | 15 | $EFB7 | — | SFX slot 15 |
 | 16 | $F03A | — | Enemy-fire SFX |
 | 17 | $F031 | — | SFX slot 17 |
@@ -1834,14 +1837,19 @@ Ascending chromatic scalar melody is Battle City's main in-game BGM.
 28 bytes, one per sound slot.  `$0300,X` (X = 0–27) is the priority counter for slot X.  Zero = slot inactive; non-zero = slot wants to play.  `SoundResetInit` ($EBF6) zeroes all 28 on level-start/game-over.
 
 Known slot assignments:
-| Slot | Address | Trigger |
-|------|---------|---------|
-| 0 | $0300 | `CoinEventFlag`: set to 1 by NMI_Sub ($D374) on coin release; also sound slot 0 (coin-insert jingle). |
-| 1–3 | $0301–$0303 | Set to 1 at `GameLoopTop` ($C18A) at the top of every game-loop frame (background music / tick channels). |
-| 4–5 | $0304–$0305 | Set to 1 by `LivesGrantCheck` ($CF8F) and power-up code ($EBE7) when player gains a life (life-up jingle + HUD redraw trigger). |
-| 10 | $030A | ROL'd at $D4EC (bitwise carry-shift, multi-frame animated effect). |
-| 16 | $0310 | Enemy bullet-fire trigger ("enemy fire trigger" per earlier notes). |
-| 19–20 | $0313–$0314 | Set to 1 at kill-tally ($CB47/$CB65) when enemy destroyed (kill sound). Also noted: `$9751` zeroes $0313 at level-screen init. |
+| Slot | Address | Trigger | Sound |
+|------|---------|---------|-------|
+| 0 | $0300 | `CoinEventFlag`: set to 1 by NMI_Sub ($D374) on coin release; also sound slot 0 (coin-insert jingle). | Coin jingle ($EFD1) |
+| 1–3 | $0301–$0303 | Set to 1 at `GameLoopTop` ($C18A) at the top of every game-loop frame (background music / tick channels). | BGM sq1/sq2/tri |
+| 4–5 | $0304–$0305 | Set to 1 by `LivesGrantCheck` ($CF8F) and power-up code ($EBE7) when player gains a life (life-up jingle + HUD redraw trigger). | Life-up jingle |
+| 9 | $0309 | Set to 1 at `PowerUpSpawnPickPos` ($EA63) when a power-up tank takes its first hit (power-up appears). | Power-up appear ($EFED) |
+| 10 | $030A | Set to 1 at $E99D (armored tank last-armor hit → death) and at bank-0 level-init ($88A2/$8C4C/$8EB7); also ROL'd at $D4EC for multi-frame effect. | Entity kill SFX ($EFA8) |
+| 11 | $030B | Set to 1 at $E859 (BulletTileCollision): player bullet hits eagle (tile $C8 with $68≠0 = first hit, starts 39-frame countdown). Also triggers $0307=1 ($CriticalHitFlag). | Eagle first-hit ($EF99) |
+| 12 | $030C | Set to 1 at $E88A (armor-piercing bullet passes through tile) or $E89C (player bullet hits brick wall, non-steel). | Brick hit / pass-through ($F003) |
+| 13 | $030D | Set to 1 at $E8AB (BulletTileCollision): player bullet (slot X<2) hits **steel tile** ($10) **or water tile** ($11) — indestructible tiles, bullet absorbed. | Steel/water hit ($EFFB): pulse2 duty=$D5 sweep=$7F; 2 notes C2/oct4→C2/oct5 (≈C6→C7), 4 frames |
+| 14 | $030E | Set to 1 at $E991 (PlayerBulletEnemyHit): player bullet hits **armored/power-up tank** (EntityType bit2 set) AND armor tier (EntityType & $03) > 0 after DEC; tank survives. | Armor hit ($F00C): pulse2 duty=$40 sweep=$7F; E2/oct5→F2/oct5 rising then D2/oct0 low, ~5 frames |
+| 16 | $0310 | Enemy bullet-fire trigger ("enemy fire trigger" per earlier notes). | Enemy fire SFX ($F03A) |
+| 19–20 | $0313–$0314 | Set to 1 at kill-tally ($CB47/$CB65) when enemy destroyed (kill sound). Also noted: `$9751` zeroes $0313 at level-screen init. | Kill sound ($F018/$F01F) |
 
 Sound slot data structures: slot N lives at `$031C + N×8` (8 bytes).
 
@@ -2161,7 +2169,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Disassemble DrawSprites ($D6D3): **corrected — NOT OAM sprites but PPU nametable queue writer (PPUQueueTiles)**. Calling convention: X=tile_col (0–31), Y=tile_row (0–29), ($11/$12)=CHR tile bytes terminated $FF. Writes packet [ppu_hi, ppu_lo, tile0…$FF] to $0180 queue. Helper $D5FC converts (col,row)→PPU addr. Variant $D6FD adds $60 for alt CHR bank. RAM shadow at $0400–$07FF mirrors each write. 66 call sites; data strings include "PLEASE INSERT COIN" at $D1A7. See PPU Write Queue subsystem section.
 - [x] Disassemble score display routines $D9A7 (2-digit stage/score draw) and $D9C4 (hi-score display); $D8F7 (draw tile-string to nametable) — SkipLeadingZeros ($D9A7): scans $0000+Y for first non-zero BCD digit, backs up 1-2 positions at $FF end based on $6B (GameActive), returns $11=ptr lo; DrawHiScoreSprite ($D9C4): DrawX=$30 DrawY=$64 $60=$30, scan ZP $3E for first nonzero hi-score digit, call DrawSpriteString; DrawSpriteString ($D8F7): reads tile indices from ($13/$14) ptr, calls DrawBigSpriteTile ($D87E) per tile, advances DrawX by $20; DrawBigSpriteTile ($D87E): computes CHR addr $1000+(idx×$10) via AdvanceTilePtr loop, reads 8 plane-0 bytes from PPU $2007, renders each bit as 4×4 OAM sprite block → 32×32 magnified tile; CHR tiles are ASCII-indexed (tile $47='G', $41='A', etc.); StrGAME ($D214)=$47,$41,$4D,$45,$FF; StrOVER ($D219)=$4F,$56,$45,$52,$FF
 - [ ] Map HUD exact pixel layout: enemy kill-counter icons ($C7BD/$C7AE — 10 pairs at rows 3–12 col 28–30), player lives sprites ($0105/$0106 = P1 lives tank, 3 tiles), P2 lives, score digits positions; all OAM slots/positions needed for faithful HUD rendering
-- [ ] Disassemble $030D/$030E sound triggers: trace what reads $030D (player bullet hits water/steel) and $030E (armor tank hit) in SoundEngine to identify which sound slots are triggered, so audio can be replicated
+- [x] Disassemble $030D/$030E sound triggers: **$030D** (slot 13 $EFFB) = player bullet hits steel($10) or water($11) tile, set at $E8AB in BulletTileCollision; pulse2 duty=$D5 sweep=$7F, 2-note C6→C7 ping, 4 frames. **$030E** (slot 14 $F00C) = player bullet hits armored tank (EntityType bit2 set, armor tier>0 after DEC), set at $E991 in PlayerBulletEnemyHit; pulse2 duty=$40 sweep=$7F, E→F rising then D low, ~5 frames. Also decoded: $030B=slot11(eagle hit), $030C=slot12(brick hit), $030A=slot10(entity kill), $0309=slot9(power-up appear). PowerUpSpawnPickPos ($EA63): picks random {48,96,144,192}px X/Y via RNGToCoord($EAA7) with collision retry.
 - [ ] Disassemble power-up spawn location logic: how power-up X/Y ($86/$87) is chosen when power-up spawns — look for writes to $86/$87 in PowerUpSpawn ($E35D) context; also document power-up tile/sprite CHR for all 6 types
 - [ ] Disassemble NMI handler body ($D300) fully: sequence of sub-calls (save regs → $D304 branch → OAM DMA $4014 → scroll writes → FlushPPUQueue → NMI_Sub2 $D68A → restore → RTI); NMI_Sub1 ($D352) exact flow; needed for accurate frame timing in web port
 
