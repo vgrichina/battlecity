@@ -920,34 +920,44 @@ function drawField() {
 function drawEagleBase() {
   const ex = EAGLE.x, ey = EAGLE.y;
 
-  // Surrounding wall tiles (3 × 8×8): brick normally, steel during shovel power-up
-  // ROM $E3F2 positions: (ex-8,ey-8), (ex+8,ey-8), (ex-8,ey); bottom-right left open
+  // Surrounding wall tiles: 4 × 16×16 metatile blocks surrounding 32×32 eagle area
+  // ROM $E3F2 positions: (ex-16,ey-16), (ex,ey-16), (ex-16,ey), (ex,ey)
   if (chrOff) {
     const wTile = shovelTimer > 0 ? 0x10 : 0x0F;  // steel or brick CHR tile
     const wPal  = shovelTimer > 0 ? 3 : 0;         // BG3 steel or BG0 brick
-    drawCHRTile(wTile, wPal, ex - 8, ey - 8);
-    drawCHRTile(wTile, wPal, ex + 8, ey - 8);
-    drawCHRTile(wTile, wPal, ex - 8, ey);
+    const wt4 = [wTile, wTile, wTile, wTile];
+    drawMetatile(wt4, wPal, ex - 16, ey - 16);
+    drawMetatile(wt4, wPal, ex,      ey - 16);
+    drawMetatile(wt4, wPal, ex - 16, ey);
+    drawMetatile(wt4, wPal, ex,      ey);
   } else {
     const wc = shovelTimer > 0 ? C.BASE_FORT : C.BASE_WALL;
-    fillRect(ex - 8, ey - 8, 8, 8, wc);
-    fillRect(ex + 8, ey - 8, 8, 8, wc);
-    fillRect(ex - 8, ey,     8, 8, wc);
+    fillRect(ex - 16, ey - 16, 32, 32, wc);
   }
 
-  // Eagle sprite (2×2 OAM → 16×16px at ex-8, ey-8)
-  // ROM $E3F2: tiles $D1/$D5/$D9/$DD (intact) or $E1/$E5/$E9/$ED (dead), palette SP2
-  if (eagleAlive) {
-    if (chrOff) {
-      drawSprite16([0xD1, 0xD5, 0xD9, 0xDD], 6, ex - 8, ey - 8, true);
-    } else {
+  // Eagle sprite: 8 OAM entries in 4×2 grid = 32×32px, top-left at (ex-16, ey-16)
+  // Each entry is 8×16 (top half = T & 0xFE, bottom half = (T & 0xFE)+1), all PT1
+  // ROM $E3F2: intact  rows $D1/$D5/$D9/$DD | $D3/$D7/$DB/$DF
+  // ROM $E3E2: damaged rows $E1/$E5/$E9/$ED | $E3/$E7/$EB/$EF
+  const intactTiles  = [0xD1,0xD5,0xD9,0xDD, 0xD3,0xD7,0xDB,0xDF];
+  const damagedTiles = [0xE1,0xE5,0xE9,0xED, 0xE3,0xE7,0xEB,0xEF];
+  const oamTiles = eagleAlive ? intactTiles : damagedTiles;
+
+  if (chrOff) {
+    const xs = [ex - 16, ex - 8, ex, ex + 8];
+    const ys = [ey - 16, ey];
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 4; col++) {
+        const T = oamTiles[row * 4 + col];
+        drawCHRTile(T & 0xFE,        6, xs[col], ys[row],     true);
+        drawCHRTile((T & 0xFE) + 1,  6, xs[col], ys[row] + 8, true);
+      }
+    }
+  } else {
+    if (eagleAlive) {
       fillRect(ex - 4, ey - 4, 8, 8, '#000000');
       fillRect(ex - 2, ey - 4, 4, 8, C.EAGLE_OK);
       fillRect(ex - 4, ey,     8, 4, C.EAGLE_OK);
-    }
-  } else {
-    if (chrOff) {
-      drawSprite16([0xE1, 0xE5, 0xE9, 0xED], 6, ex - 8, ey - 8, true);
     } else {
       fillRect(ex - 4, ey - 4, 8, 8, C.EAGLE_DEAD);
       ctx.fillStyle = '#ff0000';
