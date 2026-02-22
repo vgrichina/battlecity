@@ -59,13 +59,21 @@ RE tools:
   python search_bytes.py <hex> [--context N] [--disasm]
   python decode_tables.py <bank> <addr> <count> <fmt>
   python extract_tiles.py
+  python analyze_tiles.py   (write this script to project dir if needed, then run it)
+
+IMPORTANT tool rules — violations will be blocked:
+- Use the Read tool (NOT cat/head/tail via Bash) to read files
+- Use the Grep tool (NOT grep/rg via Bash) to search file contents
+- Use the Glob tool (NOT ls/find via Bash) to list files
+- Do NOT run python3 inline scripts (python3 - <<'EOF') — write a .py file first, then run it
+- Do NOT use xxd or other system tools; use python search_bytes.py instead
 
 Do not re-document already-covered addresses. Stop after $TASKS tasks."
 
   echo "$PROMPT" | claude -p \
     --output-format stream-json \
     --max-turns 50 \
-    --allowedTools "Bash(python dis.py*),Bash(python xref.py*),Bash(python search_bytes.py*),Bash(python decode_tables.py*),Bash(python extract_tiles.py*),Bash(python render_screen.py*),Bash(python extract_level_maps.py*),Bash(python3 -m http.server*),Read,Edit,Write,Glob,Grep" \
+    --allowedTools "Bash(python dis.py*),Bash(python xref.py*),Bash(python search_bytes.py*),Bash(python decode_tables.py*),Bash(python extract_tiles.py*),Bash(python render_screen.py*),Bash(python extract_level_maps.py*),Bash(python analyze_tiles*),Bash(python3 analyze_tiles*),Bash(python3 -m http.server*),Read,Edit,Write,Glob,Grep" \
     | jq -r '
         if .type == "assistant" then
           .message.content[] |
