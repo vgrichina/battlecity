@@ -154,3 +154,5 @@
 1,ECF4,SoundSeqInit: reads 4 header bytes (ch,APU1,APU2,APU4) into slot+0/1/2/4; noise reads extra byte into +3; resets seq_offset=0
 1,ED2D,SoundSeqDecode: main loop; $00-$5F=note(semitone=bits7-3 octave=bits2-0); $60=hold; $61-$E7=dur(byte-$60); $E8+=cmd dispatch
 1,E838,BulletTileCollision: (X=px,Y=py)→TilePosLookup→SubTileBitmask→TileCollidableCheck; eagle→$68=$27,$030B=$0307=1; water→$030D=1 player only; steel→$030D=1 player only; brick→TileDestroyBrick,$030C=1 player only; returns A=1 (hit) A=0 (no hit)
+1,DD30,MoveGridSnap: entity coords ($90,X $98,X) are CENTER-pixel of 16×16 tank; body = X-8..X+7, Y-8..Y+7; enemy checks 8px grid alignment (AND #$07); leading-edge probes via $DD4B cover exact front face corners
+1,DD4B,MoveGridSnap_ProbeSetup: $58=|dx|*8 $59=|dy|*8 $56=entity_X+dx $57=entity_Y+dy; probe1=(X+$58+$59,Y+$58+$59) probe2=(X+$58-$59,Y+$59-$58); for RIGHT: probes (entity_X+8,entity_Y+7) and (entity_X+8,entity_Y-8); for UP: probes (entity_X-8,entity_Y-9) and (entity_X+7,entity_Y-9)
