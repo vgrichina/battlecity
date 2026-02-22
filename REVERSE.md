@@ -2440,7 +2440,69 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
      - canMove() 4-corner check vs ROM 2-leading-edge-point check
      - Eagle drawn 16×16 (should be 32×32)
      - drawSprite16 always uses +256 offset for PT1 tiles (should use 0 for odd OAM tiles)
-- [ ] Meta-audit: verify web port completeness and ROM fidelity — re-read all REVERSE.md subsystem sections and cross-check against web/game.js; confirm no subsystem is missing or silently stubbed; produce a checklist of: fully correct, partially correct (with specific deltas), and missing/unimplemented features; update REVERSE.md with findings
+- [x] Meta-audit: verify web port completeness and ROM fidelity — **DONE**. Full cross-check of all web/game.js subsystems against ROM disassembly. Findings below.
+
+  **FULLY CORRECT (web matches ROM):**
+  - CHR tile bank split: 0–255 BG bank, 256–511 sprite bank ✓ (session 6)
+  - All tile type constants T.* (WATER=10, TREES=11, ICE=12, EMPTY=13) ✓ (session 5+12 fixes applied)
+  - TILE_CHR, TILE_PAL for all 16 types; BRICK_QUAD=[0x0F×4] ✓ (sessions 5+12)
+  - Brick sub-tile bitmask: bit0=TL, bit1=TR, bit2=BL, bit3=BR ✓ ($D745)
+  - Direction encoding: 0=UP, 1=LEFT, 2=DOWN, 3=RIGHT ✓ ($E529)
+  - P1/P2 spawn (88,216)/(152,216), Eagle=(120,216) ✓ ($E537–$E53A)
+  - Enemy spawn X=[24,120,216], Y=24 ✓ ($E531)
+  - Player frame throttle: skip when `(frameCount & 3) === 2` ✓ ($DC25)
+  - Direction snap on turn: `(x+4)&$F8` ✓ ($DC23)
+  - Enemy frame alternation: `(i ^ frameCount) & 1` ✓ ($DCE3)
+  - Enemy move: 1px/step every other frame (0.5px/frame) ✓
+  - Freeze timer: dec every 64 frames, Timer power-up sets 10 → 640 frames ✓ ($EB9A)
+  - Kill score: (1+type)×100 = 100/200/300/400 pts ✓ ($D2C2 KillScoreTable)
+  - SpawnRotIdx cycling: `(spawnRot+1) % 3` ✓ ($6A)
+  - Max 4 active enemies on screen simultaneously ✓
+  - 20 enemies per stage total ✓ ($7F EnemiesRemaining)
+  - Bullet slot = entity slot index; secondary slot 8/9 for double-shot ✓ ($CC,X)
+  - Double-shot gate: starLevel >= $40 ✓ ($D6,X bit0)
+  - Armor-piercing bullet at starLevel >= $60 ✓ ($D6,X bit1)
+  - Bullet vs steel/water: stop bullet; bullet vs brick: destroy quadrant ✓ ($E838)
+  - Bullet-bullet cancel: player vs enemy within 6px ✓ ($EAB5)
+  - Eagle tile blocks canMove() ✓ ($E838)
+  - Spawn animation blocks movement (spawnAnim > 0) ✓ ($DF09)
+  - Power-up type dispatch cases 0–5 match ROM $EB87 table ✓
+  - Helmet shield: stores 640 frames (10×64) ✓ ($EB95) — coincidentally correct (see bug #2 below)
+  - p1Lives initial = 2 (displays 3 with +1) ✓
+
+  **PARTIALLY CORRECT — BUGS WITH SPECIFIC DELTAS:**
+  1. **Player speed 2× too fast** (line ~429): `DX[e.dir] * 2` → 2px/step × 3/4 frames = 1.5px/frame; ROM MoveGridSnap = 1px/step × 3/4 frames = 0.75px/frame.
+  2. **shieldTimer decremented every frame** (line ~746): ROM $E330 decrements every 64 frames (`AND #$3F; BNE skip; DEC $89,X`). Web stores raw frame counts (180/640) and subtracts 1/frame; helmet (640) is accidentally correct in duration, but spawn shield (web=180 vs ROM $03×64=192 frames) is 6% off. Fix: guard with `(frameCount & 63) === 0`, change spawn to 3, helmet to 10.
+  3. **Bullet speed 2× too fast** (line ~530): `BULLET_SPD=4` applied every frame; ROM $E7A9 applies 4px every other frame (alt-frame skip `TXA EOR $0B AND #1 BEQ skip`) = 2px/frame effective for regular bullets.
+  4. **Spawn delay fixed at 120** (line ~277/737): ROM computes `190 − stage# × 4` (range 50–190 frames); web uses fixed 120 (≈ stage 17–18 difficulty).
+  5. **Power-up type includes 1-Up randomly** (line ~688): `Math.random() * 6`; ROM $EA9F weight table [0,1,2,3,4,0,4,3] → only types 0–4, 1-Up only from LivesGrantCheck.
+  6. **Power-up spawn position = dead entity position**: ROM $EA63 picks random {48,96,144,192}px grid via RNGToCoord ($EAA7) with collision retry; web uses `e.x, e.y` directly.
+  7. **Enemy type distribution**: web uses `Math.min(3, kills/5)` universal formula; ROM loads per-stage distributions from EnemyTypeTable ($E5A9) via stage-specific group counts ($8B–$8E in each level block).
+  8. **Shovel timer 3.75× too long** (line ~715/749): web sets `20 * 60 = 1200` frames decremented every frame = 20s; ROM $EBA0 sets $45=20 decremented every 16 frames → 320 frames (5.3s).
+  9. **canMove() tile granularity**: web checks 4 corners at 16px metatile granularity; ROM probes 2 leading-edge points at 8px NES-tile granularity → partial brick variants (BRICK_TL/TR/BL/BR) may block/pass incorrectly.
+  10. **Entity position convention** (known): e.x/e.y = top-left; ROM = center. All tanks 8px right+down from ROM positions.
+  11. **TANK_SZ=14** (known): ROM hitbox entity_X±8 = 16px wide; affects all collision boxes.
+
+  **MISSING / UNIMPLEMENTED:**
+  1. **Sound engine**: silent. ROM has 28-slot APU engine ($EC23), 14 sound sequences ($EEA3), 12 sound triggers ($030A–$030E). All SFX and BGM absent.
+  2. **Tank CHR sprite rendering**: web draws colored rectangles; ROM uses CHR sprites `($A8,X&$F0)+dir×8` for direction×animation via sprite bank (even OAM = +256 offset). No actual tile rendering for tanks.
+  3. **Spawn star CHR animation**: web draws colored shrinking squares; ROM uses PT1 CHR tiles $A1–$AF (triangle wave, 8-frame sequence via drawSprite16 without +256 offset).
+  4. **Bullet explosion CHR animation**: web has no explosion effect; ROM uses 4-frame PT1 sequence $B1/$B3/$B5/$B7 on bullet destruction ($E1AF).
+  5. **Eagle size wrong** (known): web draws 16×16px; ROM eagle = 8 OAM entries = 32×32px at center-(16,16).
+  6. **Eagle CHR bank wrong** (known): `drawSprite16` adds +256; eagle tiles $D1–$DF/$E1–$EF are PT1 (odd OAM → no +256, use T&$FE). Tiles render from wrong bank.
+  7. **Title / attract screen** ($C65C AttractWait, $CFAA PreGameDraw): web starts directly into level 1; no attract loop, title sprite, or coin/credit flow.
+  8. **Stage-clear tally screen** ($CAF1 StageClearTallyScreen): web shows "STAGE CLEAR!" text; ROM animates per-type kill drain (4 types × score × count) + P1/P2 totals + bonus.
+  9. **Victory screen** ($C44D DrawVictoryScreen): "PEACE BE WITH YOU" + 240-frame ScrollX slide after all stages — not implemented.
+  10. **Hi-score tracking** ($D9F0 CompareAndUpdateHiScore): not tracked or displayed; ROM compares 7-digit BCD $15/$1D vs $3D, shows "NEW HI SCORE" with palette flash.
+  11. **2-player mode**: P2 slot (entity 1) never spawned or controlled; ROM supports alternating 2-player with separate lives/score.
+  12. **Enemy speed tables** ($E6A9 SpeedTable, 36 entries, 9 tiers × 4 types): web uses fixed 1px/frame for all enemies; ROM assigns move+fire rates per stage/type from SpeedTable.
+  13. **Ice sliding mechanic**: ICE passable but no momentum/slide. ROM behavior on ICE not yet fully reversed (possibly no slide in NES version; unconfirmed).
+  14. **Shovel flash warning**: ROM alternates fortify/restore 4× when $45<4 ($EBA0 ShovelTimerUpdate); web has static fortify with no expiry warning.
+  15. **Power-up collection flash**: ROM $62=50-frame flash drawing tiles $3B/$3D after collection; web removes power-up instantly.
+  16. **LivesGrantCheck score thresholds** ($CF44): extra life at score milestones; web never grants score-based lives.
+  17. **Grenade screen flash** ($EBBC): ROM has screen flash effect; web just kills all active enemies.
+  18. **HUD top score strip**: ROM nametable $24 has P1 score + hi-score + P2 score at top rows; web puts score only in side HUD.
+  19. **Enemy power-up tank flashing**: ROM uses OAM palette attribute toggle (no tile change); web approximates with color alternation only.
 
 ### Completed
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.
