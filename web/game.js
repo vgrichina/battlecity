@@ -750,8 +750,8 @@ function applyPowerUp(e, type) {
     case 1:  // Timer/Clock  ROM $EB9A: $0100 = 10 (~640 frames freeze)
       freezeTimer = 10;
       break;
-    case 2:  // Shovel  ROM $EBA0: $45=20 (fortify base)
-      shovelTimer = 20 * 60;
+    case 2:  // Shovel  ROM $EBA0: $45=20 tick counter, dec every 16 frames → 320 frames total
+      shovelTimer = 20;
       break;
     case 3:  // Star  ROM $EBAC: $0101,X += $20 (max $60)
       e.starLevel = Math.min(e.starLevel + 0x20, 0x60);
@@ -785,7 +785,8 @@ function tickTimers() {
     if (e.shieldTimer > 0 && (frameCount & 63) === 0) e.shieldTimer--;
   }
   if (freezeTimer > 0 && (frameCount & 63) === 0) freezeTimer--;
-  if (shovelTimer > 0) shovelTimer--;
+  // ROM $EBA0/$E3E8: $45 decremented every 16 frames; <4 ticks flash steel↔brick
+  if (shovelTimer > 0 && (frameCount & 15) === 0) shovelTimer--;
   for (const e of entities) {
     if (e.spawnAnim > 0)  e.spawnAnim--;
     if (e.blinkFrame > 0) e.blinkFrame--;
@@ -958,16 +959,18 @@ function drawEagleBase() {
 
   // Surrounding wall tiles: 4 × 16×16 metatile blocks surrounding 32×32 eagle area
   // ROM $E3F2 positions: (ex-16,ey-16), (ex,ey-16), (ex-16,ey), (ex,ey)
+  // Flash steel↔brick when shovelTimer < 4 (last 64 frames); full steel ≥4; brick at 0
+  const isFort = shovelTimer >= 4 || (shovelTimer > 0 && !!((frameCount >> 3) & 1));
   if (chrOff) {
-    const wTile = shovelTimer > 0 ? 0x10 : 0x0F;  // steel or brick CHR tile
-    const wPal  = shovelTimer > 0 ? 3 : 0;         // BG3 steel or BG0 brick
+    const wTile = isFort ? 0x10 : 0x0F;  // steel or brick CHR tile
+    const wPal  = isFort ? 3 : 0;         // BG3 steel or BG0 brick
     const wt4 = [wTile, wTile, wTile, wTile];
     drawMetatile(wt4, wPal, ex - 16, ey - 16);
     drawMetatile(wt4, wPal, ex,      ey - 16);
     drawMetatile(wt4, wPal, ex - 16, ey);
     drawMetatile(wt4, wPal, ex,      ey);
   } else {
-    const wc = shovelTimer > 0 ? C.BASE_FORT : C.BASE_WALL;
+    const wc = isFort ? C.BASE_FORT : C.BASE_WALL;
     fillRect(ex - 16, ey - 16, 32, 32, wc);
   }
 

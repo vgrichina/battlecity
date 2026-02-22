@@ -2558,7 +2558,7 @@ The following bugs are fully documented from ROM disassembly. Tasks are implemen
 
 - [x] Fix spawn delay formula: ROM `LevelStart ($C33D, $C35F–$C387)` computes `SpawnDelayMax = 190 − stageNum × 4` (capped at min 50). Web uses fixed 120. Fixed: `spawnDelay = Math.max(50, 190 - stageIdx * 4)` at level start (game.js:304) and after each spawn (game.js:776).
 
-- [ ] Fix shovel timer: ROM `$EBA0` sets `$45=20`, decremented every 16 frames → 20×16=320 frames (~5.3s). Web sets 1200 frames (~20s, 3.75× too long). Fix: store shovel countdown as a 64-frame tick counter; decrement every 16 frames; at `shovelTicks < 4` flash fortify/restore alternately; at 0 restore normal walls.
+- [x] Fix shovel timer: ROM `$EBA0` sets `$45=20`, decremented every 16 frames → 20×16=320 frames (~5.3s). Web sets 1200 frames (~20s, 3.75× too long). Fixed: `shovelTimer=20` tick counter (game.js:754); decrement guarded by `(frameCount & 15) === 0` (game.js:788–789); rendering uses `isFort = shovelTimer >= 4 || (shovelTimer > 0 && (frameCount>>3)&1)` to flash steel↔brick in last 64 frames (game.js:962–977).
 
 **Game logic:**
 
