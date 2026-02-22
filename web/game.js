@@ -261,7 +261,15 @@ function makeEntity(slot) {
 // ─── Bullet factory  ──────────────────────────────────────────────────────────
 // ROM $CC,X BulletState  $B8,X BulletX  $C2,X BulletY  $D6,X BulletDouble
 function makeBullet(slot) {
-  return { slot, x: 0, y: 0, dir: 0, active: false, armor: false, owner: -1 };
+  return { slot, x: 0, y: 0, dir: 0, active: false, armor: false, owner: -1, explodeTimer: 0, ex: 0, ey: 0, edir: 0 };
+}
+
+// ROM $E1AF BulletExplode: 4-frame explosion sprite at bullet hit position
+function triggerBulletExplosion(b) {
+  b.explodeTimer = 4;
+  b.ex    = b.x - 5;   // ROM: OAM X = bullet.x − 5
+  b.ey    = b.y;
+  b.edir  = b.dir;
 }
 
 // ─── Level init  ──────────────────────────────────────────────────────────────
@@ -513,9 +521,10 @@ function tryFire(e) {
   b.x      = e.x + 7 + DX[e.dir] * 9;
   b.y      = e.y + 7 + DY[e.dir] * 9;
   b.dir    = e.dir;
-  b.active = true;
-  b.armor  = e.starLevel >= 0x60;  // armor-piercing at max star  ROM $D6,X bit1
-  b.owner  = e.slot;
+  b.active       = true;
+  b.explodeTimer = 0;
+  b.armor        = e.starLevel >= 0x60;  // armor-piercing at max star  ROM $D6,X bit1
+  b.owner        = e.slot;
 }
 
 // ─── Bullet movement + tile collision  ────────────────────────────────────────
@@ -545,14 +554,21 @@ function moveBullets() {
         Math.abs(b.x - EAGLE.x) < 12 &&
         Math.abs(b.y - EAGLE.y) < 8) {
       eagleAlive = false;
+      triggerBulletExplosion(b);
       b.active = false;
       continue;
     }
 
     // Tile collision  ROM $E838 BulletTileCollision
     if (bulletHitsTile(b)) {
+      triggerBulletExplosion(b);
       b.active = false;
     }
+  }
+  // Decrement explosion timers for inactive (just-destroyed) bullets
+  for (let i = 0; i < bullets.length; i++) {
+    const b = bullets[i];
+    if (!b.active && b.explodeTimer > 0) b.explodeTimer--;
   }
 }
 
@@ -619,6 +635,7 @@ function bulletEntityCollision() {
       if (Math.abs(b.x - (e.x + 7)) >= 10) continue;
       if (Math.abs(b.y - (e.y + 7)) >= 10) continue;
 
+      triggerBulletExplosion(b);
       b.active = false;
 
       if (!isPlayerBullet) {
@@ -650,6 +667,8 @@ function bulletBulletCancel() {
       const eb = bullets[ei];
       if (!eb.active) continue;
       if (Math.abs(pb.x - eb.x) < 6 && Math.abs(pb.y - eb.y) < 6) {
+        triggerBulletExplosion(pb);
+        triggerBulletExplosion(eb);
         pb.active = false;
         eb.active = false;
       }
@@ -1060,6 +1079,15 @@ function shadeColor(hex, amount) {
 
 // ROM $E1C6 BulletTravel  $DABA DrawEntityTile  2×6 px sprite
 function drawBullet(b) {
+  if (b.explodeTimer > 0) {
+    // ROM $E1AF BulletExplode: 8×8 PT1 sprite, tile = ($B1 + dir*2) & $FE, palette SP0
+    const T = (0xB1 + b.edir * 2) & 0xFE;
+    if (chrOff) {
+      drawCHRTile(T, 4, b.ex, b.ey, true);
+    } else {
+      fillRect(b.ex, b.ey, 8, 8, C.BULLET);
+    }
+  }
   if (!b.active) return;
   const horiz = b.dir === 1 || b.dir === 3;
   if (horiz) fillRect(b.x - 3, b.y - 1, 6, 3, C.BULLET);
