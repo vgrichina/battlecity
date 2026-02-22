@@ -2633,7 +2633,7 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 - [x] **Fix spawn animation palette and tile sequence**: ROM `DrawShootSprite ($E0BF)` uses SP3 (palIdx 7). Change game.js `drawEntity` spawn block from `palIdx=4` to `palIdx=7`. Also fix tile sequence: ROM uses 4 levels {$A1,$A5,$A9,$AD} large→small→large (counter & 0x0F, formula `(|counter-7|*2 & 0xFC) + 0xA1`). Change `SPAWN_SEQ` to `[0xAD,0xAD,0xA9,0xA9,0xA5,0xA5,0xA1,0xA1,0xA1,0xA5,0xA5,0xA9,0xA9,0xAD,0xAD]` and update seqIdx to use `Math.floor((60 - e.spawnAnim) / 4)`. **Done (game.js:1076–1082): SPAWN_SEQ corrected to 4-level large→small→large sequence, palIdx changed 4→7 (SP3).**
 
-- [ ] **Fix bullet explosion palette**: ROM `BulletExplode ($E1AF)` sets $04=2 → SP2 (palIdx 6). Change game.js `drawBullet` from `palIdx=4` to `palIdx=6`.
+- [x] **Fix bullet explosion palette**: ROM `BulletExplode ($E1AF)` sets $04=2 → SP2 (palIdx 6). Change game.js `drawBullet` from `palIdx=4` to `palIdx=6`. **Done (game.js:1174): palIdx changed 4→6 (SP2).**
 
 - [ ] **Fix eagle sprite palette**: ROM `EagleStateUpdate ($E386)` sets $04=3 → SP3 (palIdx 7) for all eagle OAM draws (intact, damaged, explosion). Change game.js `drawEagleBase` from `palIdx=6` to `palIdx=7`.
 

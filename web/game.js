@@ -1168,10 +1168,10 @@ function shadeColor(hex, amount) {
 // ROM $E1C6 BulletTravel  $DABA DrawEntityTile  2×6 px sprite
 function drawBullet(b) {
   if (b.explodeTimer > 0) {
-    // ROM $E1AF BulletExplode: 8×8 PT1 sprite, tile = ($B1 + dir*2) & $FE, palette SP0
+    // ROM $E1AF BulletExplode: 8×8 PT1 sprite, tile = ($B1 + dir*2) & $FE, palette SP2 (palIdx 6)
     const T = (0xB1 + b.edir * 2) & 0xFE;
     if (chrOff) {
-      drawCHRTile(T, 4, b.ex, b.ey, true);
+      drawCHRTile(T, 6, b.ex, b.ey, true);
     } else {
       fillRect(b.ex, b.ey, 8, 8, C.BULLET);
     }
