@@ -214,8 +214,6 @@ const C = {
   SPAWN_B:   '#ffff00',
   SPAWN_C:   '#ff8800',
   SPAWN_D:   '#ff4400',
-  POWERUP:   ['#ffff40','#40ffff','#ff8800','#ff4040','#ff40ff','#40ff40'],
-  PU_LABEL:  '#000000',
   HUD_BG:    '#282828',
   HUD_TEXT:  '#e8e8e8',
   SCORE_COL: '#f8e800',
@@ -1189,15 +1187,15 @@ function drawBullet(b) {
 }
 
 // ROM $C912/$C9BB PowerUpSprite_Off/On  6 power-up types
-const PU_LABELS = ['H','T','S','★','B','♥'];
+// ROM $DB0A: 8×16 OAM mode; 2 entries side-by-side → 16×16px total
+// Sprite bank tiles: base=$80+type*4; TL=base, TR=base+2, BL=base+1, BR=base+3
+// palIdx=7 (SP3)  Flash tiles (PT1 bank): $3A–$3D
 function drawPowerUp() {
   if (!powerUp) return;
-  if ((frameCount >> 3) & 1) return;  // blink  ROM $C912 off/on frames
+  if ((frameCount >> 3) & 1) return;  // blink  ROM $0B&$08 gate
   const x = powerUp.x, y = powerUp.y;
-  fillRect(x - 7, y - 7, 14, 14, C.POWERUP[powerUp.type]);
-  ctx.fillStyle = C.PU_LABEL;
-  ctx.font      = `bold ${8 * SCALE}px monospace`;
-  ctx.fillText(PU_LABELS[powerUp.type], (x - 5) * SCALE, (y + 4) * SCALE);
+  const base = 0x80 + powerUp.type * 4;
+  drawSprite16([base, base + 2, base + 1, base + 3], 7, x - 8, y - 8);
 }
 
 // ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawHUDTanks  $D8F7 DrawRowTiles
