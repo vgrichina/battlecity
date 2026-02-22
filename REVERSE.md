@@ -2570,6 +2570,54 @@ The following bugs are fully documented from ROM disassembly. Tasks are implemen
 
 - [x] Fix enemy move speed per type: web applied alternating frame skip to ALL enemies, giving all 0.5px/frame. ROM `EntityMovement ($DC9F)`: `if EntityType & $F0 == $A0: always process` — Fast type ($A0, e.type===1) skips the alternating check and moves every frame (1px/frame); Basic/Power/Armor still alternate (0.5px/frame). Note: earlier task description referencing SpeedTable bytes as "move-counter/fire-counter/move-delta/fire-delta" was incorrect — those bytes are enemy type group counts (confirmed session 7); actual speed is purely type-based. Fixed: changed `if ((i ^ frameCount) & 1) continue` → `if (e.type !== 1 && ((i ^ frameCount) & 1)) continue` (game.js:507).
 
+### Session 19 — Sprite rendering regression audit
+
+All sprites are visually broken (screenshot 2026-02-22): player tank shows garbled multi-colored tiles, enemy HUD icons show wrong gray/checkered patterns, spawn animations appear white/gray. CHR rendering was supposedly fixed in sessions 13–15 but is still wrong. Investigate each subsystem bottom-up, fix, then verify.
+
+**META — systematic verification pass (do first):**
+
+- [x] **Build `render_sprites.py`**: Done. Decodes CHR tiles directly from ROM, applies ROM `PaletteData ($D44A)` via NES master palette, renders `output_gfx/sprite_test.png` (528×316). Groups: player tanks (SP0/SP1, 4 dirs × 4 star levels), enemy tanks (SP2, 4 dirs × 4 types), spawn anim (8 frames BG $A0-$AE), eagle intact+damaged (BG $D0-$DF/$E0-$EF), bullet explosion (BG $B0-$B7), power-ups (SP3, sprite $80-$97), HUD icons (BG $6A/$78-$7E). **All 8 palette slots in game.js differ from ROM — ROM-derived values documented below.**
+
+**ROM-derived NES_PAL (all 8 slots differ from game.js):**
+```
+  ['#000000', '#783C00', '#540400', '#545454'],  // BG0-brick
+  ['#000000', '#A0D6E4', '#989698', '#3032EC'],  // BG1-trees
+  ['#000000', '#74C400', '#083A00', '#003C00'],  // BG2-water
+  ['#000000', '#545454', '#989698', '#ECEEEC'],  // BG3-steel
+  ['#000000', '#545A00', '#D48820', '#CCD278'],  // SP0-P1yel
+  ['#000000', '#004000', '#007628', '#98E2B4'],  // SP1-P2grn
+  ['#000000', '#00323C', '#989698', '#ECEEEC'],  // SP2-enemy
+  ['#000000', '#440064', '#982220', '#ECEEEC'],  // SP3-spcl
+```
+
+- [ ] **Methodically audit each rendering layer against tile_viewer.html and ROM**: for every visual element (BG tiles, tank sprites, spawn animation, bullet explosion, power-ups, HUD icons, eagle), confirm: (a) correct tile index formula, (b) correct bank (BG=0–255 vs Sprite=256–511), (c) correct palIdx mapping, (d) correct draw position (center vs top-left). Document confirmed-correct items and bugs found.
+
+**Investigation — root causes:**
+
+- [ ] **Audit `chr_pt0.png` pixel gray levels and tile grid geometry**: `extract_tiles.py` outputs grayscale PNG; verify the four gray values used for NES color indices 0/1/2/3. Open PNG in Python/PIL and sample pixels from known tile positions (e.g., tile 256 = sprite bank player-UP). Confirm `grayToIdx` thresholds in game.js (0x2B/0x7F/0xD5) match the actual gray levels. Also confirm CHR_CELL=9, CHR_BORDER=1 match PNG layout — a 1px-off border causes every tile to read the wrong 8×8 block.
+
+- [ ] **Audit NES_PAL color values in game.js vs ROM PaletteData ($D44A)**: dump `python dis.py 1 D44A 32` (or `decode_tables.py 1 D44A 32 u8`) to get 32 raw NES color bytes. Map each byte through the NES master color table to RGB. Compare palIdx 0–7 in game.js against the ROM values. The currently hard-coded values (SP0 yellow, SP2 grey/teal, etc.) may not match what the ROM actually loads into $3F00–$3F1F, causing all sprites to render in wrong colors.
+
+- [ ] **Investigate tank sprite tile-bank mismatch**: in game.js line 1113, `T = 256 + tileBase`. Open tile_viewer.html, click on tiles 256–271 (player UP group, row 8 cols 0–7) and 384–399 (enemy tier-0, row 12). If tiles look correct in viewer but wrong in game, the bug is in `drawCHRTile` indexing or palIdx. If tiles look garbled in viewer too, the issue is in `extract_tiles.py` or bank assignment. Document finding.
+
+- [ ] **Investigate spawn animation visual (appears white, should be colored)**: spawn draws `drawCHRTile(T & 0xFE, 4, ...)` with palIdx=4 (SP0). Tile $A0 is in BG bank (no +256). Verify: (a) tile $A0 exists and looks like a sparkle in tile_viewer; (b) SP0 palette produces the correct color for spawn animations. ROM `$E0BF DrawSpawnSprite` — confirm which palette it actually uses (may be SP2 or different).
+
+- [ ] **Investigate HUD enemy icon tile 0x6A**: game.js draws BG tile `0x6A` with palIdx=3 (BG3 = steel/ice gray). In the screenshot the icons look checkered gray/white. Open tile_viewer.html, inspect tile 0x6A (BG bank, row 3 col 10). Confirm it's a small tank shape and that BG3 palette is correct. If wrong tile or palette, find correct values from ROM `$C7BD DrawAllHUDKillIcons` and `DrawHUDTanks $C7CD`.
+
+- [ ] **Verify HUD OAM tank icon rendering**: ROM `$C7CD DrawHUDTanks` draws the animated HUD tank using OAM entries with tiles `$79/$7B` and `$7D/$7F` (4 entries = two 8×16 sprites = 16×16px). These are PT1/BG bank tiles (odd OAM → `T & 0xFE` → no +256). web port draws this as colored rectangle only; check whether HUD tank in sidebar is actually rendered at all, and if the large gray icon block is coming from some other code path.
+
+**Fix tasks (implement after investigation above):**
+
+- [ ] **Fix `grayToIdx` thresholds and/or `extract_tiles.py` gray levels** if there is a mismatch between PNG pixel values and game.js thresholds. Either regenerate PNG with correct gray values or adjust thresholds. All CHR rendering depends on this.
+
+- [ ] **Fix NES_PAL palette slots** to match ROM `PaletteData ($D44A)` values. At minimum fix SP0–SP3 (palIdx 4–7) which affect all sprite rendering. May also need to fix BG0–BG3 if terrain colors are wrong.
+
+- [ ] **Fix tank sprite `tileBase` animation frame**: ROM `$DB02 DrawTank2x2` uses `($A8,X & $F0) + dir×8 + animBit×4` where `animBit = $B0,X & 4` (alternates every ~8 frames via XOR). Game.js uses `entityBase + dir*8` with no animation frame offset → always draws frame 0. Add `animBit = ((frameCount >> 3) & 1) ? 4 : 0` to tileBase formula. (Investigate whether this is the cause of garbled appearance first.)
+
+- [ ] **Fix power-up CHR sprite rendering**: currently drawn as colored rectangle + text label. ROM uses 16×16 CHR sprites from sprite bank: type0(Helmet)=$80–$83, type1(Timer)=$84–$87, type2(Shovel)=$88–$8B, type3(Star)=$8C–$8F, type4(Grenade)=$90–$93, type5(1-Up)=$94–$97. Flash uses tiles $3A–$3D. Implement `drawPowerUp()` using `drawSprite16` with correct tiles and palIdx=7 (SP3).
+
+- [ ] **Fix HUD rendering to use CHR tiles**: HUD enemy kill icons (tile $6A), P1/P2 life icons, and animated HUD tank ($79/$7D OAM entries) should use `drawCHRTile`/`drawSprite16` instead of colored rectangles where possible. Confirm correct palette for each.
+
 ### Completed
 - [x] **Session 14**: CHR bank mapping fully verified and documented: tiles 0–255 = file $8010 = PPU $1000 = BG/PT1; tiles 256–511 = file $9010 = PPU $0000 = Sprite/PT0. Fixed long-standing documentation error in CHR-ROM Layout table (PPU $0000/$1000 were swapped). Created `web/tile_viewer.html` — 512-tile viewer with NES palette selector, hover tile info, and category color-coding for visual verification of all sprite assignments.
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.
