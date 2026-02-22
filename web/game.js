@@ -23,14 +23,14 @@ const CHR_CELL = 9, CHR_BORDER = 1;
 
 // ROM $D44A PaletteData (8 NES palette slots)
 const NES_PAL = [
-  ['#000000','#8A4600','#7B0E00','#626262'],  // BG0 brick
-  ['#000000','#B3F9E1','#ABABAB','#424DC6'],  // BG1 trees
-  ['#000000','#84CC00','#1E5200','#006A18'],  // BG2 water
-  ['#000000','#626262','#ABABAB','#FFFFFF'],  // BG3 steel/ice
-  ['#000000','#616300','#F48F25','#F0E070'],  // SP0 P1 yellow
-  ['#000000','#006000','#008F38','#B2FCBA'],  // SP1 P2 green
-  ['#000000','#005E52','#ABABAB','#FFFFFF'],  // SP2 enemy/eagle
-  ['#000000','#730D68','#AF2B1C','#FFFFFF'],  // SP3 special/PU
+  ['#000000','#783C00','#540400','#545454'],  // BG0 brick  (ROM $D44A: $0F,$17,$06,$00)
+  ['#000000','#A0D6E4','#989698','#3032EC'],  // BG1 trees  (ROM $D44E: $0F,$3C,$10,$12)
+  ['#000000','#74C400','#083A00','#003C00'],  // BG2 water  (ROM $D452: $0F,$29,$09,$0B)
+  ['#000000','#545454','#989698','#ECEEEC'],  // BG3 steel  (ROM $D456: $0F,$00,$10,$20)
+  ['#000000','#545A00','#D48820','#CCD278'],  // SP0 P1 yel (ROM $D45A: $0F,$18,$27,$38)
+  ['#000000','#004000','#007628','#98E2B4'],  // SP1 P2 grn (ROM $D45E: $0F,$0A,$1B,$3B)
+  ['#000000','#00323C','#989698','#ECEEEC'],  // SP2 enemy  (ROM $D462: $0F,$0C,$10,$20)
+  ['#000000','#440064','#982220','#ECEEEC'],  // SP3 spcl   (ROM $D466: $0F,$04,$16,$20)
 ];
 
 // Grayscale level → palette index (extract_tiles.py: 0→0, 0x55→1, 0xAA→2, 0xFF→3)

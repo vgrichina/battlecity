@@ -2615,7 +2615,7 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 - [x] **Audit `chr_pt0.png` pixel gray levels and tile grid geometry**: Static analysis of `extract_tiles.py` confirms: PALETTE = `[(0x00,0x00,0x00), (0x55,0x55,0x55), (0xAA,0xAA,0xAA), (0xFF,0xFF,0xFF)]` for indices 0–3. `grayToIdx` thresholds `0x2B/0x7F/0xD5` correctly map these: 0x00→0, 0x55→1, 0xAA→2, 0xFF→3 (midpoints are 0x2B, 0x7F, 0xD5 which are well-centered in each range). `CHR_CELL=9, CHR_BORDER=1` matches `extract_tiles.py` constants `cell=TILE_SZ+BORDER=8+1=9, BORDER=1`. Tile origin formula identical in both: `ox=tx*9+1`. PNG is written with `color_type=2` (RGB), 8-bit depth, no gamma chunk — browser treats as sRGB; `drawImage`+`getImageData` is lossless for exact 8-bit integers. **No mismatch — CHR tile decoding pipeline is correct.**
 
-- [ ] **Audit NES_PAL color values in game.js vs ROM PaletteData ($D44A)**: dump `python dis.py 1 D44A 32` (or `decode_tables.py 1 D44A 32 u8`) to get 32 raw NES color bytes. Map each byte through the NES master color table to RGB. Compare palIdx 0–7 in game.js against the ROM values. The currently hard-coded values (SP0 yellow, SP2 grey/teal, etc.) may not match what the ROM actually loads into $3F00–$3F1F, causing all sprites to render in wrong colors.
+- [x] **Audit NES_PAL color values in game.js vs ROM PaletteData ($D44A)**: `decode_tables.py 1 D44A 32 u8` → 32 raw NES color bytes. Mapped through NES master palette via `render_sprites.py`. All 8 slots in game.js differed from ROM. Fixed in same session (see Fix NES_PAL task below).
 
 - [x] **Investigate tank sprite tile-bank mismatch**: Tank sprite bank is +256 (sprite bank) — correct. Tile formula `($A8,X & $F0) + dir×8` correct. Palette: players 0/1 use SP0/SP1 correctly; enemy palette cycling via EnemySpeedTable is an approximation. No tile-bank mismatch exists.
 
@@ -2629,7 +2629,7 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 - [x] **Fix `grayToIdx` thresholds and/or `extract_tiles.py` gray levels**: Audit (see above) confirmed no mismatch — no fix needed. PNG gray levels (0x00/0x55/0xAA/0xFF) and thresholds (0x2B/0x7F/0xD5) are correct.
 
-- [ ] **Fix NES_PAL palette slots** to match ROM `PaletteData ($D44A)` values. At minimum fix SP0–SP3 (palIdx 4–7) which affect all sprite rendering. May also need to fix BG0–BG3 if terrain colors are wrong.
+- [x] **Fix NES_PAL palette slots** to match ROM `PaletteData ($D44A)` values. Fixed all 8 slots in game.js:25–33. ROM-derived values: BG0 `[$0F,$17,$06,$00]`→`#000/#783C00/#540400/#545454`; BG1 `[$0F,$3C,$10,$12]`→`#000/#A0D6E4/#989698/#3032EC`; BG2 `[$0F,$29,$09,$0B]`→`#000/#74C400/#083A00/#003C00`; BG3 `[$0F,$00,$10,$20]`→`#000/#545454/#989698/#ECEEEC`; SP0 `[$0F,$18,$27,$38]`→`#000/#545A00/#D48820/#CCD278`; SP1 `[$0F,$0A,$1B,$3B]`→`#000/#004000/#007628/#98E2B4`; SP2 `[$0F,$0C,$10,$20]`→`#000/#00323C/#989698/#ECEEEC`; SP3 `[$0F,$04,$16,$20]`→`#000/#440064/#982220/#ECEEEC`.
 
 - [ ] **Fix spawn animation palette and tile sequence**: ROM `DrawShootSprite ($E0BF)` uses SP3 (palIdx 7). Change game.js `drawEntity` spawn block from `palIdx=4` to `palIdx=7`. Also fix tile sequence: ROM uses 4 levels {$A1,$A5,$A9,$AD} large→small→large (counter & 0x0F, formula `(|counter-7|*2 & 0xFC) + 0xA1`). Change `SPAWN_SEQ` to `[0xAD,0xAD,0xA9,0xA9,0xA5,0xA5,0xA1,0xA1,0xA1,0xA5,0xA5,0xA9,0xA9,0xAD,0xAD]` and update seqIdx to use `Math.floor((60 - e.spawnAnim) / 4)`.
 
