@@ -972,12 +972,23 @@ function drawEntity(e) {
   if (!e.alive) return;
 
   if (e.spawnAnim > 0) {
-    // Spawn star animation  ROM $DFB1 DrawSpawnSprite  CHR $C3-$CF tiles
-    const phase = Math.floor(e.spawnAnim / 10) % 4;
-    const cols  = [C.SPAWN_A, C.SPAWN_B, C.SPAWN_C, C.SPAWN_D];
+    // Spawn star animation  ROM $E0BF DrawSpawnSprite  CHR PT1 tiles $A0-$AF
+    // Triangle wave: $A1,$A3,$A5,$A7,$A9,$AB,$AD,$AF,$AD,$AB,$A9,$A7,$A5,$A3,$A1
     fillRect(e.x, e.y, TANK_SZ, TANK_SZ, C.FIELD);
-    const r = 3 + (3 - phase);
-    fillRect(e.x + 7 - r, e.y + 7 - r, r * 2, r * 2, cols[phase]);
+    if (chrOff) {
+      const SPAWN_SEQ = [0xA1,0xA3,0xA5,0xA7,0xA9,0xAB,0xAD,0xAF,0xAD,0xAB,0xA9,0xA7,0xA5,0xA3,0xA1];
+      const seqIdx = Math.min(14, Math.floor((60 - e.spawnAnim) / 4));
+      const T = SPAWN_SEQ[seqIdx];
+      // 8×16 sprite centered in 16×16 entity area; palIdx 4 = SP0
+      const sx = e.x + 4, sy = e.y;
+      drawCHRTile(T & 0xFE,       4, sx, sy,     true);
+      drawCHRTile((T & 0xFE) + 1, 4, sx, sy + 8, true);
+    } else {
+      const phase = Math.floor(e.spawnAnim / 10) % 4;
+      const cols  = [C.SPAWN_A, C.SPAWN_B, C.SPAWN_C, C.SPAWN_D];
+      const r = 3 + (3 - phase);
+      fillRect(e.x + 7 - r, e.y + 7 - r, r * 2, r * 2, cols[phase]);
+    }
     return;
   }
 
