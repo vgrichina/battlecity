@@ -291,6 +291,111 @@ Every PPUQueueTiles call also mirrors tile bytes to `RAM[$0400 + ppu_lo]` via `S
 
 ---
 
+### NMI Handler ($D300) — Full Frame Timing
+
+#### Complete call sequence (every frame, ~60Hz)
+
+```
+$D300  PHA / TXA,PHA / TYA,PHA / PHP   ; save A, X, Y, P on stack
+
+$D306  STA $2001 = $06                  ; disable rendering (bits 1+2 only = left-8px enables,
+                                        ;   bits 3+4 clear → bg+sprites off) prevents PPU glitch
+
+$D30B  JSR NMI_Sub ($D352)             ; VS System coin/service input handler (always runs)
+
+; ── OAM DMA guard ($4D = NMISyncFlag) ──
+$D30E  LDA $4D; BNE $D338              ; if $4D≠0 skip OAM+PPU section (use during load screens)
+
+; ── PPU / OAM block (only when $4D=0) ──
+$D312  STA $2001 = $1E                  ; enable full rendering (bits 1+2+3+4 = bg+sprites+left-8px)
+$D317  STA $2003 = $00                  ; OAM write address = 0
+$D31C  STA $4014 = $02                  ; OAM DMA: transfer $0200–$02FF → PPU OAM (513 cycles)
+$D321  LDA $2002                        ; clear VBlank flag + reset PPU address latch
+$D324  JSR FlushPPUQueue ($D96D)       ; drain $0180 nametable tile queue → $2006/$2007
+
+; ── Scroll / PPU ctrl ──
+$D32B  LDA $50; ORA #$B0; STA $2000   ; PPU ctrl: NMI=on(b7), 8×16 sprites(b5), bg@$1000(b4),
+                                        ;   nametable from $50 bits 1:0
+$D330  STA $2005 = $00                  ; horizontal scroll = 0
+$D335  LDA $4F; STA $2005              ; vertical scroll from ZP $4F (ScrollX)
+
+; ── Always-run section ──
+$D338  JSR NMI_Sub2 ($D68A)           ; controller read + edge detection (both players)
+$D33B  JSR SoundEngine ($EC22)         ; sound engine tick (1 slot per frame)
+$D33E  JSR NMI_Sub4 ($DB22)           ; OAM sprite hider (walks OAM writing Y=$F0 off-screen)
+
+; ── Frame counter ──
+$D341  INC $0B                          ; increment FrameLo
+$D345  AND #$3F; BNE skip; INC $0A    ; every 64 frames, increment FrameHi
+
+$D34B  PLP / PLA,TAY / PLA,TAX / PLA  ; restore P, Y, X, A
+$D351  RTI
+```
+
+#### NMI_Sub ($D352) — VS System coin/service handler
+
+Called unconditionally at NMI start; reads $4016 twice (AND for noise rejection):
+1. **Route protection bit to $4020**: shift result right 4 times, AND #$01, STA $4020 (VS hardware unlock)
+2. **Detect coin/service press**: AND #$24 (bit 2=coin, bit 5=service button)
+   - If pressed: INC $4A (CoinHeldCounter)
+   - If released (was non-zero): INC $4B (CoinCredits) + STA $0300=#$01 (CoinEventFlag) + clear $4A
+
+#### FlushPPUQueue ($D96D) — nametable tile queue drain
+
+Called `NMI_Scroll` in labels (misleadingly named; handles both tiles and scroll setup):
+```
+Terminate queue: STA $0180+$0C = $00
+X = 0
+while X ≠ $0C:
+  hi  = $0180,X++  → STA $2006
+  lo  = $0180,X++  → STA $2006
+  loop: byte = $0180,X++
+        if byte ≠ $FF: STA $2007; continue
+        if next_byte ≠ $FF: start next packet (back to outer while)
+        else: (double-$FF = alternate end path)
+After flush: $0C = 0; JSR $D439 (reset PPU addr to $3F00 palette area)
+```
+- Single `$FF` = end of one packet's tile stream → start next packet
+- Outer `X == $0C` check is the primary queue terminator
+- `$D439` writes `$3F,$00,$00,$00` to $2006 (leaves PPU addr pointing at palette) to prevent stray writes
+
+#### NMI_Sub4 ($DB22) — OAM sprite hider
+
+Hides OAM sprites by setting Y coordinate to $F0 (240, below screen):
+```
+step  = -$0E (two's-complement negate of $0E each call, toggles direction)
+X     = $0D (OAMHideIdx, persisted between calls)
+loop:
+  X += step (wraps mod 256)
+  $0200,X = $F0       ; hide sprite at OAM offset X
+  if X == 4: exit
+$0D = X               ; save position for next call
+```
+- Step negation (`EOR #$FF; ADC #$01`) causes the walk direction to reverse each NMI call
+- Loop terminates when X reaches OAM slot 4 ($0200+4 = 2nd sprite); after a full circuit this hides all 64 OAM sprite Y positions except slot 0 ($0200)
+- Also called from `WaitNMI ($D3A1)` and `WaitFrame ($D394)` during load screens (with $4D=1 to block OAM DMA in NMI)
+
+#### $2000 (PPU Control) value written each frame
+
+```
+$50 (ScrollY high bits / nametable select) | $B0
+$B0 = %10110000:
+  bit 7 = 1  : NMI enabled
+  bit 5 = 1  : Sprite size 8×16
+  bit 4 = 1  : Background CHR from $1000
+  bits 1:0   : Base nametable select (from $50 & $03)
+```
+
+#### WaitVBlank ($D95F)
+
+Spin-waits for frame counter $0B to increment (i.e., for NMI to fire):
+```
+LDA $0B; CMP $0B; BEQ loop  ; spin until $0B changes
+```
+`WaitVBlankX ($D966)` calls WaitVBlank X times (loop with DEX).
+
+---
+
 ### Entity State Byte Format (`$A0,X`)
 ```
 Bit 7   : 1 = entity active / alive
@@ -2246,7 +2351,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Map HUD exact pixel layout: enemy kill-counter icons (DrawAllHUDKillIcons $C7BD, 10 pairs at rows 3–12 cols 29–30); blank icon on spawn via DrawHUDKillIconB ($C7AE, tile $11) ordered $7F/2+3 row; P1 lives tile $14 at col 29 row 18, digit at col 29–30 row 18; P2 at row 21; stage flag tiles $6C/$FC/$6D/$FD at rows 23–24 col 29–30; stage# at row 25; OAM HUD tank sprites tiles $79/$7D at px ($0105−8, $0106−8)/($0105, $0106−8), palette 3, init pos (96,104); score row 3 nametable $24: P1 icon $5E,$6B at col 2, P1 score col 4+, HI $48,$49,$6B at col 11, hi-score col 14+, P2 icon $5F,$6B at col 21, P2 score col 23+ (2P only); large sprite screens: GAME(60,70)/OVER(60,120)/BATTLE(26,46)/CITY(60,86) via DrawSpriteString, HISCORE(16,50)+digits(48,100)
 - [x] Disassemble $030D/$030E sound triggers: **$030D** (slot 13 $EFFB) = player bullet hits steel($10) or water($11) tile, set at $E8AB in BulletTileCollision; pulse2 duty=$D5 sweep=$7F, 2-note C6→C7 ping, 4 frames. **$030E** (slot 14 $F00C) = player bullet hits armored tank (EntityType bit2 set, armor tier>0 after DEC), set at $E991 in PlayerBulletEnemyHit; pulse2 duty=$40 sweep=$7F, E→F rising then D low, ~5 frames. Also decoded: $030B=slot11(eagle hit), $030C=slot12(brick hit), $030A=slot10(entity kill), $0309=slot9(power-up appear). PowerUpSpawnPickPos ($EA63): picks random {48,96,144,192}px X/Y via RNGToCoord($EAA7) with collision retry.
 - [x] Disassemble power-up spawn location logic: **PowerUpSpawnPickPos ($EA63)**: STA $0309=1 (power-up-appear sound); pick X($86)/Y($87) each: RNG&$03 → RNGToCoord($EAA7): A=(A*6+6)*8 → {48,96,144,192}px (grid-aligned quarter-field positions); set $88=$FF/$62=0; call PowerUpCollision($EB17) to test overlap → retry from $EA68 if collision; then pick type: RNG&$07 → PowerUpTypeRNG[$EA9F]: [0,1,2,3,4,0,4,3] (types 0-4 weighted; 1-Up never appears randomly); store type→$88/$62=0. **PowerUpDraw ($E2EF)**: if $86=0 skip; if $62≠0 (collection flash): DEC $62; draw flash-tile $3B/$3D; on zero → clear $86; else if $0B&$08 (blink gate): draw type sprite. **Sprite tiles**: game runs $2000=$B0 → 8×16 OAM mode; $DB0A draws 2 OAM entries side-by-side → 16×16px total; tile = $81+type*4 (left) and tile+2 (right); CHR tiles: type0(Helmet)=$80-$83, type1(Timer)=$84-$87, type2(Shovel)=$88-$8B, type3(Star)=$8C-$8F, type4(Grenade)=$90-$93, type5(1-Up)=$94-$97; flash=$3A-$3D. **PowerUpCollision ($EB17)**: proximity 12px; on hit: $62=$32 (50-frame flash), score+500pts, dispatch to type handler. **ShovelTimerUpdate ($E35D)**: $45=Shovel countdown; every 16 frames: at 64-frame tick DEC $45 (zero→$C912 restore walls); when $45<4: alternate $C9BB fortify/$C912 restore (steel border flashes before expiry). **PlayerShieldDraw ($E330)**: loops X=1→0; $89,X=shield timer; every 64 frames DEC $89,X; draws tile $29 or $2D (alternates on $0B&$02) via $DB0A at player pos.
-- [ ] Disassemble NMI handler body ($D300) fully: sequence of sub-calls (save regs → $D304 branch → OAM DMA $4014 → scroll writes → FlushPPUQueue → NMI_Sub2 $D68A → restore → RTI); NMI_Sub1 ($D352) exact flow; needed for accurate frame timing in web port
+- [x] Disassemble NMI handler body ($D300) fully: sequence of sub-calls (save regs → $D304 branch → OAM DMA $4014 → scroll writes → FlushPPUQueue → NMI_Sub2 $D68A → restore → RTI); NMI_Sub1 ($D352) exact flow; needed for accurate frame timing in web port
 
 ### Completed
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.

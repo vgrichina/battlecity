@@ -388,3 +388,6 @@
 1,EA9F,PowerUpTypeRNG
 1,E35D,ShovelTimerUpdate
 1,E330,PlayerShieldDraw
+# Session: NMI handler full decode
+1,D394,WaitFrame
+1,D439,ResetPPUAddr
