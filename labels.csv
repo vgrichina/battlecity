@@ -382,3 +382,9 @@
 1,D966,WaitVBlankX
 1,D214,StrGAME
 1,D219,StrOVER
+# Session: power-up spawn + CHR tiles
+1,EA63,PowerUpSpawnPickPos
+1,EAA7,RNGToCoord
+1,EA9F,PowerUpTypeRNG
+1,E35D,ShovelTimerUpdate
+1,E330,PlayerShieldDraw
