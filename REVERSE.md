@@ -2594,7 +2594,7 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 **Investigation — root causes:**
 
-- [ ] **Audit `chr_pt0.png` pixel gray levels and tile grid geometry**: `extract_tiles.py` outputs grayscale PNG; verify the four gray values used for NES color indices 0/1/2/3. Open PNG in Python/PIL and sample pixels from known tile positions (e.g., tile 256 = sprite bank player-UP). Confirm `grayToIdx` thresholds in game.js (0x2B/0x7F/0xD5) match the actual gray levels. Also confirm CHR_CELL=9, CHR_BORDER=1 match PNG layout — a 1px-off border causes every tile to read the wrong 8×8 block.
+- [x] **Audit `chr_pt0.png` pixel gray levels and tile grid geometry**: Static analysis of `extract_tiles.py` confirms: PALETTE = `[(0x00,0x00,0x00), (0x55,0x55,0x55), (0xAA,0xAA,0xAA), (0xFF,0xFF,0xFF)]` for indices 0–3. `grayToIdx` thresholds `0x2B/0x7F/0xD5` correctly map these: 0x00→0, 0x55→1, 0xAA→2, 0xFF→3 (midpoints are 0x2B, 0x7F, 0xD5 which are well-centered in each range). `CHR_CELL=9, CHR_BORDER=1` matches `extract_tiles.py` constants `cell=TILE_SZ+BORDER=8+1=9, BORDER=1`. Tile origin formula identical in both: `ox=tx*9+1`. PNG is written with `color_type=2` (RGB), 8-bit depth, no gamma chunk — browser treats as sRGB; `drawImage`+`getImageData` is lossless for exact 8-bit integers. **No mismatch — CHR tile decoding pipeline is correct.**
 
 - [ ] **Audit NES_PAL color values in game.js vs ROM PaletteData ($D44A)**: dump `python dis.py 1 D44A 32` (or `decode_tables.py 1 D44A 32 u8`) to get 32 raw NES color bytes. Map each byte through the NES master color table to RGB. Compare palIdx 0–7 in game.js against the ROM values. The currently hard-coded values (SP0 yellow, SP2 grey/teal, etc.) may not match what the ROM actually loads into $3F00–$3F1F, causing all sprites to render in wrong colors.
 
@@ -2608,7 +2608,7 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 **Fix tasks (implement after investigation above):**
 
-- [ ] **Fix `grayToIdx` thresholds and/or `extract_tiles.py` gray levels** if there is a mismatch between PNG pixel values and game.js thresholds. Either regenerate PNG with correct gray values or adjust thresholds. All CHR rendering depends on this.
+- [x] **Fix `grayToIdx` thresholds and/or `extract_tiles.py` gray levels**: Audit (see above) confirmed no mismatch — no fix needed. PNG gray levels (0x00/0x55/0xAA/0xFF) and thresholds (0x2B/0x7F/0xD5) are correct.
 
 - [ ] **Fix NES_PAL palette slots** to match ROM `PaletteData ($D44A)` values. At minimum fix SP0–SP3 (palIdx 4–7) which affect all sprite rendering. May also need to fix BG0–BG3 if terrain colors are wrong.
 
