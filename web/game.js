@@ -94,11 +94,14 @@ function drawMetatile(chrTiles, palIdx, px, py) {
 }
 
 // Draw 2×2 sprite (16×16px): sprTiles = [TL, TR, BL, BR] sprite bank tile indices (0–255)
-function drawSprite16(sprTiles, palIdx, px, py) {
-  drawCHRTile(256+sprTiles[0], palIdx, px,   py,   true);
-  drawCHRTile(256+sprTiles[1], palIdx, px+8, py,   true);
-  drawCHRTile(256+sprTiles[2], palIdx, px,   py+8, true);
-  drawCHRTile(256+sprTiles[3], palIdx, px+8, py+8, true);
+// pt1=false (default) → sprite bank: PNG index = 256+T
+// pt1=true  → BG/PT1 bank (eagle, spawn, bullet-expl): PNG index = T & 0xFE
+function drawSprite16(sprTiles, palIdx, px, py, pt1 = false) {
+  const ti = pt1 ? (t => t & 0xFE) : (t => 256 + t);
+  drawCHRTile(ti(sprTiles[0]), palIdx, px,   py,   true);
+  drawCHRTile(ti(sprTiles[1]), palIdx, px+8, py,   true);
+  drawCHRTile(ti(sprTiles[2]), palIdx, px,   py+8, true);
+  drawCHRTile(ti(sprTiles[3]), palIdx, px+8, py+8, true);
 }
 
 // ─── Playfield geometry  ──────────────────────────────────────────────────────
@@ -936,7 +939,7 @@ function drawEagleBase() {
   // ROM $E3F2: tiles $D1/$D5/$D9/$DD (intact) or $E1/$E5/$E9/$ED (dead), palette SP2
   if (eagleAlive) {
     if (chrOff) {
-      drawSprite16([0xD1, 0xD5, 0xD9, 0xDD], 6, ex - 8, ey - 8);
+      drawSprite16([0xD1, 0xD5, 0xD9, 0xDD], 6, ex - 8, ey - 8, true);
     } else {
       fillRect(ex - 4, ey - 4, 8, 8, '#000000');
       fillRect(ex - 2, ey - 4, 4, 8, C.EAGLE_OK);
@@ -944,7 +947,7 @@ function drawEagleBase() {
     }
   } else {
     if (chrOff) {
-      drawSprite16([0xE1, 0xE5, 0xE9, 0xED], 6, ex - 8, ey - 8);
+      drawSprite16([0xE1, 0xE5, 0xE9, 0xED], 6, ex - 8, ey - 8, true);
     } else {
       fillRect(ex - 4, ey - 4, 8, 8, C.EAGLE_DEAD);
       ctx.fillStyle = '#ff0000';

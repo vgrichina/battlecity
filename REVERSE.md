@@ -2532,7 +2532,7 @@ The following bugs are fully documented from ROM disassembly. Tasks are implemen
 
 **Rendering — CHR sprite tile bank (highest visual impact):**
 
-- [ ] Fix `drawSprite16` PT1 tile bank: odd OAM sprites (spawn $A1–$AF, bullet-expl $B1–$B7, eagle $D1–$EF, HUD $79–$7F) must use PNG index `T & 0xFE` (no +256 offset — these come from PT1/BG bank). Even OAM sprites (tanks) continue to use `256+T`. Current code blindly adds 256 to ALL tiles → wrong CHR tiles rendered for eagle, spawn animation, bullet explosions. Fix: in `drawSprite16`, accept a `pt1` boolean param (or split into two helpers) and pass `T&0xFE` vs `256+T` accordingly.
+- [x] Fix `drawSprite16` PT1 tile bank: odd OAM sprites (spawn $A1–$AF, bullet-expl $B1–$B7, eagle $D1–$EF, HUD $79–$7F) must use PNG index `T & 0xFE` (no +256 offset — these come from PT1/BG bank). Even OAM sprites (tanks) continue to use `256+T`. Fixed: added `pt1=false` param to `drawSprite16`; uses `t => t & 0xFE` when pt1=true, `t => 256+t` otherwise. Updated both eagle calls (intact $D1/$D5/$D9/$DD and damaged $E1/$E5/$E9/$ED) to pass `pt1=true`.
 
 - [ ] Fix eagle size and tiles: ROM `$E3F2` draws eagle as **8 OAM entries in a 4×2 grid = 32×32 px**, top-left at `(EAGLE.x−16, EAGLE.y−16)`. Tiles intact `$D1/$D5/$D9/$DD/$D3/$D7/$DB/$DF` (4 columns × 2 rows, each entry is an 8×16 sprite), damaged `$E1/$E5/$E9/$ED/$E3/$E7/$EB/$EF`. All are PT1 (no +256). Current `drawSprite16` draws only 2×2=16×16px at `(ex−8, ey−8)` — wrong size and wrong bank. Also fix surrounding wall composite: ROM draws 4 tiles at `(ex−16,ey−16)`, `(ex,ey−16)`, `(ex−16,ey)`, `(ex,ey)` (2×2 = 16×16px each wall section, 4 sections surrounding 32×32 eagle center).
 
