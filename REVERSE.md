@@ -2408,7 +2408,38 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Verify chr_pt0.png tile layout — **DONE**: `extract_tiles.py` source confirms `pt0 = all_tiles[:512]` → **512 tiles** (32×16 grid, 289×145 px). File $8010–$8FFF (CHR bank 0) = PPU $1000–$1FFF = **BG bank** = chr_pt0.png tiles 0–255; file $9010–$9FFF (CHR bank 1) = PPU $0000–$0FFF = **sprite bank** = chr_pt0.png tiles 256–511. PPU CTRL $B0 (bit4=1 → BG@$1000, bit5=1 → 8×16 sprites) confirmed via $D32B NMI handler. Web code's 0–255/256–511 split is **correct**: BG `drawCHRTile(T, ...)` → PNG index T (BG bank), even sprite `drawCHRTile(256+T, ...)` → PNG index 256+T (sprite bank). Initial data-range map had BG/sprite PPU labels swapped — corrected above. Note: odd sprite tiles (eagle $D1–$EF, HUD $79–$7F, spawn $A1–$AF, bullets $B1–$B7) use PT1 → PNG index T&$FE (no +256), but web `drawSprite16` always adds 256 — pre-existing bug documented in session 4.
 - [x] Verify entity position convention — **DONE**: ROM uses **CENTER-pixel convention**. Proven by MoveGridSnap ($DD30) collision probes at $DD4B–$DDAA: for RIGHT movement, dx=+1 so $58=8, $59=0; first probe_X = entity_X+8 (one past right edge), probe_Y_bot = entity_Y+7 (bottom edge), probe_Y_top = entity_Y-8 (top edge); for UP, dx=0 dy=-1 so $58=0, $59=0xF8=-8; probe_Y = entity_Y-9 (one past top edge), probe_X_left = entity_X-8 (left edge), probe_X_right = entity_X+7 (right edge). Tank body spans **X: entity_X-8 to entity_X+7, Y: entity_Y-8 to entity_Y+7 (16×16px)**. Probe division by 8 in $D733 (3×LSR) converts pixel coords to NES tile indices. Spawn values ($E537–$E53A): P1=(88,216), P2=(152,216) are centers; field starts at (24,24), so P1 center→tile (4,12) = standard Battle City spawn position ✓. **Web port bugs**: (1) e.x/e.y treated as top-left → all tanks 8px right+down from ROM position; (2) TANK_SZ=14 should be 16 (ROM hitbox is entity_X±8 = 16px wide); (3) web `canMove()` checks 4 corners of 14×14 box at 16px game-tile granularity while ROM checks two leading-edge points at 8px NES-tile granularity → partial brick variants (left-col, right-col, etc.) may allow/block movement incorrectly.
 - [x] Decode sprite tile layout for 8×16 OAM mode — **DONE** (Session 10): even OAM byte T→PT0 (PNG 256+T); odd OAM byte T→PT1 (PNG T&$FE). Tank tiles all EVEN (→PT0): formula `($A8,X&$F0)+dir×8`, left OAM=T, right OAM=T+2; player star 0/1/2/3→bases $00/$20/$40/$60; enemy tier 0/1/2/3→bases $80/$A0/$C0/$E0; animation is attribute-only (palette $E0B7, no tile change). Non-tank sprites all ODD (→PT1/BG-bank): spawn animation ($E0BF) uses $A1–$AF (triangle wave, NOT $C3–$CF as previously stated); bullet expl ($E1AF) uses $B1/$B3/$B5/$B7; eagle ($E3F2) uses $D1–$DF intact / $E1–$EF damaged, 8 OAM entries 4×2=32×32px (NOT 2×2=16×16px); HUD tank ($C7CD) uses $79/$7B / $7D/$7F, 4 entries = 2 icons of 16×16px. Web bugs: eagle drawn as 16×16 (should be 32×32), uses sprite-bank (+256) for PT1 tiles (should use BG-bank, no offset), tile byte T used directly instead of T&$FE for top half.
-- [ ] Audit all web/game.js ROM references — for every subsystem (movement, collision, bullet, spawn, entity death, score, power-ups, HUD, rendering), verify: (a) each JS function has a correct `// ROM $XXXX label` comment pointing to the right address, (b) the implementation logic matches the disassembly notes in REVERSE.md; flag any discrepancy as a sub-bug to fix; check particularly: bullet speed (BULLET_SPD=4 vs ROM delta), player move speed (2px/step vs ROM), enemy move speed (1px/step vs ROM), spawnDelay=120 vs ROM $84, shield decrement rate (every frame vs ROM every 64 frames)
+- [x] Audit all web/game.js ROM references — **DONE**. Full audit of all major subsystems against ROM disassembly. Findings below:
+
+  **CONFIRMED CORRECT (web matches ROM):**
+  - Enemy frame alternation: `(i ^ frameCount) & 1` matches ROM `($5A EOR $0B) & 1` at $DCE3 ✓
+  - Enemy move delta: 1 px/step, alternating → 0.5 px/frame effective ✓
+  - Freeze timer: every 64 frames (`frameCount & 63 === 0`) ✓; Timer power-up sets `freezeTimer=10` (×64=640 frames) ✓
+  - Kill score table ($D2C2): BCD $10/$20/$30/$40 = 100/200/300/400 pts; web `(1+type)*100` ✓
+  - Spawn position cycling: `spawnRot % 3` → 3 X positions matches $E531/$6A ✓
+  - Power-up types 0–4 dispatch matches ROM $EB87 6-handler table ✓
+  - Helmet shield: ROM $EB95 stores $0A→$89,X (10 ticks × 64 frames = 640 frames); web 640 → same duration ✓
+  - Freeze timer: ROM $EB9A stores $0A→$0100 (10 × 64 = 640 frames); web `freezeTimer=10` with every-64-frame decrement ✓
+  - Player frame-skip: skip when `(frameCount & 3) === 2` (3 of 4 frames) matches ROM `$DC25–$DC2D` ✓
+  - Direction encoding (0=UP,1=LEFT,2=DOWN,3=RIGHT) matches $E529/$E52D DirDeltaTable ✓
+
+  **BUGS / DISCREPANCIES:**
+
+  1. **Player move speed 2× too fast** (line ~429): `e.x += DX[e.dir] * 2` uses 2 px/step; ROM MoveGridSnap ($DD4B–$DDBC) sets `$56 = entity_X + DX[dir]` = entity_X + 1 → 1 px/step. Combined with 3/4 frame rate: web=1.5 px/frame, ROM=0.75 px/frame.
+
+  2. **shieldTimer decremented every frame** (line ~746): comment says "every 64 frames" but code does `e.shieldTimer--` unconditionally. ROM $E330 `AND #$3F; BNE skip; DEC $89,X` → decrements every 64 frames. Spawn shield: ROM stores $03 → 3×64=192 frames; web=180 frames (close but different scale). Fix: add `(frameCount & 63) === 0` guard, change spawn `shieldTimer=3`, helmet `shieldTimer=10`.
+
+  3. **BULLET_SPD=4 applied every frame** (line ~520 comment + 530): ROM BulletMoveCollision ($E7A9) applies delta×4 but with frame alternation for bullets where `$D6,X=0` (`TXA EOR $0B AND #$01 BEQ skip`): move 4 px every other frame = 2 px/frame average for regular bullets. Web moves 4 px every frame → 2× too fast for regular bullets.
+
+  4. **spawnDelay fixed at 120** (line ~277, 737): ROM LevelStart ($C33D, $C35F–$C387) computes `SpawnDelayMax ($84) = 190 - $85×4` where $85 = stage# (capped at 35). Range: stage 0 → 190 frames (3.2 s), stage 35 → 50 frames (0.83 s). Web uses fixed 120 (≈ stage 17-18). 2-player mode subtracts 20 more.
+
+  5. **Power-up type includes 1-Up (type 5) randomly** (line ~688): `Math.floor(Math.random() * 6)` allows type 5 (1-Up). ROM PowerUpTypeRNG ($EA9F): [0,1,2,3,4,0,4,3] — only types 0–4, never type 5. 1-Up only appears via LivesGrantCheck ($CF44) at certain kill thresholds.
+
+  6. **Pre-existing known bugs** (documented in prior sessions):
+     - e.x/e.y treated as top-left vs ROM center convention → tanks offset 8px right+down
+     - TANK_SZ=14 should be 16 (ROM hitbox entity_X±8 = 16px)
+     - canMove() 4-corner check vs ROM 2-leading-edge-point check
+     - Eagle drawn 16×16 (should be 32×32)
+     - drawSprite16 always uses +256 offset for PT1 tiles (should use 0 for odd OAM tiles)
 - [ ] Meta-audit: verify web port completeness and ROM fidelity — re-read all REVERSE.md subsystem sections and cross-check against web/game.js; confirm no subsystem is missing or silently stubbed; produce a checklist of: fully correct, partially correct (with specific deltas), and missing/unimplemented features; update REVERSE.md with findings
 
 ### Completed
