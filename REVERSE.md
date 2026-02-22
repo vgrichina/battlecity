@@ -1661,6 +1661,81 @@ All numbers are OAM sprite tile indices (sprite pattern table, PPU $0000–$0FFF
 | $F6–$FE | Power enemy tank sprite (CHR tile base $F6; overlaps eagle-expl range) |
 | $AC–$B4 | Armor enemy tank sprite (base $AC; tier changes on each hit) |
 
+### HUD Pixel Layout (for web port)
+
+The HUD occupies the **right sidebar** (nametable cols 27–31, pixel X 216–255) and the **top/bottom border rows** (rows 0–2, 28–29).
+
+#### Enemy Kill-Counter Icons (nametable background, right sidebar)
+
+| Nametable Col | Nametable Rows | Tiles | Notes |
+|---------------|---------------|-------|-------|
+| 29–30 | 3–12 (10 rows) | $6A,$6A (2 tiles/row) | One enemy icon pair per row |
+
+- **DrawAllHUDKillIcons ($C7BD)**: loop A=18,16,...,0 (10 even values); for each: col=29, row=A/2+3 → draws `[$6A,$6A]` (2 tiles) across cols 29–30.
+- **DrawHUDKillIconB ($C7AE)**: called at enemy spawn with A=$7F (new EnemiesRemaining); draws `[$11]` (blank, steel tile) at col=29+(A&1), row=A/2+3 — erases one icon (bottom-right to top-left order).
+- Pattern: enemies initially fill all 20 slots ($7F=20); as each enemy spawns (DEC $7F), its icon at the corresponding position is blanked.
+- CHR tile $6A = small enemy tank icon; tile $11 = blank/steel square (erased slot).
+
+#### Player Lives Display (nametable, right sidebar)
+
+| Row | Col 29 | Cols 29–30 | Notes |
+|-----|--------|------------|-------|
+| 18 | Tile $14 (P1 icon) | 1–2 digit lives count | P1 lives (via StartGame $C6C5) |
+| 21 | Tile $14 (P2 icon) | 1–2 digit lives count | P2 only if $46=2 or $83≠0 |
+
+- **StartGame ($C6C5)**: runs every frame from GameUpdate2; draws player icon tile $14 at col 29 then lives−1 as BCD digits starting at col 25, advancing right per leading zero skipped. Result columns: 1-digit lives → col 30, row 18/21; 2-digit lives → col 29–30.
+- Digits are CHR tile indices: `digit + $60` (= 0+$60=$60, 1+$60=$61, …, 9+$60=$69) — BCD digit offset by $60 for alternate CHR bank page.
+
+#### Stage Icons (nametable, right sidebar)
+
+| Row | Tiles at cols 29–30 | Data |
+|-----|---------------------|------|
+| 23 | $6C, $FC | SrcPtr=$D225; top half of flag icon |
+| 24 | $6D, $FD | SrcPtr=$D228; bottom half of flag icon |
+| 25 | 1–2 BCD digits | Stage number ($85), starting at col 29–30 |
+
+#### Score Header Row (nametable row 3, stage-start screen nametable $24)
+
+Drawn during PreLoop ($CFAA) and StageStartDraw ($D071) on nametable $24:
+
+| Col range | Content | Data source |
+|-----------|---------|-------------|
+| 2–3 | P1 player icon: tiles $5E,$6B | $D15B |
+| ~4–9 | P1 score digits (BCD, SkipLeadingZeros Y=$16 X=4) | ZP $16...$1B |
+| 11–13 | "HI" label + tile $6B: tiles $48,$49,$6B | $D167 |
+| ~14–19 | Hi-score digits (SkipLeadingZeros Y=$3E X=$0E) | ZP $3E...$43 |
+| 21–22 | P2 player icon: tiles $5F,$6B | $D15E (2P only) |
+| ~23–28 | P2 score digits (SkipLeadingZeros Y=$1E X=$17) | ZP $1E...$23 (2P only) |
+
+#### HUD Bouncing Enemy Tank (OAM sprites)
+
+**DrawHUDTanks ($C7CD)** draws 2 OAM sprites from RAM $0105/$0106:
+
+| Sprite | OAM offset | CHR tile | Attr (palette) | X position | Y position |
+|--------|------------|----------|----------------|------------|------------|
+| Left half | $0200+$0D | $79 | 3 | $0105−8 | $0106−8 |
+| Right half | $0200+$0D+4 | $7D | 3 | $0105 | $0106−8 |
+
+- **Normal visible position**: $0105=$70=112, $0106=$70=112 → sprites at pixel (96, 104) and (112, 104).
+- **Hidden (off-screen)**: $0106=$F0=240 → sprites at Y=232 (off bottom).
+- **HUDTankAnimation ($C7F8)**: decrements $0108 (enemy count display) every 16 frames; when $0108≥$0A applies wiggle deltas (HUDTankWiggleX $D2C6, HUDTankWiggleY $D2CA); when $0108=0 → Y=$F0 to hide.
+- **SetHUDSprites ($C43F)**: initialises $0105=$0106=$70, $0108=$70.
+- **ClearAndRespawn ($C301)**: clears $0106=$F0, $0108=0.
+- $0107 = wiggle animation index (cycles through 4-direction wiggle table).
+
+#### Large-Sprite Score/Text Screens (OAM sprites, not gameplay HUD)
+
+| Text | DrawX (pixel X) | DrawY (pixel Y) | Routine | Data |
+|------|----------------|----------------|---------|------|
+| "BATTLE" | 26 | 46 | DrawSpriteString | $D14F |
+| "CITY" | 60 | 86 | DrawSpriteString | $D156 |
+| "GAME" | 60 | 70 | DrawSpriteString | $D214 |
+| "OVER" | 60 | 120 | DrawSpriteString | $D219 |
+| "HISCORE" | 16 | 50 | DrawSpriteString | $D16B |
+| Hi-score digits | 48 | 100 | DrawHiScoreSprite | ZP $3E–$43 |
+
+Each character is rendered as a 32×32 magnified tile (4×4 OAM sprites per CHR pixel row). DrawSpriteString advances DrawX by $20=32px per character. Tile indices are ASCII-mapped.
+
 ### Level tile map data and loader ($F27D, $F239)
 
 Level tile maps are stored at **CPU $F27D** (file offset `0x728D`, PRG bank 1):
@@ -2168,7 +2243,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] Decode SoundEngine sequence format ($EC23): fully documented — 5-field slot structure ($031C+N×8), 4-byte header (ch, duty/vol, sweep, timer-hi template), note bytes $00-$5F (semitone idx 3 bits + octave 3 bits), duration $61-$E7, 8 special cmds $E8-$EF, 3-level loop cmds $F0-$F2; 12-note pitch table at $EE8B (A1–G#2); 28-slot SoundSeqPtrTable at $EEA3; BGM slot 1 ($EEDB) decoded as ascending chromatic scalar melody (C5→D5→D#5→F5→G5→A5→…)
 - [x] Disassemble DrawSprites ($D6D3): **corrected — NOT OAM sprites but PPU nametable queue writer (PPUQueueTiles)**. Calling convention: X=tile_col (0–31), Y=tile_row (0–29), ($11/$12)=CHR tile bytes terminated $FF. Writes packet [ppu_hi, ppu_lo, tile0…$FF] to $0180 queue. Helper $D5FC converts (col,row)→PPU addr. Variant $D6FD adds $60 for alt CHR bank. RAM shadow at $0400–$07FF mirrors each write. 66 call sites; data strings include "PLEASE INSERT COIN" at $D1A7. See PPU Write Queue subsystem section.
 - [x] Disassemble score display routines $D9A7 (2-digit stage/score draw) and $D9C4 (hi-score display); $D8F7 (draw tile-string to nametable) — SkipLeadingZeros ($D9A7): scans $0000+Y for first non-zero BCD digit, backs up 1-2 positions at $FF end based on $6B (GameActive), returns $11=ptr lo; DrawHiScoreSprite ($D9C4): DrawX=$30 DrawY=$64 $60=$30, scan ZP $3E for first nonzero hi-score digit, call DrawSpriteString; DrawSpriteString ($D8F7): reads tile indices from ($13/$14) ptr, calls DrawBigSpriteTile ($D87E) per tile, advances DrawX by $20; DrawBigSpriteTile ($D87E): computes CHR addr $1000+(idx×$10) via AdvanceTilePtr loop, reads 8 plane-0 bytes from PPU $2007, renders each bit as 4×4 OAM sprite block → 32×32 magnified tile; CHR tiles are ASCII-indexed (tile $47='G', $41='A', etc.); StrGAME ($D214)=$47,$41,$4D,$45,$FF; StrOVER ($D219)=$4F,$56,$45,$52,$FF
-- [ ] Map HUD exact pixel layout: enemy kill-counter icons ($C7BD/$C7AE — 10 pairs at rows 3–12 col 28–30), player lives sprites ($0105/$0106 = P1 lives tank, 3 tiles), P2 lives, score digits positions; all OAM slots/positions needed for faithful HUD rendering
+- [x] Map HUD exact pixel layout: enemy kill-counter icons (DrawAllHUDKillIcons $C7BD, 10 pairs at rows 3–12 cols 29–30); blank icon on spawn via DrawHUDKillIconB ($C7AE, tile $11) ordered $7F/2+3 row; P1 lives tile $14 at col 29 row 18, digit at col 29–30 row 18; P2 at row 21; stage flag tiles $6C/$FC/$6D/$FD at rows 23–24 col 29–30; stage# at row 25; OAM HUD tank sprites tiles $79/$7D at px ($0105−8, $0106−8)/($0105, $0106−8), palette 3, init pos (96,104); score row 3 nametable $24: P1 icon $5E,$6B at col 2, P1 score col 4+, HI $48,$49,$6B at col 11, hi-score col 14+, P2 icon $5F,$6B at col 21, P2 score col 23+ (2P only); large sprite screens: GAME(60,70)/OVER(60,120)/BATTLE(26,46)/CITY(60,86) via DrawSpriteString, HISCORE(16,50)+digits(48,100)
 - [x] Disassemble $030D/$030E sound triggers: **$030D** (slot 13 $EFFB) = player bullet hits steel($10) or water($11) tile, set at $E8AB in BulletTileCollision; pulse2 duty=$D5 sweep=$7F, 2-note C6→C7 ping, 4 frames. **$030E** (slot 14 $F00C) = player bullet hits armored tank (EntityType bit2 set, armor tier>0 after DEC), set at $E991 in PlayerBulletEnemyHit; pulse2 duty=$40 sweep=$7F, E→F rising then D low, ~5 frames. Also decoded: $030B=slot11(eagle hit), $030C=slot12(brick hit), $030A=slot10(entity kill), $0309=slot9(power-up appear). PowerUpSpawnPickPos ($EA63): picks random {48,96,144,192}px X/Y via RNGToCoord($EAA7) with collision retry.
 - [ ] Disassemble power-up spawn location logic: how power-up X/Y ($86/$87) is chosen when power-up spawns — look for writes to $86/$87 in PowerUpSpawn ($E35D) context; also document power-up tile/sprite CHR for all 6 types
 - [ ] Disassemble NMI handler body ($D300) fully: sequence of sub-calls (save regs → $D304 branch → OAM DMA $4014 → scroll writes → FlushPPUQueue → NMI_Sub2 $D68A → restore → RTI); NMI_Sub1 ($D352) exact flow; needed for accurate frame timing in web port
