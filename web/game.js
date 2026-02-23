@@ -1175,8 +1175,8 @@ function drawEntity(e) {
     return;
   }
 
-  // Shield blink  ROM $E330 DrawPlayerShield  CHR $29/$2B tiles
-  if (e.shieldTimer > 0 && (frameCount >> 1) & 1) {
+  // Shield blink fallback (no CHR)  ROM $E330 DrawPlayerShield
+  if (e.shieldTimer > 0 && !chrOff && (frameCount >> 1) & 1) {
     fillRect(e.x - 9, e.y - 9, TANK_SZ + 2, TANK_SZ + 2, C.SHIELD);
   }
 
@@ -1243,6 +1243,20 @@ function drawEntity(e) {
         fillRect(e.x - 7 + d * 3, e.y - 11, 2, 2, '#ffff00');
       }
     }
+  }
+
+  // Shield CHR overlay  ROM $E330 DrawPlayerShield: tiles $28-$2B (even) / $2C-$2F (odd), SP2=palIdx6
+  // Phase based on frameCount bit1 — alternates every 2 frames; BG bank (tileAbs 0-255)
+  if (e.shieldTimer > 0 && chrOff) {
+    const phase = (frameCount >> 1) & 1;
+    const tl = phase ? 0x2C : 0x28;
+    const tr = phase ? 0x2E : 0x2A;
+    const bl = phase ? 0x2D : 0x29;
+    const br = phase ? 0x2F : 0x2B;
+    drawCHRTile(tl, 6, e.x - 8, e.y - 8, true);  // top-left
+    drawCHRTile(tr, 6, e.x,     e.y - 8, true);  // top-right
+    drawCHRTile(bl, 6, e.x - 8, e.y,     true);  // bottom-left
+    drawCHRTile(br, 6, e.x,     e.y,     true);  // bottom-right
   }
 }
 
