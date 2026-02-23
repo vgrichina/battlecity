@@ -1038,10 +1038,12 @@ function drawEagleBase() {
 
   // Eagle sprite: 8 OAM entries in 4×2 grid = 32×32px, top-left at (ex-16, ey-16)
   // Each entry is 8×16 (top half = T & 0xFE, bottom half = (T & 0xFE)+1), all PT1
-  // ROM $E3F2: intact  rows $D1/$D5/$D9/$DD | $D3/$D7/$DB/$DF
-  // ROM $E3E2: damaged rows $E1/$E5/$E9/$ED | $E3/$E7/$EB/$EF
-  const intactTiles  = [0xD1,0xD5,0xD9,0xDD, 0xD3,0xD7,0xDB,0xDF];
-  const damagedTiles = [0xE1,0xE5,0xE9,0xED, 0xE3,0xE7,0xEB,0xEF];
+  // ROM EagleDrawFull ($E3F2): 4 calls to DrawTank, OAM_Y=200 then OAM_Y=216
+  //   row0 OAM_Y=200: col104→$D1, col112→$D3, col120→$D5, col128→$D7
+  //   row1 OAM_Y=216: col104→$D9, col112→$DB, col120→$DD, col128→$DF
+  // Damaged ($E3EA): +$10 offset to all tile indices
+  const intactTiles  = [0xD1,0xD3,0xD5,0xD7, 0xD9,0xDB,0xDD,0xDF];
+  const damagedTiles = [0xE1,0xE3,0xE5,0xE7, 0xE9,0xEB,0xED,0xEF];
   const oamTiles = eagleAlive ? intactTiles : damagedTiles;
 
   if (chrOff) {

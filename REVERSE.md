@@ -2678,7 +2678,30 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 ### 3 — Eagle and special sprites
 
-- [ ] **Audit eagle tile draw order and offsets vs ROM `$E3E2/$E3EA`**: Disassemble `DrawEagleIntact ($E3E2)` and `DrawEagleDamaged ($E3EA)` — extract the 4 OAM tile indices and their X/Y offsets relative to the eagle base position ($78=120px, $D8=216px). Verify game.js `drawEagleBase` calls `drawCHRTile` with the same tile numbers, same relative offsets, and `palIdx=7` (SP3). Also verify the 4-brick-wall composite sprite tiles drawn around the eagle base.
+- [x] **Audit eagle tile draw order and offsets vs ROM `$E3E2/$E3EA`**: Verified. **BUG FIXED** — game.js had wrong tile ordering in `intactTiles`/`damagedTiles` arrays.
+
+  **ROM `EagleDrawIntact ($E3E2)`**: Sets `$69=0`, calls `EagleDrawFull ($E3F2)`.
+  **ROM `EagleDrawDamaged ($E3EA)`**: Sets `$69=$10`, calls `EagleDrawFull ($E3F2)`.
+  **ROM `EagleDrawFull ($E3F2)`**: 4 calls to `EagleDrawSingle ($E3DC)` → `DrawTank ($DB0A)`.
+  Each call draws 2 OAM 8×16 entries (left col = X-8, right col = X):
+  - Call1: X=$70, Y=$D0, tile=$D1 → OAM (104,200)=$D1, (112,200)=$D3
+  - Call2: X=$80, Y=$D0, tile=$D5 → OAM (120,200)=$D5, (128,200)=$D7
+  - Call3: X=$70, Y=$E0, tile=$D9 → OAM (104,216)=$D9, (112,216)=$DB
+  - Call4: X=$80, Y=$E0, tile=$DD → OAM (120,216)=$DD, (128,216)=$DF
+
+  **Correct tile grid (intact, $69=0)**:
+  ```
+  OAM_Y=200: col104→$D1, col112→$D3, col120→$D5, col128→$D7
+  OAM_Y=216: col104→$D9, col112→$DB, col120→$DD, col128→$DF
+  ```
+  Damaged (+$10): $E1,$E3,$E5,$E7 / $E9,$EB,$ED,$EF
+
+  **game.js had**: `[0xD1,0xD5,0xD9,0xDD, 0xD3,0xD7,0xDB,0xDF]` (wrong — tiles were interleaved by 4, misplacing all but col0)
+  **Fixed to**: `[0xD1,0xD3,0xD5,0xD7, 0xD9,0xDB,0xDD,0xDF]` (correct consecutive left-to-right order)
+
+  OAM_X positions: [ex-16, ex-8, ex, ex+8] = [104,112,120,128] ✓
+  OAM_Y positions: [ey-16, ey] = [200, 216] ✓  palIdx=7 (SP3) ✓
+  Eagle handler table at `$E3BA` (6 entries): NullHandler($DC9E), EagleExplosion1($E3C6), EagleExplosion2($E3CB), EagleExplosion3($E3D0), EagleDrawIntact($E3E2), EagleDrawDamaged($E3EA).
 
 - [ ] **Audit eagle explosion tile sequence vs ROM `$E3C6/$E3CB/$E3D0`**: ROM draws tiles $F1/$F5/$F9 in 3 animation phases. Verify game.js `drawEagle` selects the correct tile per `e.eagleState` and draws the correct 2×2 sprite (tiles $F1,$F3,$F1+1,$F3+1 pattern — check exact ROM OAM layout).
 
