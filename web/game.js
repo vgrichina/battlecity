@@ -236,6 +236,8 @@ let spawnRot;       // ROM $6A SpawnRotIdx (0→1→2→0 cycling)
 let spawnDelay;     // ROM $82 SpawnDelay countdown
 let phaseTimer;     // stage-start / clear / gameover display timer
 let powerUp;        // { x, y, type } or null
+let puFlashTimer;   // ROM $62: 50-frame countdown after power-up collected; flash sprite shown
+let puFlashPos;     // { x, y } position where flash is drawn
 let grid;           // GH×GW array of tile types (mutable, brick quarters get cleared)
 let brickBits;      // GH×GW 4-bit brick sub-tile masks  ROM $D745 SubTileBitmask
 let entities;       // 8 entity objects (slots 0-7)
@@ -301,6 +303,8 @@ function initLevel(idx) {
   freezeTimer       = 0;
   shovelTimer       = 0;
   powerUp           = null;
+  puFlashTimer      = 0;
+  puFlashPos        = null;
   spawnRot          = 0;     // ROM $6A SpawnRotIdx
   spawnDelay        = Math.max(50, 190 - stageIdx * 4); // ROM $84 SpawnDelayMax: 190 - stageNum*4, min 50
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
@@ -800,6 +804,9 @@ function checkPowerUpCollision() {
     // ROM $EB17: within 12 px of effect position ($86/$87)  (e.x/e.y are center coords)
     if (Math.abs(e.x - powerUp.x) < 12 && Math.abs(e.y - powerUp.y) < 12) {
       applyPowerUp(e, powerUp.type);
+      // ROM $EB4D: STA $62 #$32 — start 50-frame flash at collect position
+      puFlashPos = { x: powerUp.x, y: powerUp.y };
+      puFlashTimer = 50;
       powerUp = null;
       return;
     }
@@ -852,6 +859,7 @@ function tickTimers() {
   if (freezeTimer > 0 && (frameCount & 63) === 0) freezeTimer--;
   // ROM $EBA0/$E3E8: $45 decremented every 16 frames; <4 ticks flash steel↔brick
   if (shovelTimer > 0 && (frameCount & 15) === 0) shovelTimer--;
+  if (puFlashTimer > 0) puFlashTimer--;
   for (const e of entities) {
     if (e.spawnAnim > 0)  e.spawnAnim--;
     if (e.blinkFrame > 0) e.blinkFrame--;
@@ -1256,6 +1264,12 @@ function drawBullet(b) {
 // ROM $DB0A DrawTank: left OAM at entity_x−8, right at entity_x; both OAM_Y = entity_y−8
 // Tile order [TL,TR,BL,BR] = [base, base+2, base+1, base+3]; ROM $04=2 → OAM pal 2 = SP2
 function drawPowerUp() {
+  // ROM $E302-$E30A: while $62>0 (post-collect flash), draw tile $3B 8×16 OAM at collect pos
+  // 8×16 odd-byte $3B → PT1 tiles: TL=$3A, BL=$3B (left col), TR=$3C, BR=$3D (right col)
+  if (puFlashTimer > 0 && puFlashPos) {
+    drawSprite16([0x3A, 0x3C, 0x3B, 0x3D], 6, puFlashPos.x - 8, puFlashPos.y - 8);
+    return;
+  }
   if (!powerUp) return;
   if ((frameCount >> 3) & 1) return;  // blink  ROM $0B&$08 gate
   const x = powerUp.x, y = powerUp.y;
