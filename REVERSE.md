@@ -2729,7 +2729,12 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 - [ ] **Audit all 13 TILE_CHR entries vs ROM `TileCHRTable ($DB79)`**: Dump 52 bytes at `$DB79` with `decode_tables.py 1 DB79 13 u32` (or 52×u8). Compare each 4-byte group against `TILE_CHR` in game.js line ~145. Flag any mismatch. Session 19 confirmed correct but re-verify after the PT0/PT1 swap fix.
 
-- [ ] **Audit brick partial-quad rendering**: ROM tracks which 8×8 sub-tiles of a brick metatile are intact via the nametable shadow bits. game.js uses `BRICK_QUAD` with tile `$0F` for each quadrant. Verify from tile_viewer.html that tile `$0F` (BG bank) is indeed the solid brick sub-tile and that the 4 brick destruction variants (3 bricks, 2 bricks, etc.) are rendered correctly.
+- [ ] **Fix game.js partial-brick rendering for types 0–3**: ROM `TileCHRTable ($DB79)` dump confirms types 0–3 are **half-wall metatiles** (2 of 4 sub-tiles filled), NOT single-quadrant tiles as game.js assumes:
+  - Type 0 (right col):  `[00,0F,00,0F]` — TR+BR filled
+  - Type 1 (bottom row): `[00,00,0F,0F]` — BL+BR filled
+  - Type 2 (left col):   `[0F,00,0F,00]` — TL+BL filled
+  - Type 3 (top row):    `[0F,0F,00,00]` — TL+TR filled
+  These appear in real level data (stages 1, 2, etc. contain 'b' entries). game.js `BRICK_BITS` maps type 0→bit0 (TL only), type 1→bit1 (TR only), etc. — only draws 1 sub-tile instead of 2, so half-walls render as single 8×8 squares. **Fix**: in `drawTile` for brick types 0–3, use the 4-entry CHR table directly (skipping $00 entries as transparent) instead of BRICK_BITS. Also fix `loadLevel` to treat initial nibbles 0–3 as display-only patterns (not as destruction bitmasks). render_level.py has already been fixed to use the ROM table.
 
 ### 8 — Coordinate system
 

@@ -30,30 +30,37 @@ T_WATER = 10; T_TREES = 11; T_ICE = 12
 T_EMPTY = 13
 
 # ── CHR tile indices for each metatile type (4 sub-tiles: TL,TR,BL,BR) ──────
-# From ROM TileCHRTable ($DB79); matches game.js TILE_CHR
+# Directly from ROM TileCHRTable ($DB79), dumped with decode_tables.py.
+# Tile $00 = empty (transparent/BG); tile $0F = solid brick sub-tile.
+# Partial brick types 0-3 are half-walls: each has exactly 2 sub-tiles filled:
+#   Type 0 (right col):  TR+BR = $0F, TL+BL = $00
+#   Type 1 (bot row):    BL+BR = $0F, TL+TR = $00
+#   Type 2 (left col):   TL+BL = $0F, TR+BR = $00
+#   Type 3 (top row):    TL+TR = $0F, BL+BR = $00
 TILE_CHR = {
-    T_STEEL_TL: [0x20,0x10,0x20,0x10],
-    T_STEEL_TR: [0x20,0x20,0x10,0x10],
-    T_STEEL_BL: [0x10,0x20,0x10,0x20],
-    T_STEEL_BR: [0x10,0x10,0x20,0x20],
-    T_STEEL:    [0x10,0x10,0x10,0x10],
-    T_WATER:    [0x12,0x12,0x12,0x12],
-    T_TREES:    [0x22,0x22,0x22,0x22],
-    T_ICE:      [0x21,0x21,0x21,0x21],
+    T_BRICK_TL: [0x00,0x0F,0x00,0x0F],  # ROM $DB79: right-col half-brick
+    T_BRICK_TR: [0x00,0x00,0x0F,0x0F],  # ROM $DB7D: bottom-row half-brick
+    T_BRICK_BL: [0x0F,0x00,0x0F,0x00],  # ROM $DB81: left-col half-brick
+    T_BRICK_BR: [0x0F,0x0F,0x00,0x00],  # ROM $DB85: top-row half-brick
+    T_BRICK:    [0x0F,0x0F,0x0F,0x0F],  # ROM $DB89: full brick
+    T_STEEL_TL: [0x20,0x10,0x20,0x10],  # ROM $DB8D
+    T_STEEL_TR: [0x20,0x20,0x10,0x10],  # ROM $DB91
+    T_STEEL_BL: [0x10,0x20,0x10,0x20],  # ROM $DB95
+    T_STEEL_BR: [0x10,0x10,0x20,0x20],  # ROM $DB99
+    T_STEEL:    [0x10,0x10,0x10,0x10],  # ROM $DB9D
+    T_WATER:    [0x12,0x12,0x12,0x12],  # ROM $DBA1
+    T_TREES:    [0x22,0x22,0x22,0x22],  # ROM $DBA5
+    T_ICE:      [0x21,0x21,0x21,0x21],  # ROM $DBA9
 }
-BRICK_QUAD = [0x0F, 0x0F, 0x0F, 0x0F]   # all 4 sub-tiles for full brick
 
-# BG sub-tile bitmask for partial brick types (which quarters to draw)
-BRICK_BITS = {T_BRICK_TL: 0b0001, T_BRICK_TR: 0b0010,
-              T_BRICK_BL: 0b0100, T_BRICK_BR: 0b1000, T_BRICK: 0b1111}
-
-# Palette index per tile type (0–3=BG0–BG3); matches game.js TILE_PAL
-# [BRICK_TL..BRICK=0, STEEL_TL..STEEL=3, WATER=1, TREES=2, ICE=3]
+# Palette index per tile type (0–3 → BG0–BG3)
+# From ROM TileAttrTable ($DB69): types 0-4=pal0(brick), 5-9=pal3(steel),
+# 10=pal1(water), 11=pal2(trees), 12=pal3(ice)
 TILE_PAL = {
     T_BRICK_TL:0, T_BRICK_TR:0, T_BRICK_BL:0, T_BRICK_BR:0, T_BRICK:0,
     T_STEEL_TL:3, T_STEEL_TR:3, T_STEEL_BL:3, T_STEEL_BR:3, T_STEEL:3,
     T_WATER:1, T_TREES:2, T_ICE:3,
-}
+}  # matches game.js TILE_PAL = [0,0,0,0,0, 3,3,3,3,3, 1,2,3]
 
 # ── NES master palette (NTSC) ────────────────────────────────────────────────
 NES_MASTER = [
@@ -173,36 +180,50 @@ def render_stage(grid, chr_tiles):
     return c
 
 def _draw_metatile(c, t, ox, oy, chr_tiles):
-    """Draw one 16×16 metatile at canvas offset (ox, oy)."""
+    """Draw one 16×16 metatile at canvas offset (ox, oy).
+    Uses ROM TileCHRTable directly for all types.  Tile $00 = transparent.
+    """
     if t >= T_EMPTY:
         return  # empty — leave background
-
-    pal_idx = TILE_PAL.get(t, 0)
-    pal = BG_PALETTES[pal_idx]
-
-    if t in BRICK_BITS:
-        # Brick: draw only the present sub-tile quadrants
-        bits = BRICK_BITS[t]
-        offsets = [(0,0), (8,0), (0,8), (8,8)]  # TL, TR, BL, BR in NES px
-        for q in range(4):
-            if bits & (1 << q):
-                qox = ox + offsets[q][0] * SCALE
-                qoy = oy + offsets[q][1] * SCALE
-                c.draw_tile(chr_tiles[BRICK_QUAD[q]], pal, qox, qoy)
-        return
 
     chr4 = TILE_CHR.get(t)
     if chr4 is None:
         return
 
-    # 2×2 sub-tiles: TL, TR, BL, BR
+    pal_idx = TILE_PAL.get(t, 0)
+    pal     = BG_PALETTES[pal_idx]
+
+    # 2×2 sub-tiles: TL, TR, BL, BR (in NES pixel order)
     positions = [(0,0), (8,0), (0,8), (8,8)]
     for i, (dx, dy) in enumerate(positions):
         tile_idx = chr4[i]
+        if tile_idx == 0x00:
+            continue   # $00 = empty/background sub-tile — leave BG colour
         c.draw_tile(chr_tiles[tile_idx], pal, ox + dx * SCALE, oy + dy * SCALE)
 
 # ── Main ─────────────────────────────────────────────────────────────────────
+def parse_stages(args):
+    """Parse stage list from CLI args.
+    Accepts: integers (1-35), ranges (3-7), or 'all'.
+    Returns sorted list of 1-based stage numbers.
+    """
+    if not args or args == ['all']:
+        return list(range(1, NUM_STAGES + 1))
+    stages = set()
+    for tok in args:
+        if '-' in tok:
+            lo, hi = tok.split('-', 1)
+            stages.update(range(int(lo), int(hi) + 1))
+        else:
+            stages.add(int(tok))
+    return sorted(s for s in stages if 1 <= s <= NUM_STAGES)
+
+
 def main():
+    import sys
+    stages = parse_stages(sys.argv[1:])
+    render_sheet = (stages == list(range(1, NUM_STAGES + 1)))
+
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
@@ -210,50 +231,44 @@ def main():
     prg_banks = rom[4]
     chr_off   = 16 + prg_banks * 16384
     chr_data  = rom[chr_off : chr_off + 16384]
-    total_tiles = len(chr_data) // 16
-    chr_tiles = [decode_tile(chr_data, i * 16) for i in range(total_tiles)]
-    print(f"Decoded {total_tiles} CHR tiles from file offset 0x{chr_off:05X}")
-
-    # Decode levels
-    all_grids = []
-    for s in range(NUM_STAGES):
-        off = LEVEL_DATA_OFFSET + STAGE_SIZE * s
-        all_grids.append(decode_stage(rom[off:off + STAGE_SIZE]))
-    print(f"Decoded {NUM_STAGES} stage maps from file offset 0x{LEVEL_DATA_OFFSET:05X}")
+    chr_tiles = [decode_tile(chr_data, i * 16) for i in range(len(chr_data) // 16)]
+    print(f"Decoded {len(chr_tiles)} CHR tiles  |  rendering stages: {stages}")
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # Individual stage PNGs
-    for s, grid in enumerate(all_grids, 1):
+    # Decode and render requested stages
+    rendered = {}
+    for s in stages:
+        off = LEVEL_DATA_OFFSET + STAGE_SIZE * (s - 1)
+        grid = decode_stage(rom[off:off + STAGE_SIZE])
         c = render_stage(grid, chr_tiles)
         path = os.path.join(OUT_DIR, f"stage_{s:02d}.png")
         c.save(path)
+        rendered[s] = (c, grid)
+        print(f"  wrote {path}")
 
-    print(f"  wrote {NUM_STAGES} individual stage PNGs to {OUT_DIR}/")
+    # All-stages sheet only when rendering the full set
+    if render_sheet:
+        SHEET_COLS = 7
+        PAD = 4
+        CELL = FIELD_PX + PAD
+        SHEET_ROWS = (NUM_STAGES + SHEET_COLS - 1) // SHEET_COLS
+        sheet_w = SHEET_COLS * CELL + PAD
+        sheet_h = SHEET_ROWS * CELL + PAD
 
-    # All-stages sheet: 7 columns × 5 rows
-    SHEET_COLS = 7
-    SHEET_ROWS = (NUM_STAGES + SHEET_COLS - 1) // SHEET_COLS
-    PAD = 4
-    CELL = FIELD_PX + PAD
-    sheet_w = SHEET_COLS * CELL + PAD
-    sheet_h = SHEET_ROWS * CELL + PAD
+        sheet = Canvas(sheet_w, sheet_h, bg=(20, 20, 20))
+        for s, (stage_c, _) in rendered.items():
+            col = (s - 1) % SHEET_COLS
+            row = (s - 1) // SHEET_COLS
+            ox, oy = col * CELL + PAD, row * CELL + PAD
+            for py in range(FIELD_PX):
+                for px in range(FIELD_PX):
+                    sheet.set(ox + px, oy + py, stage_c.px[py * FIELD_PX + px])
 
-    sheet = Canvas(sheet_w, sheet_h, bg=(20, 20, 20))
-    for s, grid in enumerate(all_grids):
-        col = s % SHEET_COLS
-        row = s // SHEET_COLS
-        ox = col * CELL + PAD
-        oy = row * CELL + PAD
-        stage_c = render_stage(grid, chr_tiles)
-        # Copy into sheet
-        for py in range(FIELD_PX):
-            for px in range(FIELD_PX):
-                sheet.set(ox + px, oy + py, stage_c.px[py * FIELD_PX + px])
+        sheet_path = os.path.join(OUT_DIR, "all_stages.png")
+        sheet.save(sheet_path)
+        print(f"  wrote {sheet_path}  ({sheet_w}×{sheet_h})")
 
-    sheet_path = os.path.join(OUT_DIR, "all_stages.png")
-    sheet.save(sheet_path)
-    print(f"  wrote {sheet_path}  ({sheet_w}×{sheet_h})")
 
 if __name__ == '__main__':
     main()
