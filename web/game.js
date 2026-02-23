@@ -304,7 +304,7 @@ function triggerBulletExplosion(b) {
 // ROM $F239 LevelTileLoader  $E4D0 ClearEntitySlots  $E4C6 ClearBulletSlots
 // ROM $C33D LevelStart  $C625 ClearKillTallies
 function initLevel(idx) {
-  stageIdx          = Math.min(idx, LEVEL_MAPS.length - 1);
+  stageIdx          = idx % LEVEL_MAPS.length;  // ROM loops back to stage 1 after stage 35
   frameCount        = 0;
   gamePhase         = 'start';
   phaseTimer        = 180;   // ~3 s stage-start banner  ROM $CFAA PreGameDraw
