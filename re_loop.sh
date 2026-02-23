@@ -73,7 +73,7 @@ Do not re-document already-covered addresses. Stop after $TASKS tasks."
   echo "$PROMPT" | claude -p \
     --output-format stream-json \
     --max-turns 50 \
-    --allowedTools "Bash(python dis.py*),Bash(python xref.py*),Bash(python search_bytes.py*),Bash(python decode_tables.py*),Bash(python extract_tiles.py*),Bash(python render_screen.py*),Bash(python extract_level_maps.py*),Bash(python analyze_tiles*),Bash(python3 analyze_tiles*),Bash(python3 -m http.server*),Read,Edit,Write,Glob,Grep" \
+    --allowedTools "Bash(python dis.py*),Bash(python xref.py*),Bash(python search_bytes.py*),Bash(python decode_tables.py*),Bash(python extract_tiles.py*),Bash(python render_screen.py*),Bash(python render_sprites.py*),Bash(python extract_level_maps.py*),Bash(python analyze_*),Bash(python3 analyze_*),Bash(python audit_*),Bash(python3 audit_*),Bash(python check_*),Bash(python3 check_*),Bash(python gen_*),Bash(python3 gen_*),Bash(python3 -m http.server*),Read,Edit,Write,Glob,Grep" \
     | jq -r '
         if .type == "assistant" then
           .message.content[] |
@@ -104,7 +104,7 @@ Do not re-document already-covered addresses. Stop after $TASKS tasks."
   SUMMARY=$(git diff REVERSE.md | grep '^+- \[x\]' | head -1 | sed 's/^+- \[x\] //' || true)
   [[ -z "$SUMMARY" ]] && SUMMARY="session $i progress"
 
-  git add REVERSE.md labels.csv comments.csv web/
+  git add REVERSE.md labels.csv comments.csv web/ *.py
   if git diff --cached --quiet; then
     echo "No changes — stopping loop."
     break
