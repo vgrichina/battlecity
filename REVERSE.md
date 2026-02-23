@@ -2707,7 +2707,7 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 ### 4 — Spawn and bullet explosion
 
-- [ ] **Audit spawn animation 8×16 tile draw vs ROM `DrawShootSprite ($E0BF)`**: ROM draws a single 8×16 OAM entry: top tile = `T & $FE`, bottom tile = `(T & $FE) + 1`, PT1 bank (BG), palette SP3. game.js uses `drawCHRTile(T & 0xFE, 7, sx, sy, true)` + `drawCHRTile((T & 0xFE)+1, 7, sx, sy+8, true)`. Confirm `sx = e.x - 4` (centered on 8px-wide sprite in 16px entity box) and `sy = e.y - 8`. Disassemble `$E0BF` to extract the exact X/Y offsets used in OAM writes.
+- [x] **Audit spawn animation 8×16 tile draw vs ROM `DrawShootSprite ($E0BF)`**: **VERIFIED CORRECT** — ROM draws TWO 8×16 OAM entries (not one), via `DrawTank ($DB0A)` → `DrawEntityTile ($DABA)` called twice. Left entry: OAM_X = entity_x−8, OAM_Y = entity_y−8, tile=T (8×16: top=T&$FE, bottom=(T&$FE)+1). Right entry: OAM_X = entity_x, OAM_Y = entity_y−8, tile=T+2 (8×16: top=(T+2)&$FE, bottom=(T+2)&$FE+1). Entity X/Y from $90,X/$98,X (confirmed: `STA $90,X/$98,X` in PlayerRespawn $E422/$E427). Palette $04=3 → SP3. **sx = e.x − 8** (not e.x − 4; the sprite is 16px wide), **sy = e.y − 8** ✓. game.js lines 1145–1150 draw exactly this: tl=T&$FE, tr=(T+2)&$FE, at (sx,sy),(sx+8,sy),(sx,sy+8),(sx+8,sy+8) — **no changes needed**.
 
 - [ ] **Audit bullet explosion position vs ROM `BulletExplode ($E1AF)`**: ROM draws one 8×8 OAM sprite at tile `($B1 + dir×2) & $FE`, palette SP2, position `bullet_x - 5` (X offset) and `bullet_y - N` (Y offset, check exact value). game.js draws at `b.ex, b.ey` — verify these match ROM pixel offsets. Disassemble `$E1AF` and extract the hardcoded OAM X/Y adjustments.
 
