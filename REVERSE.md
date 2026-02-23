@@ -2670,7 +2670,11 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
   - **Power-up bit origin** (`$E447–$E457`): `$7F` (enemiesLeft) ∈ {3,10,17} → `STA #$04 → $A8,X`. Then `EnemySpawn ($E4AE)` ORs the type base value in, so final `$A8,X` = `(type_base | $04)`.
   - **Bug found**: game.js used `(frameCount >> 2) & 1` (4-frame toggle) instead of `(frameCount >> 3) & 1` (8-frame toggle per ROM). **Fixed** `game.js:1113` and `game.js:1130`: changed `>> 2` → `>> 3`.
 
-- [ ] **Audit power-up tank (armor) visual**: ROM type 3 (armored) enemy has 4 armor hit points and uses a distinct tileBase (`$A0` = `entityBase=$80+3×$20=$E0`? verify). Confirm tiles $E0–$EF are correct armor tank sprites in `tile_viewer.html`. Check game.js renders type 3 enemies with base `0x80 + 3*0x20 = 0xE0` — cross-check against tile sheet.
+- [x] **Audit power-up tank (armor) visual**: Verified. Key findings:
+  - **entityBase for type 3 = `$E0`**: ROM `$E4AE` loads `EnemyTypeTable` value, `CMP #$E0 → ORA #$03` only for type 3 → `$A8,X = $E3`. `entityBase = $A8,X & $F0 = $E0` ✓. game.js `0x80 + 3*0x20 = 0xE0` ✓. Tiles `$E0–$EF` (sprite bank, PNG index 256+$E0 to 256+$EF) are correct armor tank sprites.
+  - **Armor bits only for type 3**: `$E4B1: CMP #$E0; $E4B3: BNE skip; $E4B5: ORA #$03`. Types 0/1/2 (`$80/$A0/$C0`) get 0 armor bits. **Bug found**: game.js line 408 had `e.type >= 2 ? 1 : 0` — type 2 incorrectly got 1 armor hit. **Fixed** to `e.type >= 3 ? 3 : 0`.
+  - **4 total hits to kill type 3**: ROM `$E989: AND #$03; BEQ kill; DEC $A8,X`. Starting at `$E3` (armor bits=3): 3 decrements + 1 kill hit = 4 total. game.js `armorHits=3` with `if armorHits>0: dec; else: kill` also yields 4 total hits ✓.
+  - **Type 3 power-up tank**: starts at `$E4` (`$E0 | $04`, no armor). First hit: `PowerUpSpawnPickPos` called, then `$E4 → $E3 → $E2` (2 DECs). Total hits still 4. game.js doesn't special-case this but result is same (armorHits=3 → 4 hits) ✓.
 
 ### 3 — Eagle and special sprites
 

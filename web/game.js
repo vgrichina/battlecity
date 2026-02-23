@@ -404,8 +404,10 @@ function spawnEnemy() {
     // Power-up tank: flag at 17/10/3 remaining  ROM $E417 $7F==17/10/3
     e.powerUpTank = (enemiesLeft === 17 || enemiesLeft === 10 || enemiesLeft === 3);
 
-    // Armor hits for tier-3 (heavy) tanks  ROM $A8,X bit2 + $E8B1 armor check
-    e.armorHits  = e.type >= 3 ? 3 : (e.type >= 2 ? 1 : 0);
+    // Armor hits: only type 3 gets armor (bits 0-1 of $A8,X; set at $E4B5: ORA #$03)
+    // ROM $E4B1: CMP #$E0; only type 3 gets ORA #$03. Types 0/1/2 have 0 armor bits.
+    // Armor check at $E989: AND #$03; BEQ kill; DEC. Start=3 → 4 total hits.
+    e.armorHits  = e.type >= 3 ? 3 : 0;
     e.shieldTimer = 0;
     e.aiTimer    = 40 + Math.floor(Math.random() * 80);
     e.fireTimer  = 60 + Math.floor(Math.random() * 120);
