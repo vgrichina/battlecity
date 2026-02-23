@@ -2751,12 +2751,12 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
   4. **Tile indices** — TileCHRTable indices ARE the direct BG-bank CHR tile numbers (not PPU page-relative); verified by cross-referencing passability boundary (`$20`) with tile semantics.
   **Visual confirmation**: rendered level PNGs (`output_gfx/levels/stage_01.png`, `stage_04.png`, etc.) show correct brick/water/trees/steel layout matching known Battle City stage structure. The "garbled" description was written before render_level.py was corrected. No further action needed.
 
-- [ ] **Fix game.js partial-brick rendering for types 0–3**: ROM `TileCHRTable ($DB79)` dump confirms types 0–3 are **half-wall metatiles** (2 of 4 sub-tiles filled), NOT single-quadrant tiles as game.js assumes:
+- [x] **Fix game.js partial-brick rendering for types 0–3**: ROM `TileCHRTable ($DB79)` dump confirms types 0–3 are **half-wall metatiles** (2 of 4 sub-tiles filled), NOT single-quadrant tiles as game.js assumes:
   - Type 0 (right col):  `[00,0F,00,0F]` — TR+BR filled
   - Type 1 (bottom row): `[00,00,0F,0F]` — BL+BR filled
   - Type 2 (left col):   `[0F,00,0F,00]` — TL+BL filled
   - Type 3 (top row):    `[0F,0F,00,00]` — TL+TR filled
-  These appear in real level data (stages 1, 2, etc. contain 'b' entries). game.js `BRICK_BITS` maps type 0→bit0 (TL only), type 1→bit1 (TR only), etc. — only draws 1 sub-tile instead of 2, so half-walls render as single 8×8 squares. **Fix**: in `drawTile` for brick types 0–3, use the 4-entry CHR table directly (skipping $00 entries as transparent) instead of BRICK_BITS. Also fix `loadLevel` to treat initial nibbles 0–3 as display-only patterns (not as destruction bitmasks). render_level.py has already been fixed to use the ROM table.
+  These appear in real level data (stages 1, 2, etc. contain 'b' entries). game.js `BRICK_BITS` maps type 0→bit0 (TL only), type 1→bit1 (TR only), etc. — only draws 1 sub-tile instead of 2, so half-walls render as single 8×8 squares. **Fixed** in `web/game.js`: `brickInitBits()` now returns correct 2-quadrant bitmasks (bit0=TL,bit1=TR,bit2=BL,bit3=BR): type0→0b1010(TR+BR), type1→0b1100(BL+BR), type2→0b0101(TL+BL), type3→0b0011(TL+TR). `loadLevel` now normalizes grid types 0–3 → T.BRICK (4) after brickBits extraction so grid only contains T.BRICK for all brick variants. Both CHR-tile and fallback-rect render paths already iterate over brickBits and draw correct 2 sub-tiles. Collision (passable8) also uses brickBits correctly now.
 
 ### 8 — Coordinate system
 

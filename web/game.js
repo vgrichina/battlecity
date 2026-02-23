@@ -246,11 +246,16 @@ let playerRespawnTimer = 0;
 
 // ─── Brick sub-tile init  ─────────────────────────────────────────────────────
 // ROM $D745 SubTileBitmask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
+// ROM $DB79 TileCHRTable types 0–3 are half-wall metatiles (2 of 4 sub-tiles filled):
+//   Type 0 right-col  [00,0F,00,0F] → TR+BR = 0b1010
+//   Type 1 bottom-row [00,00,0F,0F] → BL+BR = 0b1100
+//   Type 2 left-col   [0F,00,0F,00] → TL+BL = 0b0101
+//   Type 3 top-row    [0F,0F,00,00] → TL+TR = 0b0011
 function brickInitBits(t) {
-  if (t === T.BRICK_TL) return 0b0001;
-  if (t === T.BRICK_TR) return 0b0010;
-  if (t === T.BRICK_BL) return 0b0100;
-  if (t === T.BRICK_BR) return 0b1000;
+  if (t === T.BRICK_TL) return 0b1010;  // TR+BR (right col)
+  if (t === T.BRICK_TR) return 0b1100;  // BL+BR (bottom row)
+  if (t === T.BRICK_BL) return 0b0101;  // TL+BL (left col)
+  if (t === T.BRICK_BR) return 0b0011;  // TL+TR (top row)
   if (t === T.BRICK)    return 0b1111;
   return 0;
 }
@@ -317,6 +322,11 @@ function initLevel(idx) {
 
   // Brick sub-tile bits  ROM $D745
   brickBits = grid.map(r => r.map(t => brickInitBits(t)));
+  // Normalize partial-brick display types 0–3 → T.BRICK (4) in the grid;
+  // brickBits already captures the correct 2-quadrant pattern above.
+  grid.forEach((r, ri) => r.forEach((t, ci) => {
+    if (t >= T.BRICK_TL && t < T.BRICK) grid[ri][ci] = T.BRICK;
+  }));
 
   // Init entity slots  ROM $E4D0 ClearEntitySlots
   entities = Array.from({ length: 8 }, (_, i) => makeEntity(i));
