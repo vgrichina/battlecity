@@ -41,7 +41,7 @@ const tileCache = new Map();      // cached ImageData keyed by "abs_pal_transp"
 
 function initCHR() {
   const img = new Image();
-  img.src = '../tiles/chr_pt0.png';
+  img.src = '../tiles/chr_all.png';
   img.onload = () => {
     const oc = document.createElement('canvas');
     oc.width = img.width; oc.height = img.height;
@@ -1464,7 +1464,7 @@ function render() {
 p1Score  = 0;
 p1Lives  = 2;  // display shows +1 (3 lives)
 initLevel(0);
-initCHR();     // load CHR tile sheet (../tiles/chr_pt0.png); renders CHR immediately on load
+initCHR();     // load CHR tile sheet (../tiles/chr_all.png); renders CHR immediately on load
 
 // ROM $C402 GameFrame loop — requestAnimationFrame at 60 fps
 (function loop() {
