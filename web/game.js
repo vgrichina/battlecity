@@ -680,7 +680,11 @@ function bulletHitsTile(b) {
   const t = grid[row][col];
 
   // Steel: stop bullet  ROM $E838 steel check  $030D=1 if player bullet
-  if (t === T.STEEL || (t >= T.STEEL_TL && t <= T.STEEL_BR)) return true;
+  // Armor-piercing (starLevel >= $60): destroy steel  ROM $E83E TileDestroyIfNoEntity ($D77F)
+  if (t === T.STEEL || (t >= T.STEEL_TL && t <= T.STEEL_BR)) {
+    if (b.armor) grid[row][col] = T.EMPTY;
+    return true;
+  }
 
   // Water: stop bullet, no destroy  ROM $E838 water check
   if (t === T.WATER) return true;
