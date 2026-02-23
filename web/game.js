@@ -1291,11 +1291,11 @@ function drawHUD() {
   for (let i = 0; i < Math.min(total, 20); i++) {
     const col = i % 2, row = Math.floor(i / 2);
     if (chrOff) {
-      drawCHRTile(0x6A, 3, hx + 1 + col * 9, hy + 12 + row * 9);
+      drawCHRTile(0x6A, 3, hx + 2 + col * 8, hy + 8 + row * 8);
     } else {
-      fillRect(hx + 2 + col * 10, hy + 12 + row * 8, 8, 6, C.ENEMY);
-      fillRect(hx + 3 + col * 10, hy + 13 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
-      fillRect(hx + 7 + col * 10, hy + 13 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 2 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
+      fillRect(hx + 3 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 7 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
     }
   }
 
