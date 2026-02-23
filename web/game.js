@@ -1132,18 +1132,22 @@ function drawEntity(e) {
   if (!e.alive) return;
 
   if (e.spawnAnim > 0) {
-    // Spawn star animation  ROM $E0BF DrawSpawnSprite  CHR PT1 tiles $A0-$AF
-    // Triangle wave: $A1,$A3,$A5,$A7,$A9,$AB,$AD,$AF,$AD,$AB,$A9,$A7,$A5,$A3,$A1
+    // Spawn star animation  ROM $E0BF DrawShootSprite  CHR PT1 tiles $A0-$AF
+    // OAM tile T (odd) per nibble 0-14: |nib-7|*2(&$FC)+$A1 → $AD,$AD,$A9,$A9,$A5,$A5,$A1,$A1,$A1,$A5,$A5,$A9,$A9,$AD,$AD
     // e.x/e.y are center coords; top-left = e.x-8, e.y-8
     fillRect(e.x - 8, e.y - 8, TANK_SZ, TANK_SZ, C.FIELD);
     if (chrOff) {
       const SPAWN_SEQ = [0xAD,0xAD,0xA9,0xA9,0xA5,0xA5,0xA1,0xA1,0xA1,0xA5,0xA5,0xA9,0xA9,0xAD,0xAD];
       const seqIdx = Math.min(14, Math.floor((60 - e.spawnAnim) / 4));
       const T = SPAWN_SEQ[seqIdx];
-      // 8×16 sprite centered in 16×16 entity area; palIdx 7 = SP3  ROM DrawShootSprite ($E0BF) sets $04=3
-      const sx = e.x - 4, sy = e.y - 8;
-      drawCHRTile(T & 0xFE,       7, sx, sy,     true);
-      drawCHRTile((T & 0xFE) + 1, 7, sx, sy + 8, true);
+      // ROM DrawShootSprite ($E0BF): JSR DrawTank ($DB0A) → two 8×16 OAM entries = 16×16 sprite
+      // Left col OAM_X = entity_x-8, right col OAM_X = entity_x, both OAM_Y = entity_y-8; palIdx 7 = SP3
+      const sx = e.x - 8, sy = e.y - 8;
+      const tl = T & 0xFE, tr = (T + 2) & 0xFE;
+      drawCHRTile(tl,     7, sx,     sy,     true);  // top-left
+      drawCHRTile(tr,     7, sx + 8, sy,     true);  // top-right
+      drawCHRTile(tl + 1, 7, sx,     sy + 8, true);  // bottom-left
+      drawCHRTile(tr + 1, 7, sx + 8, sy + 8, true);  // bottom-right
     } else {
       const phase = Math.floor(e.spawnAnim / 10) % 4;
       const cols  = [C.SPAWN_A, C.SPAWN_B, C.SPAWN_C, C.SPAWN_D];
