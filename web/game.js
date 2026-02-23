@@ -1301,6 +1301,36 @@ function drawPowerUp() {
   drawSprite16([base, base + 2, base + 1, base + 3], 6, x - 8, y - 8);
 }
 
+// ROM $DACC-$DAD4 DrawEntityTile: if sprite on BG tile $22 (tree), ORs OAM attr with $6E=$20
+// (priority-behind-BG). Entities draw BEHIND tree tiles in ROM. Re-draw trees over entities.
+function drawTreesOverlay() {
+  const chr = TILE_CHR[T.TREES];   // [0x22,0x22,0x22,0x22]
+  const pal = TILE_PAL[T.TREES];   // BG1 (index 1)
+  for (let row = 0; row < GH; row++) {
+    for (let col = 0; col < GW; col++) {
+      if (grid[row][col] !== T.TREES) continue;
+      const px = FX + col * META;
+      const py = FY + row * META;
+      if (chrOff) {
+        // transparent=true: skip palette-index-0 pixels so only green tree pixels cover entities
+        drawCHRTile(chr[0], pal, px,   py,   true);
+        drawCHRTile(chr[1], pal, px+8, py,   true);
+        drawCHRTile(chr[2], pal, px,   py+8, true);
+        drawCHRTile(chr[3], pal, px+8, py+8, true);
+      } else {
+        // Fallback: redraw colored-rect trees on top of entities
+        fillRect(px, py, META, META, C.TREES);
+        ctx.fillStyle = C.TREES_DK;
+        ctx.fillRect((px + 2) * SCALE, (py + 2)  * SCALE, 3 * SCALE, 3 * SCALE);
+        ctx.fillRect((px + 9) * SCALE, (py + 2)  * SCALE, 3 * SCALE, 3 * SCALE);
+        ctx.fillRect((px + 5) * SCALE, (py + 6)  * SCALE, 3 * SCALE, 3 * SCALE);
+        ctx.fillRect((px + 1) * SCALE, (py + 10) * SCALE, 3 * SCALE, 3 * SCALE);
+        ctx.fillRect((px +10) * SCALE, (py + 10) * SCALE, 3 * SCALE, 3 * SCALE);
+      }
+    }
+  }
+}
+
 // ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawHUDTanks  $D8F7 DrawRowTiles
 function drawHUD() {
   const hx = FX + GW * META + 6;
@@ -1379,13 +1409,13 @@ function render() {
 
   drawField();
 
-  // Draw entities (enemies behind trees, players on top)
-  // ROM: trees drawn as BG tiles, so sprites appear underneath — we skip z-ordering in v1
+  // Draw entities then re-draw trees on top (ROM: OAM priority-behind-BG for sprites under trees)
   for (let i = 2; i < 8; i++) drawEntity(entities[i]);
   for (let i = 0; i < 2; i++) drawEntity(entities[i]);
 
   for (const b of bullets) drawBullet(b);
   drawPowerUp();
+  drawTreesOverlay();  // re-draw tree tiles over entities/bullets (z-order fix)
 
   // ROM $C7CD DrawHUDTanks: PPUCTRL $B0 = 8×16 sprite mode. 4 OAM entries (tile bit0=1 → PT1/BG bank):
   //   OAM $79 at X=104 → top=chr[$78], bottom=chr[$79]   (Tank1 left column)
