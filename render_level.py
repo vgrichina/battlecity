@@ -4,7 +4,13 @@
 Decodes all 35 stage maps from ROM ($F27D), renders each as a pixel-art PNG
 using the actual CHR tile graphics (from chr_pt0.png) with ROM NES palettes.
 
-Output: output_gfx/levels/stage_NN.png  (one per stage)
+Each stage preview includes:
+  - 2-tile (16px NES = 32px canvas) black border on all sides
+  - 13×13 metatile playfield grid
+  - Intact eagle (2×2 metatiles = 32×32 NES px) at metatile (col=5, row=13),
+    centred at the bottom of the field (matching NES eagle position $78,$D8)
+
+Output: output_gfx/levels/stage_NN.png  (one per stage, 480×544 canvas)
         output_gfx/levels/all_stages.png (all 35 in a 7×5 grid)
 """
 
@@ -88,9 +94,16 @@ ROM_PAL_BYTES = [
     [0x0F, 0x3C, 0x10, 0x12],  # BG1 water
     [0x0F, 0x29, 0x09, 0x0B],  # BG2 trees (note: water uses BG1, trees uses BG2 in ROM)
     [0x0F, 0x00, 0x10, 0x20],  # BG3 steel/ice
+    # Sprite palettes (needed for eagle SP3)
+    [0x0F, 0x18, 0x27, 0x38],  # SP0 P1 yellow
+    [0x0F, 0x0A, 0x1B, 0x3B],  # SP1 P2 green
+    [0x0F, 0x0C, 0x10, 0x20],  # SP2 enemy grey
+    [0x0F, 0x04, 0x16, 0x20],  # SP3 special/eagle ($EagleStateUpdate $E386: $04=3)
 ]
 # Convert to RGB tuples
-BG_PALETTES = [[NES_MASTER[c & 0x3F] for c in slot] for slot in ROM_PAL_BYTES]
+ALL_PALETTES = [[NES_MASTER[c & 0x3F] for c in slot] for slot in ROM_PAL_BYTES]
+BG_PALETTES = ALL_PALETTES[:4]
+EAGLE_PAL   = ALL_PALETTES[7]  # SP3
 
 # Background fill color = palette[0][0] = universal BG = NES $0F = black
 BG_COLOR = NES_MASTER[0x0F & 0x3F]   # (0,0,0)
@@ -137,6 +150,21 @@ def write_png(path, width, height, rgb_pixels):
     with open(path, 'wb') as f:
         f.write(data)
 
+# ── Eagle constants ──────────────────────────────────────────────────────────
+# Intact eagle: 4×4 CHR tile grid (each tile 8×8 NES px → total 32×32 NES px)
+# ROM EagleDrawIntact ($E3E2): 4 OAM calls (8×16 mode, PT1/BG bank, palette SP3)
+# OAM tile byte T → top half = T&$FE, bottom half = (T&$FE)+1
+# Row 1 OAM: $D1,$D3,$D5,$D7 → BG tiles [$D0,$D1,$D2,$D3,$D4,$D5,$D6,$D7]
+# Row 2 OAM: $D9,$DB,$DD,$DF → BG tiles [$D8,$D9,$DA,$DB,$DC,$DD,$DE,$DF]
+EAGLE_INTACT_TILES = [
+    [0xD0, 0xD2, 0xD4, 0xD6],   # top halves of top OAM row (y+0..7)
+    [0xD1, 0xD3, 0xD5, 0xD7],   # bottom halves of top OAM row (y+8..15)
+    [0xD8, 0xDA, 0xDC, 0xDE],   # top halves of bottom OAM row (y+16..23)
+    [0xD9, 0xDB, 0xDD, 0xDF],   # bottom halves of bottom OAM row (y+24..31)
+]
+EAGLE_METATILE_COL = 5   # 0-indexed, gives eagle x-centre = col 6 of 13-col grid
+EAGLE_METATILE_ROW = 13  # just below the 13-row grid (rows 0-12)
+
 # ── Canvas ───────────────────────────────────────────────────────────────────
 SCALE = 2   # 2× zoom (each NES pixel → 2×2 canvas pixels)
 
@@ -166,17 +194,45 @@ class Canvas:
 
 # ── Level renderer ───────────────────────────────────────────────────────────
 # Playfield: 13×13 metatiles × 16 NES px each = 208×208 NES px
-FIELD_PX = COLS * 16 * SCALE   # canvas pixels
+FIELD_PX   = COLS * 16 * SCALE          # 416 canvas px (grid only)
+BORDER_PX  = 16 * SCALE                 # 32 canvas px (2 NES tiles)
+EAGLE_AREA = 2 * 16 * SCALE             # 64 canvas px (2 metatile rows for eagle)
+CANVAS_W   = FIELD_PX + 2 * BORDER_PX  # 480  (border + grid + border)
+CANVAS_H   = FIELD_PX + 2 * BORDER_PX + EAGLE_AREA  # 544  (+ 2 rows for eagle + bottom border)
+
+
+def draw_eagle(c, chr_tiles):
+    """Draw the intact eagle (32×32 NES px = 64×64 canvas px) at metatile (col=5, row=13).
+
+    The eagle is rendered as a 4×4 grid of BG-bank CHR tiles (PT1, no +256 offset)
+    with the SP3 palette ($0F/$04/$16/$20 = black/purple/red/white).
+    Metatile (col=5, row=13) puts the 2-metatile-wide eagle centred at column 6
+    of the 13-column field, just below the last row of level tiles.
+    """
+    ox = BORDER_PX + EAGLE_METATILE_COL * 16 * SCALE   # canvas x of TL corner
+    oy = BORDER_PX + EAGLE_METATILE_ROW * 16 * SCALE   # canvas y of TL corner
+    for tr, tile_row in enumerate(EAGLE_INTACT_TILES):
+        for tc, tile_idx in enumerate(tile_row):
+            c.draw_tile(chr_tiles[tile_idx], EAGLE_PAL,
+                        ox + tc * 8 * SCALE,
+                        oy + tr * 8 * SCALE,
+                        transparent=True)
+
 
 def render_stage(grid, chr_tiles):
-    """Render one 13×13 grid → Canvas of size FIELD_PX × FIELD_PX."""
-    c = Canvas(FIELD_PX, FIELD_PX)
+    """Render one stage → Canvas of size CANVAS_W × CANVAS_H (480×544).
+
+    Includes 2-tile (32px canvas) black border on all sides and intact eagle
+    at metatile (col=5, row=13) below the 13×13 grid.
+    """
+    c = Canvas(CANVAS_W, CANVAS_H)
     for row in range(ROWS):
         for col in range(COLS):
             t = grid[row][col]
-            ox = col * 16 * SCALE
-            oy = row * 16 * SCALE
+            ox = BORDER_PX + col * 16 * SCALE
+            oy = BORDER_PX + row * 16 * SCALE
             _draw_metatile(c, t, ox, oy, chr_tiles)
+    draw_eagle(c, chr_tiles)
     return c
 
 def _draw_metatile(c, t, ox, oy, chr_tiles):
@@ -249,19 +305,21 @@ def main():
     if render_sheet:
         SHEET_COLS = 7
         PAD = 4
-        CELL = FIELD_PX + PAD
+        CELL_W = CANVAS_W + PAD
+        CELL_H = CANVAS_H + PAD
         SHEET_ROWS = (NUM_STAGES + SHEET_COLS - 1) // SHEET_COLS
-        sheet_w = SHEET_COLS * CELL + PAD
-        sheet_h = SHEET_ROWS * CELL + PAD
+        sheet_w = SHEET_COLS * CELL_W + PAD
+        sheet_h = SHEET_ROWS * CELL_H + PAD
 
         sheet = Canvas(sheet_w, sheet_h, bg=(20, 20, 20))
         for s, (stage_c, _) in rendered.items():
-            col = (s - 1) % SHEET_COLS
-            row = (s - 1) // SHEET_COLS
-            ox, oy = col * CELL + PAD, row * CELL + PAD
-            for py in range(FIELD_PX):
-                for px in range(FIELD_PX):
-                    sheet.set(ox + px, oy + py, stage_c.px[py * FIELD_PX + px])
+            sc = (s - 1) % SHEET_COLS
+            sr = (s - 1) // SHEET_COLS
+            ox = sc * CELL_W + PAD
+            oy = sr * CELL_H + PAD
+            for py in range(CANVAS_H):
+                for px in range(CANVAS_W):
+                    sheet.set(ox + px, oy + py, stage_c.px[py * CANVAS_W + px])
 
         sheet_path = os.path.join(OUT_DIR, "all_stages.png")
         sheet.save(sheet_path)
