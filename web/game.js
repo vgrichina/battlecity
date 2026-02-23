@@ -278,6 +278,7 @@ function makeEntity(slot) {
     animBit: 0,       // track animation frame: 0 or 4; XOR'd each 8px movement step  ROM $DD18/$DDE1 EOR #$04
     aiTimer: 0,       // AI direction-change countdown  ROM $DDFC RandomDirChange
     fireTimer: 0,     // enemy fire interval
+    deathTimer: 0,    // death explosion countdown: 12→0, drawn even while alive=false  ROM $E073 EntityKillDispatch
     isPlayer: slot < 2,
   };
 }
@@ -405,7 +406,7 @@ function spawnEnemy() {
 
   for (let i = 2; i <= 7; i++) {
     const e = entities[i];
-    if (e.alive) continue;
+    if (e.alive || e.deathTimer > 0) continue;
 
     e.x          = EN_SPAWN_X[spawnRot % 3];  // ROM $6A SpawnRotIdx → $E531
     e.y          = EN_SPAWN_Y;
@@ -765,6 +766,7 @@ function bulletBulletCancel() {
 function killEntity(e) {
   if (!e.alive) return;
   e.alive = false;
+  e.deathTimer = 12;  // ROM $E073: 3-phase explosion × 4 frames each
 
   if (e.isPlayer) {
     // ROM $DEBA: DEC $51 P1Lives
@@ -874,6 +876,7 @@ function tickTimers() {
   for (const e of entities) {
     if (e.spawnAnim > 0)  e.spawnAnim--;
     if (e.blinkFrame > 0) e.blinkFrame--;
+    if (!e.alive && e.deathTimer > 0) e.deathTimer--;
   }
   if (playerRespawnTimer > 0) {
     playerRespawnTimer--;
@@ -1149,6 +1152,23 @@ function drawEagleBase() {
 
 // ROM $DB02 DrawTank2x2  $DABA DrawEntityTile  $DF81 DrawMovingSprite
 function drawEntity(e) {
+  // ROM $E073 EntityKillDispatch: 3-phase explosion at entity center before slot cleared
+  // Tiles $84–$8F (PT0 sprite bank), phase0=$84-$87, phase1=$88-$8B, phase2=$8C-$8F
+  // Each phase 4 frames; palette SP2 (palIdx 6); 16×16px 2×2 tile block
+  if (!e.alive && e.deathTimer > 0) {
+    const phase = Math.min(2, Math.floor((12 - e.deathTimer) / 4));
+    const Tbase = 256 + 0x84 + phase * 4;
+    if (chrOff) {
+      drawCHRTile(Tbase,     6, e.x - 8, e.y - 8, true);  // top-left
+      drawCHRTile(Tbase + 2, 6, e.x,     e.y - 8, true);  // top-right
+      drawCHRTile(Tbase + 1, 6, e.x - 8, e.y,     true);  // bottom-left
+      drawCHRTile(Tbase + 3, 6, e.x,     e.y,     true);  // bottom-right
+    } else {
+      const r = 4 + phase * 2;
+      fillRect(e.x - r, e.y - r, r * 2, r * 2, '#ff8800');
+    }
+    return;
+  }
   if (!e.alive) return;
 
   if (e.spawnAnim > 0) {
