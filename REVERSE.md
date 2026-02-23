@@ -2719,7 +2719,12 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 ### 6 — HUD rendering
 
-- [ ] **Audit P2 life icon tile**: ROM draws P2 life icon using BG tile `$14` same as P1 (or a different tile). Disassemble `$C79F/$C7AE DrawAllHUDKillIcons` fully to confirm P2 life icon tile index and position. game.js only draws P1 life icon (`drawCHRTile(0x14, 3, ...)`); if P2 icon uses a different tile or position, add it.
+- [x] **Audit P2 life icon tile**: **CONFIRMED** — Both P1 and P2 use tile **`$14`** for the life icon (from data at `$D212` = `[$14, $FF]`). The StartGame routine (`$C6C5`) calls `PPUQueueTiles` twice with the same source (`$D212`) but different Y (row) parameters:
+  - P1 life icon: `PPUQueueTiles(src=$D212, X=$1D, Y=$12)` → nametable row=18, col=29 → NES pixel (232, 144); game.js `hx+3, hy+127` ≈ correct (1px rounding off)
+  - P2 life icon: `PPUQueueTiles(src=$D212, X=$1D, Y=$15)` → nametable row=21, col=29 → NES pixel (232, 168); game.js would be `hx+3, hy+151`
+  - The labels above each life icon (rows 17/20) use tile pairs `[$58,$13]` / `[$5A,$13]` for "1P"/"2P" text.
+  - `DrawHUDKillIconA/B ($C79F/$C7AE)` are the **enemy-remaining count** icon routines (writes to nametable $22D2/$2BD2), NOT player life icons — the task label was misleading.
+  - **game.js action**: game.js currently has no 2-player mode; the P1 life icon at `hx+3, hy+127` is correct for 1P. When 2P is added, draw second `drawCHRTile(0x14, 3, hx+3, hy+151)` for P2 lives.
 
 - [ ] **Audit HUD kill icon spacing and tile $6A position**: ROM `DrawAllHUDKillIcons ($C7BD)` writes to PPU nametable address `$22D2`. Map this to pixel coordinates: nametable $22xx = right panel; `$22D2 = base $2000 + $02D2` → row `$02D2 / 32 = 22`, col `$02D2 % 32 = 18` → pixel (144+18×8, 176+22×8)? Verify game.js HUD x/y offsets and 9px spacing match the nametable tile grid exactly.
 
