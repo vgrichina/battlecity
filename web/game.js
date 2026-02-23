@@ -1363,11 +1363,26 @@ function render() {
   for (const b of bullets) drawBullet(b);
   drawPowerUp();
 
-  // ROM $C7CD DrawHUDTanks: 2×8×16 OAM sprites tiles $79/$7B (left) $7D/$7F (right)
-  // at NES pixel ($0105−8,$0106−8)/($0105,$0106−8); init $0105=$0106=$70 → (104,104).
-  // Visible while gamePhase='play'/'start' (ROM: visible while $0108≥$0A).
-  if (chrOff && (gamePhase === 'play' || gamePhase === 'start'))
-    drawSprite16([0x79, 0x7D, 0x7B, 0x7F], 7, 104, 104, true);
+  // ROM $C7CD DrawHUDTanks: PPUCTRL $B0 = 8×16 sprite mode. 4 OAM entries (tile bit0=1 → PT1/BG bank):
+  //   OAM $79 at X=104 → top=chr[$78], bottom=chr[$79]   (Tank1 left column)
+  //   OAM $7B at X=112 → top=chr[$7A], bottom=chr[$7B]   (Tank1 right column)
+  //   OAM $7D at X=120 → top=chr[$7C], bottom=chr[$7D]   (Tank2 left column)
+  //   OAM $7F at X=128 → top=chr[$7E], bottom=chr[$7F]   (Tank2 right column)
+  // All OAM Y=104 → screen top=105. Two 16×16 tanks: Tank1@(104,105), Tank2@(120,105).
+  // Attribute $03 = palette SP3 = index 7. Visible while $0108≥$0A.
+  if (chrOff && (gamePhase === 'play' || gamePhase === 'start')) {
+    const py = 105;
+    // Tank 1 (OAM sprites $79 + $7B)
+    drawCHRTile(0x78, 7, 104, py,   true);
+    drawCHRTile(0x7A, 7, 112, py,   true);
+    drawCHRTile(0x79, 7, 104, py+8, true);
+    drawCHRTile(0x7B, 7, 112, py+8, true);
+    // Tank 2 (OAM sprites $7D + $7F)
+    drawCHRTile(0x7C, 7, 120, py,   true);
+    drawCHRTile(0x7E, 7, 128, py,   true);
+    drawCHRTile(0x7D, 7, 120, py+8, true);
+    drawCHRTile(0x7F, 7, 128, py+8, true);
+  }
 
   drawHUD();
 
