@@ -301,9 +301,9 @@ def main():
     spawn_unique = [0xA0, 0xA2, 0xA4, 0xA6, 0xA8, 0xAA, 0xAC, 0xAE]
     x = PAD
     for T in spawn_unique:
-        # 8×16: top tile = T, bottom tile = T+1
-        c.draw_tile(tiles[T],   NES_PAL[4], x, cy,      transparent=True)
-        c.draw_tile(tiles[T+1], NES_PAL[4], x, cy + T8, transparent=True)
+        # 8×16: top tile = T, bottom tile = T+1; palette SP3 (ROM DrawShootSprite $E0BF: $04=3)
+        c.draw_tile(tiles[T],   NES_PAL[7], x, cy,      transparent=True)
+        c.draw_tile(tiles[T+1], NES_PAL[7], x, cy + T8, transparent=True)
         x += T8 + 4
     cy += 16 * SCALE + PAD
 
@@ -330,8 +330,10 @@ def main():
     #   row1: col0=($D2/$D3), col1=($D6/$D7), col2=($DA/$DB), col3=($DE/$DF)
     x_eagle = PAD
     # Intact eagle
-    intact_oam  = [0xD1,0xD5,0xD9,0xDD, 0xD3,0xD7,0xDB,0xDF]
-    damaged_oam = [0xE1,0xE5,0xE9,0xED, 0xE3,0xE7,0xEB,0xEF]
+    # Row-major order per REVERSE.md: [D1,D3,D5,D7, D9,DB,DD,DF] = row0 then row1
+    # Palette SP3 (ROM EagleStateUpdate $E386: $04=3 before all eagle draw handlers)
+    intact_oam  = [0xD1,0xD3,0xD5,0xD7, 0xD9,0xDB,0xDD,0xDF]
+    damaged_oam = [0xE1,0xE3,0xE5,0xE7, 0xE9,0xEB,0xED,0xEF]
     for label, oam_list, xoff in [('intact', intact_oam, 0), ('damaged', damaged_oam, 4*T8+8)]:
         ex = x_eagle + xoff
         for row in range(2):
@@ -341,32 +343,32 @@ def main():
                 bot_tile = (T & 0xFE) + 1
                 px = ex + col * T8
                 py = cy + row * 8 * SCALE
-                c.draw_tile(tiles[top_tile], NES_PAL[6], px, py,          transparent=True)
-                c.draw_tile(tiles[bot_tile], NES_PAL[6], px, py + T8, transparent=True)
+                c.draw_tile(tiles[top_tile], NES_PAL[7], px, py,      transparent=True)
+                c.draw_tile(tiles[bot_tile], NES_PAL[7], px, py + T8, transparent=True)
     cy += 16 * SCALE + PAD
 
     # ── Group 4: Bullet explosion ────────────────────────────────────────
     next_group(4, "Bullet explosion (SP0, BG bank $B0-$B7, 4 dirs 8×8 each)")
     # ROM $E1AF: T = ($B1 + dir*2) & $FE → $B0,$B2,$B4,$B6 for dirs 0-3
     x = PAD
+    # Palette SP2 (ROM BulletExplode $E1AF: $04=2)
     for d in range(4):
         T = (0xB1 + d * 2) & 0xFE
-        c.draw_tile(tiles[T], NES_PAL[4], x, cy, transparent=True)
+        c.draw_tile(tiles[T], NES_PAL[6], x, cy, transparent=True)
         x += T8 + 4
     cy += T8 + PAD
 
     # ── Group 5: Power-up sprites ────────────────────────────────────────
-    next_group(5, "Power-up sprites (SP3, sprite bank $80-$97, 6 types 16×16)")
-    # ROM: type0=Helmet $80-$83, type1=Timer $84-$87, type2=Shovel $88-$8B,
-    #       type3=Star $8C-$8F, type4=Grenade $90-$93, type5=1-Up $94-$97
-    # sprite bank → tile = 256 + $80 + type*4
+    next_group(5, "Power-up sprites (SP2, sprite bank $80-$97, 6 types 16×16)")
+    # ROM $E30D PowerUpDraw: $04=2 → SP2; tile=$81+type*4 (odd→PT0/sprite bank)
+    # DrawTank renders: TL=base, TR=base+2, BL=base+1, BR=base+3 (tile order [T,T+2,T+1,T+3])
     PU_NAMES = ['Helmet','Timer','Shovel','Star','Grenade','1-Up']
     x = PAD
     for ptype in range(6):
         base = 0x80 + ptype * 4
-        T = 256 + base   # sprite bank
-        # drawSprite16: TL=T, TR=T+1, BL=T+2, BR=T+3
-        c.draw_tile16(tiles, T, T+1, T+2, T+3, NES_PAL[7], x, cy, transparent=True)
+        T = 256 + base   # sprite bank (PT0: even tile, bit0=0)
+        # Correct draw order per ROM: TL=T, TR=T+2, BL=T+1, BR=T+3
+        c.draw_tile16(tiles, T, T+2, T+1, T+3, NES_PAL[6], x, cy, transparent=True)
         x += T16 + 4
     cy += T16 + PAD
 
