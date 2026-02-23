@@ -2881,7 +2881,7 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 - [x] **Fix render_frame.py playfield nametable offset**: Fixed in `build_nametable_from_stage()`. Changed `tr = mr*2+dr` → `tr = mr*2+dr+2` and `tc = mc*2+dc` → `tc = mc*2+dc+2`. Attribute table recomputed using `tc_base = mc*2+2` / `tr_base = mr*2+2`: `ax = tc_base>>2`, `ay = tr_base>>2`, `quad = (((tr_base>>1)&1)<<1)|((tc_base>>1)&1)`. Playfield now starts at nametable (col=2, row=2) = NES pixel (16,16). Output verified: `render_frame.py --stage 1` produces 256×240 PNG without error.
 
-- [ ] **Fix extract_level_maps.py docstring water/trees swap**: Lines 14–15 say `10: trees (CHR $12)` / `11: water (CHR $22)` but ROM confirms type 10=water, type 11=trees. Comment-only fix; TILE_CHR values in render_level.py and game.js are already correct.
+- [x] **Fix extract_level_maps.py docstring water/trees swap**: Fixed docstring lines 15–16, TILE_CHARS[10/11], and TILE_NAMES[10/11] — all now say type 10=water (CHR $12), type 11=trees (CHR $22). Label-only fix; no CHR lookup indices changed.
 
 - [ ] **Add border and eagle to render_level.py stage previews**: Add 2-tile (16px NES = 32px canvas) black border on all sides; place intact eagle (2×2 metatile, tiles $D1/$D3/$D5/$D7 from BG bank PT0) at metatile position (col=5, row=13) = bottom-centre just below the 13×13 grid.
 

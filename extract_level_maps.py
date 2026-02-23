@@ -12,8 +12,8 @@ Tile types (from $DB79 CHR table):
   4:     full brick (all 4 CHR = $0F)
   5–8:   partial steel (quarter-filled variants; CHR $10/$20)
   9:     full steel (all 4 CHR = $10)
-  10:    trees  (CHR $12)
-  11:    water  (CHR $22)
+  10:    water  (CHR $12)
+  11:    trees  (CHR $22)
   12:    ice    (CHR $21)
   13–15: empty / open ground (CHR $00)
 
@@ -46,8 +46,8 @@ TILE_CHARS = {
     7:  's',   # partial steel BL
     8:  's',   # partial steel BR
     9:  'S',   # full steel
-    10: 'T',   # trees
-    11: 'W',   # water
+    10: 'W',   # water
+    11: 'T',   # trees
     12: 'I',   # ice
     13: '.',   # empty
     14: '.',   # empty
@@ -59,7 +59,7 @@ TILE_NAMES = {
     4: 'BRICK',
     5: 'steel-TL', 6: 'steel-TR', 7: 'steel-BL', 8: 'steel-BR',
     9: 'STEEL',
-    10: 'TREES', 11: 'WATER', 12: 'ICE',
+    10: 'WATER', 11: 'TREES', 12: 'ICE',
     13: 'EMPTY', 14: 'EMPTY', 15: 'EMPTY',
 }
 
