@@ -1339,12 +1339,15 @@ function shadeColor(hex, amount) {
 // ROM $E1C6 BulletTravel  $DABA DrawEntityTile  2×6 px sprite
 function drawBullet(b) {
   if (b.explodeTimer > 0) {
-    // ROM $E1AF BulletExplode: 8×8 PT1 sprite, tile = ($B1 + dir*2) & $FE, palette SP2 (palIdx 6)
+    // ROM $E1AF BulletExplode: 8×16 PT1 sprite (single OAM entry, PPUCTRL bit5=1)
+    // Tile byte = $B1+dir×2 ($B1/$B3/$B5/$B7); top=$B0/$B2/$B4/$B6, bottom=$B1/$B3/$B5/$B7
+    // All bottom-half tiles have real pixel data (confirmed: check_explosion_tiles.py)
     const T = (0xB1 + b.edir * 2) & 0xFE;
     if (chrOff) {
-      drawCHRTile(T, 6, b.ex, b.ey, true);
+      drawCHRTile(T,     6, b.ex, b.ey,     true);
+      drawCHRTile(T + 1, 6, b.ex, b.ey + 8, true);
     } else {
-      fillRect(b.ex, b.ey, 8, 8, C.BULLET);
+      fillRect(b.ex, b.ey, 8, 16, C.BULLET);
     }
   }
   if (!b.active) return;
