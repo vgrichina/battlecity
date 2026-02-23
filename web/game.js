@@ -231,6 +231,7 @@ let activeEnemyCount;
 let freezeTimer;    // ROM $0100 EnemyFreezeTimer (Timer power-up)
 let shovelTimer;    // ROM $45 PowerUpTimer for shovel/fortify
 let eagleAlive;
+let eagleExpTimer;   // ROM $68 EagleDestructionTimer: 39→0 over 39 frames; drives EagleStateUpdate ($E386)
 let spawnRot;       // ROM $6A SpawnRotIdx (0→1→2→0 cycling)
 let spawnDelay;     // ROM $82 SpawnDelay countdown
 let phaseTimer;     // stage-start / clear / gameover display timer
@@ -296,6 +297,7 @@ function initLevel(idx) {
   gamePhase         = 'start';
   phaseTimer        = 180;   // ~3 s stage-start banner  ROM $CFAA PreGameDraw
   eagleAlive        = true;
+  eagleExpTimer     = 0;
   freezeTimer       = 0;
   shovelTimer       = 0;
   powerUp           = null;
@@ -615,11 +617,12 @@ function moveBullets() {
       continue;
     }
 
-    // Eagle hit  ROM $E838: eagle tile $C8 → set $68=$27 eagle-destruction
+    // Eagle hit  ROM $E838: eagle tile $C8 → set $68=$27=39 (eagle-destruction timer)
     if (eagleAlive &&
         Math.abs(b.x - EAGLE.x) < 12 &&
         Math.abs(b.y - EAGLE.y) < 8) {
-      eagleAlive = false;
+      eagleAlive    = false;
+      eagleExpTimer = 39;  // ROM $E838 STA #$27 → $68; $27=39 decimal
       triggerBulletExplosion(b);
       b.active = false;
       continue;
@@ -859,6 +862,7 @@ function tickTimers() {
       spawnPlayer(0);  // ROM $DEE8 SpawnP1
     }
   }
+  if (eagleExpTimer > 0) eagleExpTimer--;  // ROM $E390 DEC $68
 }
 
 // ─── Stage-clear check  ───────────────────────────────────────────────────────
@@ -903,8 +907,8 @@ function update() {
   handleEnemyFire();              // ROM $E216 EnemyFireCheck
   checkPowerUpCollision();        // ROM $EB17 PowerUpCollision
 
-  if (!eagleAlive) {
-    gamePhase  = 'gameover';      // ROM $C1A0 StageEndHandler eagle-destruction
+  if (!eagleAlive && eagleExpTimer === 0) {
+    gamePhase  = 'gameover';      // ROM $C1A0 StageEndHandler eagle-destruction (after $68→0)
     phaseTimer = 240;
   }
   checkStageClear();              // ROM $DEC9 EnemyKillsPool → 0
@@ -1015,6 +1019,13 @@ function drawField() {
   drawEagleBase();
 }
 
+// ROM $E386 EagleStateUpdate: phase = abs(abs(($68>>2)-5)-5)
+// 0=null, 1=expl1(tile$F1), 2=expl2(tile$F5), 3=expl3(tile$F9), 4=intact, 5=damaged
+function eagleAnimPhase(t) {
+  const a = t >> 2;
+  return Math.abs(Math.abs(a - 5) - 5);
+}
+
 // ROM $E3F2 DrawEagleWalls  $E3E2 EagleWallClosed  EAGLE_POS (120,216)
 function drawEagleBase() {
   const ex = EAGLE.x, ey = EAGLE.y;
@@ -1044,28 +1055,74 @@ function drawEagleBase() {
   // Damaged ($E3EA): +$10 offset to all tile indices
   const intactTiles  = [0xD1,0xD3,0xD5,0xD7, 0xD9,0xDB,0xDD,0xDF];
   const damagedTiles = [0xE1,0xE3,0xE5,0xE7, 0xE9,0xEB,0xED,0xEF];
-  const oamTiles = eagleAlive ? intactTiles : damagedTiles;
 
-  if (chrOff) {
-    const xs = [ex - 16, ex - 8, ex, ex + 8];
-    const ys = [ey - 16, ey];
-    for (let row = 0; row < 2; row++) {
-      for (let col = 0; col < 4; col++) {
-        const T = oamTiles[row * 4 + col];
-        drawCHRTile(T & 0xFE,        7, xs[col], ys[row],     true);
-        drawCHRTile((T & 0xFE) + 1,  7, xs[col], ys[row] + 8, true);
+  if (eagleExpTimer > 0) {
+    // ROM $E386 EagleStateUpdate: explosion animation driven by $68 (eagleExpTimer)
+    const phase = eagleAnimPhase(eagleExpTimer);
+    if (phase === 0) {
+      // NullHandler ($DC9E): no eagle sprite drawn during final 4 frames
+    } else if (phase >= 1 && phase <= 3) {
+      // ROM EagleExplosion1/2/3 ($E3C6/$E3CB/$E3D0): EagleDrawCenter at X=$78,Y=$D8
+      // DrawTank: left col tile=$F1/$F5/$F9; INC×2; right col tile=$F3/$F7/$FB
+      // DrawEntityTile: OAM_Y = Y-8 = $D0=208; OAM_X = $70=112 or $78=120
+      // In game.js coords: left at (ex-8, ey-8), right at (ex, ey-8)
+      const tileBase = [0xF1, 0xF5, 0xF9][phase - 1];  // OAM tile for left col
+      if (chrOff) {
+        const tL = tileBase, tR = tileBase + 2;
+        drawCHRTile(tL & 0xFE,       7, ex - 8, ey - 8, true);  // top-left
+        drawCHRTile((tL & 0xFE) + 1, 7, ex - 8, ey,     true);  // bottom-left
+        drawCHRTile(tR & 0xFE,       7, ex,     ey - 8, true);  // top-right
+        drawCHRTile((tR & 0xFE) + 1, 7, ex,     ey,     true);  // bottom-right
+      } else {
+        fillRect(ex - 8, ey - 8, 16, 16, phase === 1 ? '#ff8800' : phase === 2 ? '#ffcc00' : '#ff4400');
+      }
+    } else {
+      // Phase 4 = DrawIntact, phase 5 = DrawDamaged: full 4×2 eagle sprite
+      const oamTiles = (phase === 4) ? intactTiles : damagedTiles;
+      if (chrOff) {
+        const xs = [ex - 16, ex - 8, ex, ex + 8];
+        const ys = [ey - 16, ey];
+        for (let row = 0; row < 2; row++) {
+          for (let col = 0; col < 4; col++) {
+            const T = oamTiles[row * 4 + col];
+            drawCHRTile(T & 0xFE,        7, xs[col], ys[row],     true);
+            drawCHRTile((T & 0xFE) + 1,  7, xs[col], ys[row] + 8, true);
+          }
+        }
+      } else {
+        if (phase === 4) {
+          fillRect(ex - 4, ey - 4, 8, 8, '#000000');
+          fillRect(ex - 2, ey - 4, 4, 8, C.EAGLE_OK);
+          fillRect(ex - 4, ey,     8, 4, C.EAGLE_OK);
+        } else {
+          fillRect(ex - 4, ey - 4, 8, 8, C.EAGLE_DEAD);
+        }
       }
     }
   } else {
-    if (eagleAlive) {
-      fillRect(ex - 4, ey - 4, 8, 8, '#000000');
-      fillRect(ex - 2, ey - 4, 4, 8, C.EAGLE_OK);
-      fillRect(ex - 4, ey,     8, 4, C.EAGLE_OK);
+    // No explosion animation: draw intact or damaged eagle
+    const oamTiles = eagleAlive ? intactTiles : damagedTiles;
+    if (chrOff) {
+      const xs = [ex - 16, ex - 8, ex, ex + 8];
+      const ys = [ey - 16, ey];
+      for (let row = 0; row < 2; row++) {
+        for (let col = 0; col < 4; col++) {
+          const T = oamTiles[row * 4 + col];
+          drawCHRTile(T & 0xFE,        7, xs[col], ys[row],     true);
+          drawCHRTile((T & 0xFE) + 1,  7, xs[col], ys[row] + 8, true);
+        }
+      }
     } else {
-      fillRect(ex - 4, ey - 4, 8, 8, C.EAGLE_DEAD);
-      ctx.fillStyle = '#ff0000';
-      ctx.font = `bold ${6 * SCALE}px monospace`;
-      ctx.fillText('✕', (ex - 5) * SCALE, (ey + 4) * SCALE);
+      if (eagleAlive) {
+        fillRect(ex - 4, ey - 4, 8, 8, '#000000');
+        fillRect(ex - 2, ey - 4, 4, 8, C.EAGLE_OK);
+        fillRect(ex - 4, ey,     8, 4, C.EAGLE_OK);
+      } else {
+        fillRect(ex - 4, ey - 4, 8, 8, C.EAGLE_DEAD);
+        ctx.fillStyle = '#ff0000';
+        ctx.font = `bold ${6 * SCALE}px monospace`;
+        ctx.fillText('✕', (ex - 5) * SCALE, (ey + 4) * SCALE);
+      }
     }
   }
 }

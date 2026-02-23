@@ -2703,7 +2703,7 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
   OAM_Y positions: [ey-16, ey] = [200, 216] ✓  palIdx=7 (SP3) ✓
   Eagle handler table at `$E3BA` (6 entries): NullHandler($DC9E), EagleExplosion1($E3C6), EagleExplosion2($E3CB), EagleExplosion3($E3D0), EagleDrawIntact($E3E2), EagleDrawDamaged($E3EA).
 
-- [ ] **Audit eagle explosion tile sequence vs ROM `$E3C6/$E3CB/$E3D0`**: ROM draws tiles $F1/$F5/$F9 in 3 animation phases. Verify game.js `drawEagle` selects the correct tile per `e.eagleState` and draws the correct 2×2 sprite (tiles $F1,$F3,$F1+1,$F3+1 pattern — check exact ROM OAM layout).
+- [x] **Audit eagle explosion tile sequence vs ROM `$E3C6/$E3CB/$E3D0`**: **FIXED** — game.js had no eagle explosion animation at all; gameover triggered immediately on eagle hit. ROM uses `$68` (eagleExpTimer=39→0) driving `EagleStateUpdate ($E386)` each frame: phase = `||(($68>>2)-5)|-5|` → 0=null/1=Expl1/2=Expl2/3=Expl3/4=intact/5=damaged. Explosion phases draw a 16×16 sprite (2 OAM 8×16 entries) at `(ex-8, ey-8)` = `(112,208)`: left-col OAM tile $F1/$F5/$F9 → CHR tiles $F0,$F1 (top/bot); right-col OAM tile $F3/$F7/$FB → CHR tiles $F2,$F3 (top/bot). Full 39-frame sequence: Expl1(3f)→Expl2(4f)→Expl3(4f)→Intact(4f)→Damaged(4f)→Intact(4f)→Expl3(4f)→Expl2(4f)→Expl1(4f)→Null(4f). Gameover delayed until timer=0. Added `eagleExpTimer` state, `eagleAnimPhase()` helper, updated `drawEagleBase`, `tickTimers`, `bulletTileCollision` eagle-hit handler, and gameover check.
 
 ### 4 — Spawn and bullet explosion
 
