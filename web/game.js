@@ -243,6 +243,7 @@ let brickBits;      // GH×GW 4-bit brick sub-tile masks  ROM $D745 SubTileBitma
 let entities;       // 8 entity objects (slots 0-7)
 let bullets;        // 10 bullet slots (0-7 primary per entity; 8-9 player double-shot)
 let playerRespawnTimer = 0;
+let hudTankWiggleIdx = 0;   // ROM $C7F8 HUDTankAnimation: 0–3 oscillation index, advance each frame
 
 // ─── Brick sub-tile init  ─────────────────────────────────────────────────────
 // ROM $D745 SubTileBitmask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
@@ -897,6 +898,7 @@ function checkStageClear() {
 // ROM $C402 GameFrame  $C29F GameUpdate2 — 18-subsystem sequence
 function update() {
   frameCount++;
+  hudTankWiggleIdx = (hudTankWiggleIdx + 1) & 3;  // ROM $C7F8: advance 0→1→2→3→0 every frame
 
   if (gamePhase === 'start') {
     phaseTimer--;
@@ -1425,17 +1427,24 @@ function render() {
   // All OAM Y=104 → screen top=105. Two 16×16 tanks: Tank1@(104,105), Tank2@(120,105).
   // Attribute $03 = palette SP3 = index 7. Visible while $0108≥$0A.
   if (chrOff && (gamePhase === 'play' || gamePhase === 'start')) {
-    const py = 105;
+    // ROM $C7F8 HUDTankAnimation: wiggle offsets cycle via $0107 (0-3) every frame while $0108≥$0A
+    // HUDTankWiggleX ($D2C6) = {0,−1,0,+1}; HUDTankWiggleY ($D2CA) = {−1,0,+1,0}
+    const WX = [0, -1, 0, 1];
+    const WY = [-1, 0, 1, 0];
+    const wx = WX[hudTankWiggleIdx];
+    const wy = WY[hudTankWiggleIdx];
+    const py = 105 + wy;
+    const t1x = 104 + wx, t2x = 120 + wx;
     // Tank 1 (OAM sprites $79 + $7B)
-    drawCHRTile(0x78, 7, 104, py,   true);
-    drawCHRTile(0x7A, 7, 112, py,   true);
-    drawCHRTile(0x79, 7, 104, py+8, true);
-    drawCHRTile(0x7B, 7, 112, py+8, true);
+    drawCHRTile(0x78, 7, t1x,     py,   true);
+    drawCHRTile(0x7A, 7, t1x + 8, py,   true);
+    drawCHRTile(0x79, 7, t1x,     py+8, true);
+    drawCHRTile(0x7B, 7, t1x + 8, py+8, true);
     // Tank 2 (OAM sprites $7D + $7F)
-    drawCHRTile(0x7C, 7, 120, py,   true);
-    drawCHRTile(0x7E, 7, 128, py,   true);
-    drawCHRTile(0x7D, 7, 120, py+8, true);
-    drawCHRTile(0x7F, 7, 128, py+8, true);
+    drawCHRTile(0x7C, 7, t2x,     py,   true);
+    drawCHRTile(0x7E, 7, t2x + 8, py,   true);
+    drawCHRTile(0x7D, 7, t2x,     py+8, true);
+    drawCHRTile(0x7F, 7, t2x + 8, py+8, true);
   }
 
   drawHUD();
