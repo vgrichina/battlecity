@@ -280,7 +280,7 @@ function makeEntity(slot) {
     spawnAnim: 0,     // spawn star animation frames  ROM $DF09 StateIncSlot
     animBit: 0,       // track animation frame: 0 or 4; XOR'd each 8px movement step  ROM $DD18/$DDE1 EOR #$04
     aiTimer: 0,       // AI direction-change countdown  ROM $DDFC RandomDirChange
-    fireTimer: 0,     // enemy fire interval
+    fireTimer: 0,     // unused; ROM $E216 uses per-frame 1/32 check instead
     deathTimer: 0,    // death explosion countdown: 12→0, drawn even while alive=false  ROM $E073 EntityKillDispatch
     isPlayer: slot < 2,
   };
@@ -433,7 +433,7 @@ function spawnEnemy() {
     e.armorHits  = e.type >= 3 ? 3 : 0;
     e.shieldTimer = 0;
     e.aiTimer    = 40 + Math.floor(Math.random() * 80);
-    e.fireTimer  = 60 + Math.floor(Math.random() * 120);
+    e.fireTimer  = 0; // not used; firing uses per-frame 1/32 check
     e.blinkFrame = 0;
 
     spawnRot = (spawnRot + 1) % 3;   // ROM $6A INC SpawnRotIdx
@@ -587,17 +587,13 @@ function handlePlayerFire() {
   fireHeld = pressing;
 }
 
-// ROM $E216 EnemyFireCheck: enemies fire with ~1/32 chance per active enemy per frame
+// ROM $E216 EnemyFireCheck: for each active enemy, fire if RNG & $1F == 0 (1/32 per frame)
 function handleEnemyFire() {
   if (freezeTimer > 0) return;
   for (let i = 2; i <= 7; i++) {
     const e = entities[i];
     if (!e.alive || e.spawnAnim > 0) continue;
-    e.fireTimer--;
-    if (e.fireTimer <= 0) {
-      tryFire(e);
-      e.fireTimer = 30 + Math.floor(Math.random() * 90); // ~ROM 1/32 per frame ≈ avg 50
-    }
+    if ((Math.random() * 32 | 0) === 0) tryFire(e);
   }
 }
 
