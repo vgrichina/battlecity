@@ -2879,7 +2879,7 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 - [x] **Re-dump TileCHRTable ($DB79) byte-by-byte for types 0–3**: Confirmed via `decode_tables.py 0 DB79 16 u8`. Type 0: [$00,$0F,$00,$0F], type 1: [$00,$00,$0F,$0F], type 2: [$0F,$00,$0F,$00], type 3: [$0F,$0F,$00,$00], type 4: [$0F,$0F,$0F,$0F]. Empty quadrant = $00 (tile 0x00 with 23 non-zero pixels). render_level.py, render_frame.py, and game.js TILE_CHR values are all correct. No corrections needed.
 
-- [ ] **Fix render_frame.py playfield nametable offset**: `build_nametable_from_stage()` places tiles at nametable (row=0, col=0) = NES pixel (0,0). Enemy spawn positions confirm the field starts at NES pixel (16,16) = nametable (row=2, col=2): metatile col 0 center = 16+8=24 = spawn X=24 ✓. Fix: add `+2` to `tr` and `tc`; shift attribute table ax/ay accordingly.
+- [x] **Fix render_frame.py playfield nametable offset**: Fixed in `build_nametable_from_stage()`. Changed `tr = mr*2+dr` → `tr = mr*2+dr+2` and `tc = mc*2+dc` → `tc = mc*2+dc+2`. Attribute table recomputed using `tc_base = mc*2+2` / `tr_base = mr*2+2`: `ax = tc_base>>2`, `ay = tr_base>>2`, `quad = (((tr_base>>1)&1)<<1)|((tc_base>>1)&1)`. Playfield now starts at nametable (col=2, row=2) = NES pixel (16,16). Output verified: `render_frame.py --stage 1` produces 256×240 PNG without error.
 
 - [ ] **Fix extract_level_maps.py docstring water/trees swap**: Lines 14–15 say `10: trees (CHR $12)` / `11: water (CHR $22)` but ROM confirms type 10=water, type 11=trees. Comment-only fix; TILE_CHR values in render_level.py and game.js are already correct.
 

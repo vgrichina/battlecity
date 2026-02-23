@@ -289,7 +289,8 @@ def build_nametable_from_stage(stage_num, rom):
 
     Battle City playfield: 13×13 metatiles × 16 px = 208×208 px.
     Each metatile → 2×2 BG tiles (8×8 px each).
-    The playfield starts at the top-left of the screen (tile col=0, row=0).
+    The playfield starts at nametable tile (col=2, row=2) = NES pixel (16,16),
+    matching the 2-tile (16 px) black border confirmed by enemy spawn X=24.
     HUD occupies the right portion (tile cols 26–31) — left as black here.
     """
     off  = LEVEL_OFF + STAGE_SIZE * (stage_num - 1)
@@ -306,22 +307,25 @@ def build_nametable_from_stage(stage_num, rom):
                 continue          # empty tile (type 13) — leave as tile 0x00
             pi = TILE_PAL.get(t, 0)
 
-            # Write 4 sub-tiles into nametable
+            # Write 4 sub-tiles into nametable.
+            # Playfield starts at nametable tile (col=2, row=2) = NES pixel (16,16).
             # Sub-tile order: TL=(0,0) TR=(0,1) BL=(1,0) BR=(1,1) → indices 0-3
             for si, (dr, dc) in enumerate([(0, 0), (0, 1), (1, 0), (1, 1)]):
-                tr = mr * 2 + dr
-                tc = mc * 2 + dc
+                tr = mr * 2 + dr + 2
+                tc = mc * 2 + dc + 2
                 if tr < NT_ROWS and tc < NT_COLS:
                     nt[tr * NT_COLS + tc] = chr4[si]
 
-            # Write palette to attribute table
-            # Attribute block = (mc>>1, mr>>1); quadrant within block = metatile position
-            ax   = mc >> 1
-            ay   = mr >> 1
+            # Write palette to attribute table.
+            # Attribute block covers 4×4 tiles; compute using the shifted tile coords.
+            tc_base = mc * 2 + 2   # tile col of metatile's TL sub-tile
+            tr_base = mr * 2 + 2   # tile row of metatile's TL sub-tile
+            ax   = tc_base >> 2
+            ay   = tr_base >> 2
             aidx = ay * 8 + ax
             if aidx < ATTR_BYTES:
                 # quad 0=TL 1=TR 2=BL 3=BR within the 4×4-tile attr block
-                quad = ((mr & 1) << 1) | (mc & 1)
+                quad = (((tr_base >> 1) & 1) << 1) | ((tc_base >> 1) & 1)
                 shift = quad * 2
                 attr[aidx] = (attr[aidx] & ~(0x03 << shift)) | (pi << shift)
 
