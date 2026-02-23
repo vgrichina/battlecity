@@ -1012,13 +1012,13 @@ function drawTile(col, row) {
 
   if (chrOff) {
     if (t <= T.BRICK) {
-      // Brick (full or partial): draw only present quadrants from brickBits
-      // ROM $DB89 BRICK_FULL (type4) = [TL=$0F, TR=$0F, BL=$0F, BR=$0F]
+      // Brick (full or partial): draw ALL 4 quadrants
+      // ROM $DB79 TileCHRTable: set bit → tile $0F (solid brick), clear bit → tile $00 (shadow/mortar)
+      // Tile $00 is NOT blank — 23 non-zero pixels; must be drawn with brick palette (same as render_level.py)
       const bits = brickBits[row][col];
       for (let q = 0; q < 4; q++) {
-        if (bits & (1 << q)) {
-          drawCHRTile(BRICK_QUAD[q], TILE_PAL[T.BRICK], px + ((q & 1) ? 8 : 0), py + (q >= 2 ? 8 : 0));
-        }
+        const tileIdx = (bits & (1 << q)) ? 0x0F : 0x00;
+        drawCHRTile(tileIdx, TILE_PAL[T.BRICK], px + ((q & 1) ? 8 : 0), py + (q >= 2 ? 8 : 0));
       }
       return;
     }
