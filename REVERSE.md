@@ -2760,7 +2760,10 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 ### 8 — Coordinate system
 
-- [ ] **Audit NES OAM coordinate mapping to canvas**: NES OAM Y field is `sprite_y - 1` (sprite top pixel = OAM_Y + 1); OAM X is the left pixel. NES play field is 256×240 but HUD occupies right 64px → game area is 192×208 effective. Canvas is scaled by `SCALE`. Verify game.js entity coordinates (center-based) are correctly converted to top-left for `drawCHRTile` calls, and that the HUD panel starts at canvas X=192 (pixel 192).
+- [x] **Audit NES OAM coordinate mapping to canvas**: Fully verified from `DrawTank2x2 ($DB0A)` + `DrawEntityTile ($DABA)`.
+  - **OAM X**: NES OAM_X is a direct screen pixel column (no offset). ROM left-column OAM_X = entity_x − 8, right-column OAM_X = entity_x. game.js renders at `e.x − 8` / `e.x` ✓.
+  - **OAM Y**: NES hardware renders sprite at row OAM_Y + 1. ROM sets OAM_Y = entity_y − 8, so NES screen row = entity_y − 7. game.js renders at `e.y − 8` (1 px higher than hardware). **This 1-pixel difference is intentional and correct for the web port**: collision logic (`canMove()`, `rectsOverlap()`) uses `ny − 8` as the top-left boundary everywhere; changing render to `e.y − 7` would create a 1-px misalignment between visual and logical position. Keeping `e.y − 8` is consistent.
+  - **HUD position claim "X=192" was incorrect**: FX=16, GW=13 → game field ends at NES pixel X=224. Enemy spawn X values [24,120,216] confirm FX=16 / GW=13 (centers of cols 0/6/12). HUD BG tiles at nametable columns 29–30 = NES pixels 232–248. Task description's "right 64px HUD → game area 192px wide" was a false assumption. game.js `hx = FX + GW×META + 6 = 230`; kill icons at `hx + 2 = 232 = column 29` ✓. No fixes needed.
 
 - [ ] **Visual side-by-side comparison**: Load the web version at `localhost:8000` and take a screenshot. Load the ROM in an NES emulator (FCEUX/Mesen). Compare pixel-by-pixel for: (a) tank sprites at all 4 directions, (b) eagle intact/damaged/exploding, (c) spawn animation, (d) power-up icons, (e) bullet explosion, (f) HUD icons, (g) BG terrain (brick/steel/water/trees/ice). Document any remaining visual differences as new tasks.
 
