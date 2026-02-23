@@ -1103,7 +1103,7 @@ function drawEntity(e) {
   // ROM $DB02 DrawTank2x2: T = (entityBase & $F0) + dir×8 + animBit×4; left OAM=T, right OAM=T+2
   // 8×16 OAM → top half tile T, bottom half tile T+1 (NES 8×16 sprite mode)
   // Player base = starLevel (0/$20/$40/$60); enemy base = $80 + type×$20
-  // animBit = 0 or 4, XOR'd each 8px step  ROM $E0A9: ADC $B0,X where $B0,X = dir×8 + animBit
+  // animBit = 0 or 4, XOR'd each 8px step  ROM $E0A9: ADC $B0,X where $B0,X = animBit only; dir×8 added by DrawTank2x2 ($DB02–$DB07: ASL×3+ADC $53)
   // All sprite bank tiles → PNG index 256+T
   const entityBase = e.isPlayer ? e.starLevel : (0x80 + e.type * 0x20);
   const tileBase   = entityBase + e.dir * 8 + e.animBit;
