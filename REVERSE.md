@@ -2727,7 +2727,18 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 ### 7 — BG terrain tiles
 
-- [ ] **Audit all 13 TILE_CHR entries vs ROM `TileCHRTable ($DB79)`**: Dump 52 bytes at `$DB79` with `decode_tables.py 1 DB79 13 u32` (or 52×u8). Compare each 4-byte group against `TILE_CHR` in game.js line ~145. Flag any mismatch. Session 19 confirmed correct but re-verify after the PT0/PT1 swap fix.
+- [ ] **Audit all 13 TILE_CHR entries vs ROM `TileCHRTable ($DB79)`**: Dump confirmed (`decode_tables.py 1 DB79 64 u8`): types 0–12 match game.js exactly. However the actual CHR tile graphics at those indices look garbled/wrong in render_level.py — see task below.
+
+- [ ] **Investigate why BG terrain tiles appear garbled in render_level.py**: `decode_tiles` dumps of the key BG bank tiles show:
+  - tile `$00` is NOT blank — has actual pixel content (used as "empty" in TILE_CHR for partial bricks, but currently skipped as transparent — may be wrong)
+  - tile `$0F` (brick) has pattern only in top 6 rows, bottom 2 blank
+  - tiles `$10` (steel), `$12` (water), `$21` (ice), `$22` (trees) all have partial/fragmented content
+  Possible root causes to investigate:
+  1. **Wrong CHR bank** — are BG terrain tiles actually at file `$9010` (PT0/sprite bank = chr_tiles[256+]) rather than `$8010` (PT1/BG bank = chr_tiles[0+])? Try rendering with `tile_idx + 256` to test.
+  2. **Tile $00 semantic** — in the ROM nametable, tile `$00` may render as a filled background tile (the universal BG color), not as transparent. Check what tile `$00` draws in the actual game.
+  3. **Animated tiles** — water tile `$12`/`$22` might animate between two frames; the static render may show only one frame half.
+  4. **Wrong tile indices entirely** — TileCHRTable `$DB79` indices may be PPU-relative addresses that need a base offset added (e.g. `$1000` page offset affects BG tile addressing differently than expected).
+  Use `tile_viewer.html` and the emulator screenshot to identify which CHR tile indices correspond to visible terrain graphics.
 
 - [ ] **Fix game.js partial-brick rendering for types 0–3**: ROM `TileCHRTable ($DB79)` dump confirms types 0–3 are **half-wall metatiles** (2 of 4 sub-tiles filled), NOT single-quadrant tiles as game.js assumes:
   - Type 0 (right col):  `[00,0F,00,0F]` — TR+BR filled
@@ -2740,7 +2751,9 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 - [ ] **Audit NES OAM coordinate mapping to canvas**: NES OAM Y field is `sprite_y - 1` (sprite top pixel = OAM_Y + 1); OAM X is the left pixel. NES play field is 256×240 but HUD occupies right 64px → game area is 192×208 effective. Canvas is scaled by `SCALE`. Verify game.js entity coordinates (center-based) are correctly converted to top-left for `drawCHRTile` calls, and that the HUD panel starts at canvas X=192 (pixel 192).
 
-- [ ] **Visual side-by-side comparison**: Load the web version at `localhost:8000` and take a screenshot. Load the ROM in an NES emulator (FCEUX/Mesen). Compare pixel-by-pixel for: (a) tank sprites at all 4 directions, (b) eagle intact/damaged/exploding, (c) spawn animation, (d) power-up icons, (e) bullet explosion, (f) HUD icons. Document any remaining visual differences as new tasks.
+- [ ] **Visual side-by-side comparison**: Load the web version at `localhost:8000` and take a screenshot. Load the ROM in an NES emulator (FCEUX/Mesen). Compare pixel-by-pixel for: (a) tank sprites at all 4 directions, (b) eagle intact/damaged/exploding, (c) spawn animation, (d) power-up icons, (e) bullet explosion, (f) HUD icons, (g) BG terrain (brick/steel/water/trees/ice). Document any remaining visual differences as new tasks.
+
+- [ ] **Audit game.js NES_PAL against current ROM-derived values**: `render_sprites.py` outputs the correct RGB hex values for all 8 palette slots (see REVERSE.md `ROM-derived NES_PAL` block). Verify game.js `NES_PAL` array at line ~25 matches these exactly. Previously fixed in session 18 but worth re-confirming after all the recent CHR/palette changes.
 
 ### 9 — Tooling / debug scripts
 
