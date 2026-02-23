@@ -226,6 +226,7 @@ let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
 let gamePhase;      // 'start' | 'play' | 'clear' | 'gameover'
 let p1Score;        // ROM $15–$1B P1Score (int; BCD in ROM)
 let p1Lives;        // ROM $51 P1Lives
+let p1NextLifeScore; // ROM $CF44 LivesGrantCheck: next score multiple of 20000 to award a life
 let enemiesLeft;    // ROM $7F EnemiesRemaining (total to spawn)
 let activeEnemyCount;
 let freezeTimer;    // ROM $0100 EnemyFreezeTimer (Timer power-up)
@@ -787,6 +788,12 @@ function killEntity(e) {
     const pts = (1 + Math.min(e.type, 3)) * 100;  // 100/200/300/400
     p1Score += pts;
     killCounts[Math.min(e.type, 3)]++;  // ROM $CD04 TallyScreenInit: per-type kill counter
+
+    // ROM $CF44 LivesGrantCheck: award 1 life each time score crosses a multiple of 20000
+    while (p1Score >= p1NextLifeScore) {
+      p1Lives++;
+      p1NextLifeScore += 20000;
+    }
 
     // Power-up tank drops power-up  ROM $E35D PowerUpSpawn
     if (e.powerUpTank && !powerUp) {
@@ -1585,6 +1592,7 @@ function render() {
 // ROM $C070 Reset  $EBF6 SoundResetInit  $D3BF Init
 p1Score  = 0;
 p1Lives  = 2;  // display shows +1 (3 lives)
+p1NextLifeScore = 20000;  // ROM $CF44 LivesGrantCheck: first bonus-life threshold
 initLevel(0);
 initCHR();     // load CHR tile sheet (../tiles/chr_all.png); renders CHR immediately on load
 
