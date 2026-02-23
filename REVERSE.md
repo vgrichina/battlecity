@@ -2643,6 +2643,68 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 - [x] **Fix HUD rendering to use CHR tiles**: HUD enemy kill icons (tile $6A), P1/P2 life icons, and animated HUD tank ($79/$7D OAM entries, SP3 palIdx 7) should use `drawCHRTile`/`drawSprite16` instead of colored rectangles where possible. **Done (game.js:1228–1229, 1290–1291)**: P1 life icon: replaced `fillRect` with `drawCHRTile(0x14, 3, ...)` (BG tile $14, BG3 palette, chrOff fallback preserved). HUD animated tank: added `drawSprite16([0x79, 0x7D, 0x7B, 0x7F], 7, 104, 104, true)` in render() before drawHUD(), visible during 'play'/'start' phases (ROM: visible while $0108≥$0A; init $0105=$0106=$70 → NES pixel 104,104). Kill icons ($6A) were already using drawCHRTile.
 
+---
+
+## Pixel-Perfect Audit — CHR Extraction → Web Rendering
+
+Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pixel. Work through each subsystem in order; mark `[x]` when confirmed correct or fixed.
+
+### 1 — CHR extraction pipeline
+
+- [x] **Audit extract_tiles.py output geometry vs game.js assumptions**: Verified. `python extract_tiles.py` outputs `chr_pt0.png (289x145)` — 32×16 = 512 tiles, cell=9px, border=1px. `make_tile_sheet`: `ox=tx*9+1, oy=ty*9+1`. game.js: `CHR_CELL=9, CHR_BORDER=1`, `sx=tcol*9+1, sy=trow*9+1`. All consistent — no fix needed.
+
+- [ ] **Audit CHR bank-to-PNG-index mapping end-to-end**: ROM PT1 (BG, file $8010–$9010) → PNG indices 0–255. ROM PT0 (Sprite, file $9010–$A010) → PNG indices 256–511. Verify `extract_tiles.py` writes them in this exact order. Verify game.js: `pt1=true` uses `t & 0xFE` (raw BG index), `pt1=false` uses `256 + t` (sprite index). Spot-check 5 specific tiles by hex-dumping ROM bytes vs reading corresponding PNG pixels via `getImageData` in browser console.
+
+- [ ] **Audit gray-level encoding round-trip**: `extract_tiles.py` palette = `(0x00, 0x55, 0xAA, 0xFF)` for NES color indices 0–3. game.js `grayToIdx` thresholds `0x2B/0x7F/0xD5`. Confirm no off-by-one: value 0x54 → below 0x7F → idx 1 ✓; value 0x56 → above 0x2B → idx 1 ✓. Test edge pixel colors from an actual `getImageData` call in the browser to ensure PNG is not being gamma-corrected by the OS (macOS Color Profile issue can shift levels).
+
+### 2 — Tank sprite rendering
+
+- [ ] **Audit tank 2×2 tile draw order vs ROM `DrawTank2x2 ($DB02)`**: ROM lays out 4 OAM entries as: `[T, top-left], [T+2, top-right], [T+1, bottom-left], [T+3, bottom-right]`. Verify game.js `drawCHRTile` calls at lines 1118–1121 match exactly this order. Note: NES OAM X/Y are the top-left corner of each 8×8 tile; game.js entity pos is center (16×16) so offset should be `e.x-8, e.y-8` for top-left tile origin.
+
+- [ ] **Audit tank `tileBase` formula vs ROM `$E0A4–$E0AB`**: ROM: `tileBase = ($A8,X & $F0) + dir×8 + animBit` where `animBit ∈ {0,4}`. game.js: `entityBase + e.dir*8 + e.animBit`. Confirm `entityBase = e.starLevel` (player) or `0x80 + e.type*0x20` (enemy) matches `$A8,X & $F0`. Disassemble `$E0A4` to double-check the mask is `$F0` not `$FC`.
+
+- [ ] **Audit enemy palette per entity type vs ROM `EnemySpeedTable ($E0B7)`**: ROM cycles enemy palette via `[02,00,00,01,02,01,02,02]` indexed by `($0B×4 + $A8,X) & 7` → SP0(4)/SP1(5)/SP2(6). game.js fixes all enemies at SP2 (palIdx 6) except power-up tanks → SP3 (palIdx 7). Disassemble `$E0B7` region and `$E0A0–$E0BE` to confirm the cycling table; determine whether the per-frame palette index changes are cosmetic or affect visible output significantly. If significant, implement the cycling.
+
+- [ ] **Audit power-up tank (armor) visual**: ROM type 3 (armored) enemy has 4 armor hit points and uses a distinct tileBase (`$A0` = `entityBase=$80+3×$20=$E0`? verify). Confirm tiles $E0–$EF are correct armor tank sprites in `tile_viewer.html`. Check game.js renders type 3 enemies with base `0x80 + 3*0x20 = 0xE0` — cross-check against tile sheet.
+
+### 3 — Eagle and special sprites
+
+- [ ] **Audit eagle tile draw order and offsets vs ROM `$E3E2/$E3EA`**: Disassemble `DrawEagleIntact ($E3E2)` and `DrawEagleDamaged ($E3EA)` — extract the 4 OAM tile indices and their X/Y offsets relative to the eagle base position ($78=120px, $D8=216px). Verify game.js `drawEagleBase` calls `drawCHRTile` with the same tile numbers, same relative offsets, and `palIdx=7` (SP3). Also verify the 4-brick-wall composite sprite tiles drawn around the eagle base.
+
+- [ ] **Audit eagle explosion tile sequence vs ROM `$E3C6/$E3CB/$E3D0`**: ROM draws tiles $F1/$F5/$F9 in 3 animation phases. Verify game.js `drawEagle` selects the correct tile per `e.eagleState` and draws the correct 2×2 sprite (tiles $F1,$F3,$F1+1,$F3+1 pattern — check exact ROM OAM layout).
+
+### 4 — Spawn and bullet explosion
+
+- [ ] **Audit spawn animation 8×16 tile draw vs ROM `DrawShootSprite ($E0BF)`**: ROM draws a single 8×16 OAM entry: top tile = `T & $FE`, bottom tile = `(T & $FE) + 1`, PT1 bank (BG), palette SP3. game.js uses `drawCHRTile(T & 0xFE, 7, sx, sy, true)` + `drawCHRTile((T & 0xFE)+1, 7, sx, sy+8, true)`. Confirm `sx = e.x - 4` (centered on 8px-wide sprite in 16px entity box) and `sy = e.y - 8`. Disassemble `$E0BF` to extract the exact X/Y offsets used in OAM writes.
+
+- [ ] **Audit bullet explosion position vs ROM `BulletExplode ($E1AF)`**: ROM draws one 8×8 OAM sprite at tile `($B1 + dir×2) & $FE`, palette SP2, position `bullet_x - 5` (X offset) and `bullet_y - N` (Y offset, check exact value). game.js draws at `b.ex, b.ey` — verify these match ROM pixel offsets. Disassemble `$E1AF` and extract the hardcoded OAM X/Y adjustments.
+
+### 5 — Power-up sprites
+
+- [ ] **Audit power-up 16×16 tile order vs ROM `$C9BB` OAM writes**: ROM writes 4 OAM entries for each power-up icon. Extract the exact tile order from `$C9BB` disassembly. game.js uses `drawSprite16([base, base+2, base+1, base+3], 7, x-8, y-8)` — verify this tile ordering and `[base, base+2, base+1, base+3]` matches ROM OAM layout (top-left, top-right, bottom-left, bottom-right).
+
+- [ ] **Audit power-up flash tiles vs ROM**: ROM flash animation uses tiles `$3A–$3D`. Verify these are in the sprite bank (PT0, PNG index 256+$3A = 314+). Check `tile_viewer.html` that tiles 314–317 show a valid flash pattern.
+
+### 6 — HUD rendering
+
+- [ ] **Audit P2 life icon tile**: ROM draws P2 life icon using BG tile `$14` same as P1 (or a different tile). Disassemble `$C79F/$C7AE DrawAllHUDKillIcons` fully to confirm P2 life icon tile index and position. game.js only draws P1 life icon (`drawCHRTile(0x14, 3, ...)`); if P2 icon uses a different tile or position, add it.
+
+- [ ] **Audit HUD kill icon spacing and tile $6A position**: ROM `DrawAllHUDKillIcons ($C7BD)` writes to PPU nametable address `$22D2`. Map this to pixel coordinates: nametable $22xx = right panel; `$22D2 = base $2000 + $02D2` → row `$02D2 / 32 = 22`, col `$02D2 % 32 = 18` → pixel (144+18×8, 176+22×8)? Verify game.js HUD x/y offsets and 9px spacing match the nametable tile grid exactly.
+
+- [ ] **Audit HUD animated tank position and tile order vs ROM `DrawHUDTanks ($C7CD)`**: ROM draws at pixel positions derived from `$0105/$0106` initialized to `$70,$70` = (112,112) — but with the 4-directional wiggle delta at `$D2C6/$D2CA`. Disassemble `$C7CD` to get exact OAM tile indices `$79/$7B/$7D/$7F` and X/Y positions. Compare with game.js `drawSprite16([0x79, 0x7D, 0x7B, 0x7F], 7, 104, 104, true)` — the X=104 may be wrong (ROM init = $70 = 112).
+
+### 7 — BG terrain tiles
+
+- [ ] **Audit all 13 TILE_CHR entries vs ROM `TileCHRTable ($DB79)`**: Dump 52 bytes at `$DB79` with `decode_tables.py 1 DB79 13 u32` (or 52×u8). Compare each 4-byte group against `TILE_CHR` in game.js line ~145. Flag any mismatch. Session 19 confirmed correct but re-verify after the PT0/PT1 swap fix.
+
+- [ ] **Audit brick partial-quad rendering**: ROM tracks which 8×8 sub-tiles of a brick metatile are intact via the nametable shadow bits. game.js uses `BRICK_QUAD` with tile `$0F` for each quadrant. Verify from tile_viewer.html that tile `$0F` (BG bank) is indeed the solid brick sub-tile and that the 4 brick destruction variants (3 bricks, 2 bricks, etc.) are rendered correctly.
+
+### 8 — Coordinate system
+
+- [ ] **Audit NES OAM coordinate mapping to canvas**: NES OAM Y field is `sprite_y - 1` (sprite top pixel = OAM_Y + 1); OAM X is the left pixel. NES play field is 256×240 but HUD occupies right 64px → game area is 192×208 effective. Canvas is scaled by `SCALE`. Verify game.js entity coordinates (center-based) are correctly converted to top-left for `drawCHRTile` calls, and that the HUD panel starts at canvas X=192 (pixel 192).
+
+- [ ] **Visual side-by-side comparison**: Load the web version at `localhost:8000` and take a screenshot. Load the ROM in an NES emulator (FCEUX/Mesen). Compare pixel-by-pixel for: (a) tank sprites at all 4 directions, (b) eagle intact/damaged/exploding, (c) spawn animation, (d) power-up icons, (e) bullet explosion, (f) HUD icons. Document any remaining visual differences as new tasks.
+
 ### Completed
 - [x] **Session 14**: CHR bank mapping fully verified and documented: tiles 0–255 = file $8010 = PPU $1000 = BG/PT1; tiles 256–511 = file $9010 = PPU $0000 = Sprite/PT0. Fixed long-standing documentation error in CHR-ROM Layout table (PPU $0000/$1000 were swapped). Created `web/tile_viewer.html` — 512-tile viewer with NES palette selector, hover tile info, and category color-coding for visual verification of all sprite assignments.
 - [x] **Session 9**: Eagle destruction system fully decoded: $68 dual role (GameActive=$80 / countdown=1-$27); EagleStateUpdate ($E386) 39-frame triangle-wave animation; 6-handler dispatch table at $E3BA ($E3C6/$E3CB/$E3D0 explosion tiles $F1/$F5/$F9; $E3E2/$E3EA intact/damaged; $DC9E NullHandler final); LevelStart ($C33D) decodes; LevelScreenInit ($9764) sequence traced; $0400 tile cache architecture; CHR sprite tile numbers $79/$7D(HUD)/$B1(bullet-expl)/$C3-$CF(spawn)/$D1-$DD(eagle)/$F1-$F9(eagle-expl) documented; LivesGrantCheck ($CF44) decoded.
