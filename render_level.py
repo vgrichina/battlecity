@@ -197,8 +197,6 @@ def _draw_metatile(c, t, ox, oy, chr_tiles):
     positions = [(0,0), (8,0), (0,8), (8,8)]
     for i, (dx, dy) in enumerate(positions):
         tile_idx = chr4[i]
-        if tile_idx == 0x00:
-            continue   # $00 = empty/background sub-tile — leave BG colour
         c.draw_tile(chr_tiles[tile_idx], pal, ox + dx * SCALE, oy + dy * SCALE)
 
 # ── Main ─────────────────────────────────────────────────────────────────────

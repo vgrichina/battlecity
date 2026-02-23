@@ -2875,9 +2875,9 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 - [x] **Build `dump_tiles.py` ASCII tile viewer**: Done — `python dump_tiles.py --all-terrain` renders all terrain tiles as `░▒█` ASCII art with raw hex bytes. Confirmed tile 0x00 is not blank.
 
-- [ ] **Fix tile 0x00 skip in render_level.py and render_frame.py**: Both scripts do `if tile_idx == 0x00: continue` for partial-brick empty quadrants, leaving them black. But tile 0x00 has 23 non-zero pixels and IS intentionally placed in those quadrants by the ROM TileCHRTable. Remove the skip and draw tile 0x00 normally with the tile's palette. Expected visual: the partial brick tiles will show tile 0x00's right-edge/bottom shadow pattern in the "empty" half, which is the actual Battle City brick appearance.
+- [x] **Fix tile 0x00 skip in render_level.py and render_frame.py**: render_level.py had `if tile_idx == 0x00: continue` — removed; now draws tile 0x00 with the brick palette for all partial-brick quadrants. render_frame.py was already correct: `render_bg()` uses `transparent=False`, so tile 0x00 was always rendered with full pixels.
 
-- [ ] **Re-dump TileCHRTable ($DB79) byte-by-byte for types 0–3**: Run `python decode_tables.py 0 DB79 16 u8` to get the exact 16 bytes for tile types 0–3 (4 bytes each). Confirm or correct the TILE_CHR values in render_level.py, render_frame.py, and game.js. Pay special attention to whether any quadrant uses tile 0x0D, 0x0E, 0x00, or something else for the "empty" half of partial bricks.
+- [x] **Re-dump TileCHRTable ($DB79) byte-by-byte for types 0–3**: Confirmed via `decode_tables.py 0 DB79 16 u8`. Type 0: [$00,$0F,$00,$0F], type 1: [$00,$00,$0F,$0F], type 2: [$0F,$00,$0F,$00], type 3: [$0F,$0F,$00,$00], type 4: [$0F,$0F,$0F,$0F]. Empty quadrant = $00 (tile 0x00 with 23 non-zero pixels). render_level.py, render_frame.py, and game.js TILE_CHR values are all correct. No corrections needed.
 
 - [ ] **Fix render_frame.py playfield nametable offset**: `build_nametable_from_stage()` places tiles at nametable (row=0, col=0) = NES pixel (0,0). Enemy spawn positions confirm the field starts at NES pixel (16,16) = nametable (row=2, col=2): metatile col 0 center = 16+8=24 = spawn X=24 ✓. Fix: add `+2` to `tr` and `tc`; shift attribute table ax/ay accordingly.
 
