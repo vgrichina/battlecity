@@ -506,19 +506,27 @@ function moveEntities() {
     const e = entities[i];
     if (!e.alive || e.spawnAnim > 0) continue;
 
+    // ROM $DD30 MoveGridSnap: ice tile ($1B/$1C) causes momentum/sliding
+    const icol = Math.floor((e.x - FX) / META);
+    const irow = Math.floor((e.y - FY) / META);
+    const onIce = irow >= 0 && irow < GH && icol >= 0 && icol < GW && grid[irow][icol] === T.ICE;
+
     if (e.isPlayer) {
       // ROM $DC23 frame throttle: process on 3 of every 4 frames
       if ((frameCount & 3) === 2) continue;
 
       const d = p1Dir();
-      if (d === -1) continue;
-
-      // Direction change: snap to 8-px grid  ROM $DC23  (+4)&$F8
-      if (d !== e.dir) {
-        e.x = (e.x + 4) & 0xF8;
-        e.y = (e.y + 4) & 0xF8;
-        e.dir = d;
+      if (!onIce) {
+        // Off ice: normal input — stop if no key, allow direction change
+        if (d === -1) continue;
+        // Direction change: snap to 8-px grid  ROM $DC23  (+4)&$F8
+        if (d !== e.dir) {
+          e.x = (e.x + 4) & 0xF8;
+          e.y = (e.y + 4) & 0xF8;
+          e.dir = d;
+        }
       }
+      // On ice: ignore input — keep sliding in current direction, no direction change
       if (canMove(e, e.dir)) {
         const px = e.x, py = e.y;
         e.x += DX[e.dir];
@@ -532,11 +540,11 @@ function moveEntities() {
       // ROM $DC9F: Fast type ($A0, EntityType&$F0==$A0) always processes; others alternate
       if (e.type !== 1 && ((i ^ frameCount) & 1)) continue;
 
-      // AI: change direction when blocked or timer expires
+      // AI: change direction when blocked or timer expires (suppressed on ice)
       // ROM $DDFC RandomDirChange  $DE48 DirTowardHQ
       e.aiTimer--;
       const blocked = !canMove(e, e.dir);
-      if (blocked || e.aiTimer <= 0) {
+      if (!onIce && (blocked || e.aiTimer <= 0)) {
         // 50% navigate toward eagle, 50% random  ROM $DF26 SpeedCtrlMove
         if (Math.random() < 0.5) {
           e.dir = dirToward(e.x, e.y, EAGLE.x, EAGLE.y);
