@@ -283,8 +283,8 @@ function makeBullet(slot) {
 // ROM $E1AF BulletExplode: 4-frame explosion sprite at bullet hit position
 function triggerBulletExplosion(b) {
   b.explodeTimer = 4;
-  b.ex    = b.x - 5;   // ROM: OAM X = bullet.x − 5
-  b.ey    = b.y;
+  b.ex    = b.x - 5;   // ROM $DAF3: OAM X = bullet.x − 5
+  b.ey    = b.y - 8;   // ROM $DABA DrawEntityTile: OAM Y = bullet.y − 8
   b.edir  = b.dir;
 }
 
