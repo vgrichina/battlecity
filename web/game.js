@@ -244,6 +244,8 @@ let entities;       // 8 entity objects (slots 0-7)
 let bullets;        // 10 bullet slots (0-7 primary per entity; 8-9 player double-shot)
 let playerRespawnTimer = 0;
 let hudTankWiggleIdx = 0;   // ROM $C7F8 HUDTankAnimation: 0–3 oscillation index, advance each frame
+let killCounts;             // [4] per-type enemy kills this stage  ROM $C625 ClearKillTallies
+let tallyState;             // tally animation state during 'clear' phase
 
 // ─── Brick sub-tile init  ─────────────────────────────────────────────────────
 // ROM $D745 SubTileBitmask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
@@ -317,6 +319,8 @@ function initLevel(idx) {
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
   activeEnemyCount  = 0;
   playerRespawnTimer = 0;
+  killCounts = [0, 0, 0, 0];   // ROM $C625 ClearKillTallies: four counters reset each stage
+  tallyState = null;
 
   // Copy level grid from ROM data  ROM $F27D LevelMapData
   const raw = LEVEL_MAPS[stageIdx];
@@ -782,6 +786,7 @@ function killEntity(e) {
     activeEnemyCount--;
     const pts = (1 + Math.min(e.type, 3)) * 100;  // 100/200/300/400
     p1Score += pts;
+    killCounts[Math.min(e.type, 3)]++;  // ROM $CD04 TallyScreenInit: per-type kill counter
 
     // Power-up tank drops power-up  ROM $E35D PowerUpSpawn
     if (e.powerUpTank && !powerUp) {
@@ -893,7 +898,13 @@ function checkStageClear() {
   if (gamePhase !== 'play') return;
   if (enemiesLeft === 0 && activeEnemyCount === 0) {
     gamePhase  = 'clear';
-    phaseTimer = 180;   // ROM $CAF1 StageClearTallyScreen
+    phaseTimer = 60;    // initial pause before tally drain begins  ROM $CAF1 StageClearTallyScreen
+    tallyState = {
+      countsLeft: [...killCounts],  // counts down to 0 as score is tallied
+      row:        0,                // current row being drained (0-3)
+      frameTimer: 4,                // frames per kill decrement  ROM ~4 frames/kill
+      done:       false,            // all rows drained flag
+    };
   }
 }
 
@@ -909,8 +920,29 @@ function update() {
     return;
   }
   if (gamePhase === 'clear') {
-    phaseTimer--;
-    if (phaseTimer <= 0) initLevel(stageIdx + 1);
+    if (phaseTimer > 0) { phaseTimer--; return; }  // initial banner pause
+    const ts = tallyState;
+    if (!ts.done) {
+      // Skip rows with no kills
+      while (ts.row < 4 && killCounts[ts.row] === 0) ts.row++;
+      if (ts.row >= 4) {
+        ts.done = true;
+        phaseTimer = 180;  // hold ~3 s  ROM TallyHold
+      } else {
+        ts.frameTimer--;
+        if (ts.frameTimer <= 0) {
+          ts.countsLeft[ts.row] = Math.max(0, ts.countsLeft[ts.row] - 1);
+          ts.frameTimer = 4;
+        }
+        if (ts.countsLeft[ts.row] === 0) {
+          ts.row++;
+          ts.frameTimer = 12;  // inter-row pause
+        }
+      }
+    } else {
+      phaseTimer--;
+      if (phaseTimer <= 0) initLevel(stageIdx + 1);
+    }
     return;
   }
   if (gamePhase === 'gameover') {
@@ -1415,12 +1447,82 @@ function drawGameOver() {
   ctx.fillText('SPACE/ENTER to retry', 20 * SCALE, 148 * SCALE);
 }
 
-// ROM $CAF1 StageClearTallyScreen
+// ROM $CAF1 StageClearTallyScreen → TallyScreenInit ($CD04)
+// Shows 4 rows (one per enemy type), drains per-type kill count with score animation.
+// Enemy tiles: type-N facing up (dir=0, animBit=0): spriteBase = 0x80+N*0x20; palIdx=6 (SP2)
 function drawStageClear() {
-  fillRect(34, 102, 170, 20, '#000');
-  ctx.fillStyle = '#00ff00';
-  ctx.font = `bold ${10 * SCALE}px monospace`;
-  ctx.fillText('STAGE CLEAR!', 38 * SCALE, 118 * SCALE);
+  // Tally panel: 192×100 centered at x=32..224, y=68..168
+  const px = 32, py = 68, pw = 192, ph = 100;
+  fillRect(px, py, pw, ph, '#000000');
+
+  // Title
+  ctx.fillStyle = '#f8e800';
+  ctx.font = `bold ${9 * SCALE}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText('STAGE  CLEAR !', (px + pw / 2) * SCALE, (py + 12) * SCALE);
+  ctx.textAlign = 'left';
+
+  if (!tallyState) return;
+  const ts = tallyState;
+  const PTS = [100, 200, 300, 400];
+  const TYPE_NAMES = ['BASIC', 'FAST ', 'POWER', 'ARMOR'];
+
+  for (let row = 0; row < 4; row++) {
+    const ry = py + 20 + row * 20;
+    const total = killCounts[row];
+
+    // How many have been tallied so far for this row
+    let tallied;
+    if (row < ts.row) {
+      tallied = total;              // fully drained row
+    } else if (row === ts.row) {
+      tallied = total - ts.countsLeft[row];  // currently animating
+    } else {
+      tallied = 0;                  // not yet started
+    }
+
+    // Enemy type icon (16×16 sprite, facing up)
+    const sprBase = 0x80 + row * 0x20;
+    const T = 256 + sprBase;  // sprite bank tile, dir=0 animBit=0
+    if (chrOff) {
+      drawCHRTile(T,   6, px + 2,  ry,     true);  // TL
+      drawCHRTile(T+2, 6, px + 10, ry,     true);  // TR
+      drawCHRTile(T+1, 6, px + 2,  ry + 8, true);  // BL
+      drawCHRTile(T+3, 6, px + 10, ry + 8, true);  // BR
+    } else {
+      fillRect(px + 2, ry, 16, 16, ['#aaaaaa','#ffaa44','#ff4444','#444444'][row]);
+    }
+
+    // Type label
+    ctx.fillStyle = (tallied > 0 || row <= ts.row) ? '#ffffff' : '#666666';
+    ctx.font = `${6 * SCALE}px monospace`;
+    ctx.fillText(TYPE_NAMES[row], (px + 22) * SCALE, (ry + 10) * SCALE);
+
+    // Kill count × pts = score  (only show if row has been reached)
+    if (row <= ts.row || (ts.done && total > 0)) {
+      const rowScore = tallied * PTS[row];
+      ctx.fillStyle = '#f8e800';
+      ctx.font = `${6 * SCALE}px monospace`;
+      ctx.textAlign = 'right';
+      ctx.fillText(`${tallied}×${PTS[row]}`, (px + pw - 50) * SCALE, (ry + 10) * SCALE);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(rowScore.toString().padStart(5), (px + pw - 2) * SCALE, (ry + 10) * SCALE);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // Total line (shown when all rows done)
+  if (ts.done) {
+    const totalScore = killCounts.reduce((s, n, i) => s + n * PTS[i], 0);
+    const ly = py + ph - 8;
+    fillRect(px + 2, ly - 8, pw - 4, 1, '#666666');
+    ctx.fillStyle = '#f8e800';
+    ctx.font = `bold ${6 * SCALE}px monospace`;
+    ctx.fillText('TOTAL', (px + 4) * SCALE, ly * SCALE);
+    ctx.textAlign = 'right';
+    ctx.fillText(totalScore.toString().padStart(6), (px + pw - 2) * SCALE, ly * SCALE);
+    ctx.textAlign = 'left';
+  }
 }
 
 // ─── Main render  ─────────────────────────────────────────────────────────────
