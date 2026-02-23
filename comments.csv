@@ -7,7 +7,7 @@
 1,C07E,Wait for 1st VBlank
 1,C088,Wait for 2nd VBlank
 1,C092,Set stack pointer to $7F (128-byte stack at $0100-$017F)
-1,C09E,PPU ctrl: NMI enable / BG pattern 1 / sprite pattern 0
+1,C09E,PPU ctrl $B0: NMI enable (bit7) / 8x16 sprite mode (bit5=1) / BG pattern $1000 (bit4) — gameplay PPUCTRL
 1,C0B8,Main game loop (infinite)
 1,C18A,GameLoopTop: JMP target for outer game loop re-entry; jumped to after stage-end or game-over sequence completes to restart per-frame update
 1,D300,Save A X Y P on stack
