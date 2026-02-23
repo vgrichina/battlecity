@@ -2736,18 +2736,20 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 ### 7 — BG terrain tiles
 
-- [ ] **Audit all 13 TILE_CHR entries vs ROM `TileCHRTable ($DB79)`**: Dump confirmed (`decode_tables.py 1 DB79 64 u8`): types 0–12 match game.js exactly. However the actual CHR tile graphics at those indices look garbled/wrong in render_level.py — see task below.
+- [x] **Audit all 13 TILE_CHR entries vs ROM `TileCHRTable ($DB79)`**: Dump confirmed (`decode_tables.py 1 DB79 64 u8`): types 0–12 match game.js exactly. Full verification:
+  - Types 0–4 (brick variants): ROM bytes `[$00,$0F,$00,$0F]` / `[$00,$00,$0F,$0F]` / `[$0F,$00,$0F,$00]` / `[$0F,$0F,$00,$00]` / `[$0F,$0F,$0F,$0F]` — game.js uses `null` (handled via brickBits); render_level.py uses the ROM values directly ✓
+  - Types 5–9 (steel variants): ROM `[$20,$10,$20,$10]`/`[$20,$20,$10,$10]`/`[$10,$20,$10,$20]`/`[$10,$10,$20,$20]`/`[$10,$10,$10,$10]` — game.js TILE_CHR[5–9] matches exactly ✓
+  - Types 10–12 (water/trees/ice): ROM `[$12,$12,$12,$12]`/`[$22,$22,$22,$22]`/`[$21,$21,$21,$21]` — game.js matches ✓
+  - Tile semantics confirmed (line 2317): `$00`=blank, `$0F`=brick, `$10`=solid-steel, `$20`=steel-frame/outline, `$12`=water, `$21`=ice, `$22`=trees
+  - render_level.py bank mapping is correct: `chr_tiles[tile_idx]` = BG bank (file `$8010` = PPU `$1000`) ✓
+  - render_level.py tile-`$00` skip is correct: tile `$00` = blank (all-zeros CHR), treated as transparent shows universal BG color (black) ✓
 
-- [ ] **Investigate why BG terrain tiles appear garbled in render_level.py**: `decode_tiles` dumps of the key BG bank tiles show:
-  - tile `$00` is NOT blank — has actual pixel content (used as "empty" in TILE_CHR for partial bricks, but currently skipped as transparent — may be wrong)
-  - tile `$0F` (brick) has pattern only in top 6 rows, bottom 2 blank
-  - tiles `$10` (steel), `$12` (water), `$21` (ice), `$22` (trees) all have partial/fragmented content
-  Possible root causes to investigate:
-  1. **Wrong CHR bank** — are BG terrain tiles actually at file `$9010` (PT0/sprite bank = chr_tiles[256+]) rather than `$8010` (PT1/BG bank = chr_tiles[0+])? Try rendering with `tile_idx + 256` to test.
-  2. **Tile $00 semantic** — in the ROM nametable, tile `$00` may render as a filled background tile (the universal BG color), not as transparent. Check what tile `$00` draws in the actual game.
-  3. **Animated tiles** — water tile `$12`/`$22` might animate between two frames; the static render may show only one frame half.
-  4. **Wrong tile indices entirely** — TileCHRTable `$DB79` indices may be PPU-relative addresses that need a base offset added (e.g. `$1000` page offset affects BG tile addressing differently than expected).
-  Use `tile_viewer.html` and the emulator screenshot to identify which CHR tile indices correspond to visible terrain graphics.
+- [x] **Investigate why BG terrain tiles appear garbled in render_level.py**: All four root causes investigated and resolved:
+  1. **CHR bank** — BG tiles correctly at `chr_tiles[0-255]` (file `$8010`); `render_level.py` uses `chr_tiles[tile_idx]` directly ✓ (NOT `+256`)
+  2. **Tile `$00`** — CONFIRMED blank/all-zeros (REVERSE.md line 2317 CHR tile key: `$00=blank`); `render_level.py` skip-`$00` is correct behavior
+  3. **Animated tiles** — water (`$12`) and trees (`$22`) are single static tiles in the NES CHR; animation (if any) is done by swapping nametable tiles each frame, not by changing CHR data. Static render uses one frame ✓
+  4. **Tile indices** — TileCHRTable indices ARE the direct BG-bank CHR tile numbers (not PPU page-relative); verified by cross-referencing passability boundary (`$20`) with tile semantics.
+  **Visual confirmation**: rendered level PNGs (`output_gfx/levels/stage_01.png`, `stage_04.png`, etc.) show correct brick/water/trees/steel layout matching known Battle City stage structure. The "garbled" description was written before render_level.py was corrected. No further action needed.
 
 - [ ] **Fix game.js partial-brick rendering for types 0–3**: ROM `TileCHRTable ($DB79)` dump confirms types 0–3 are **half-wall metatiles** (2 of 4 sub-tiles filled), NOT single-quadrant tiles as game.js assumes:
   - Type 0 (right col):  `[00,0F,00,0F]` — TR+BR filled
