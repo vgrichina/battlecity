@@ -1107,10 +1107,11 @@ function drawEntity(e) {
   // All sprite bank tiles → PNG index 256+T
   const entityBase = e.isPlayer ? e.starLevel : (0x80 + e.type * 0x20);
   const tileBase   = entityBase + e.dir * 8 + e.animBit;
-  // ROM $E0B7 AnimPalTable: palette cycles SP0/SP1/SP2 for track animation
+  // ROM $E0B7 table[0]=2,table[4]=2 → all normal enemies always SP2; power-up tanks
+  // flash SP2↔SP3 via ($0B>>3)&1 at $E074-$E07C = every 8 frames.
   // SP0=palIdx 4 (yellow), SP1=5 (lime), SP2=6 (grey/white), SP3=7 (red)
   const palIdx = e.slot === 0 ? 4 : e.slot === 1 ? 5 :
-                 (e.powerUpTank && ((frameCount >> 2) & 1)) ? 7 : 6;
+                 (e.powerUpTank && ((frameCount >> 3) & 1)) ? 7 : 6;
 
   if (chrOff) {
     // e.x/e.y are center coords; top-left = e.x-8, e.y-8
@@ -1127,7 +1128,7 @@ function drawEntity(e) {
     } else if (e.slot === 1) {
       col = C.P2;
     } else {
-      col = e.powerUpTank ? (((frameCount >> 2) & 1) ? C.ENEMY_PU : C.ENEMY) : C.ENEMY;
+      col = e.powerUpTank ? (((frameCount >> 3) & 1) ? C.ENEMY_PU : C.ENEMY) : C.ENEMY;
     }
     // e.x/e.y are center coords; top-left = e.x-8, e.y-8
     const sz = TANK_SZ;
