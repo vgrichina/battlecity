@@ -17,7 +17,7 @@ const ctx     = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
 // ─── CHR tile engine ──────────────────────────────────────────────────────────
-// Tile sheet: ../tiles/chr_pt0.png — 512 tiles in 32×16 grid, 9px cell (8px+1px border)
+// Tile sheet: ../tiles/chr_all.png — 512 tiles in 32×16 grid, 9px cell (8px+1px border)
 // BG tile N: col=N%32 row=N/32   Sprite tile N: abs=N+256
 const CHR_CELL = 9, CHR_BORDER = 1;
 
