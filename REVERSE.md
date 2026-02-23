@@ -2713,7 +2713,7 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 ### 5 — Power-up sprites
 
-- [ ] **Audit power-up 16×16 tile order vs ROM `$C9BB` OAM writes**: ROM writes 4 OAM entries for each power-up icon. Extract the exact tile order from `$C9BB` disassembly. game.js uses `drawSprite16([base, base+2, base+1, base+3], 7, x-8, y-8)` — verify this tile ordering and `[base, base+2, base+1, base+3]` matches ROM OAM layout (top-left, top-right, bottom-left, bottom-right).
+- [x] **Audit power-up 16×16 tile order vs ROM `$E30D` PowerUpDraw**: **FIXED palette** — Actual powerup draw is at `$E30D`–`$E328` (not $C9BB which is shovel wall). ROM checks `$0B & $08` blink gate; sets `$04=2` (OAM pal 2 = **SP2**), tile = `$81+type*4` in 8×16 OAM → DrawTank ($DB0A) renders tiles `$80+type*4` (TL), `$81+type*4` (BL), `$82+type*4` (TR), `$83+type*4` (BR). Tile order `[base, base+2, base+1, base+3]` = `[TL,TR,BL,BR]` was CORRECT. **Bug**: game.js used `palIdx=7` (SP3) but ROM uses OAM pal 2 = SP2 = `palIdx=6`. **Fix**: changed `palIdx=7` → `palIdx=6` in `drawPowerUp`. Position `(x−8, y−8)` and base `$80+type*4` were already correct.
 
 - [ ] **Audit power-up flash tiles vs ROM**: ROM flash animation uses tiles `$3A–$3D`. Verify these are in the sprite bank (PT0, PNG index 256+$3A = 314+). Check `tile_viewer.html` that tiles 314–317 show a valid flash pattern.
 

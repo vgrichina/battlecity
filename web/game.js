@@ -1252,16 +1252,15 @@ function drawBullet(b) {
   else       fillRect(b.x - 1, b.y - 3, 3, 6, C.BULLET);
 }
 
-// ROM $C912/$C9BB PowerUpSprite_Off/On  6 power-up types
-// ROM $DB0A: 8×16 OAM mode; 2 entries side-by-side → 16×16px total
-// Sprite bank tiles: base=$80+type*4; TL=base, TR=base+2, BL=base+1, BR=base+3
-// palIdx=7 (SP3)  Flash tiles (PT1 bank): $3A–$3D
+// ROM $E30D PowerUpDraw: $0B&$08≠0 gate; tile=$81+type*4 (8×16→$80,$81,$82,$83+type*4)
+// ROM $DB0A DrawTank: left OAM at entity_x−8, right at entity_x; both OAM_Y = entity_y−8
+// Tile order [TL,TR,BL,BR] = [base, base+2, base+1, base+3]; ROM $04=2 → OAM pal 2 = SP2
 function drawPowerUp() {
   if (!powerUp) return;
   if ((frameCount >> 3) & 1) return;  // blink  ROM $0B&$08 gate
   const x = powerUp.x, y = powerUp.y;
   const base = 0x80 + powerUp.type * 4;
-  drawSprite16([base, base + 2, base + 1, base + 3], 7, x - 8, y - 8);
+  drawSprite16([base, base + 2, base + 1, base + 3], 6, x - 8, y - 8);
 }
 
 // ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawHUDTanks  $D8F7 DrawRowTiles
