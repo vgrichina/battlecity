@@ -42,10 +42,10 @@ Nametable shadow layout (CPU RAM $0400–$07FF, 1024 bytes):
     $07C0–$07FF   64 bytes: attribute table (4×4-tile blocks, 8×8 grid)
     Same logical layout as NES PPU nametable 0 ($2000–$23FF).
 
-CHR bank mapping (file offset $8010, 16 KB total):
-    chr_data[0x0000–0x0FFF]  = PPU PT1 ($1000–$1FFF): BG  tiles 0–255
-    chr_data[0x1000–0x1FFF]  = PPU PT0 ($0000–$0FFF): Sprite tiles 0–255
-    (Confirmed: ROM $D44A palette, git session 14 audit)
+CHR bank mapping (bank pair 1, file offset $A010, 8 KB):
+    chr_data[0x0000–0x0FFF]  = BG  tiles 0–255 (file $A010–$AFFF)
+    chr_data[0x1000–0x1FFF]  = Sprite tiles 0–255 (file $B010–$BFFF)
+    Bank pair 1 (mapper banks 2+3) is active for stage 1 gameplay.
 """
 
 import os, sys, struct, zlib, argparse
@@ -344,13 +344,12 @@ def main():
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
-    # Load and split CHR data
-    prg_banks = rom[4]
-    chr_off   = 16 + prg_banks * 16384
-    chr_data  = rom[chr_off : chr_off + 16384]
+    # Load CHR data from bank pair 1 (mapper banks 2+3, $A010): stage 1 gameplay
+    chr_off   = 0xA010
+    chr_data  = rom[chr_off : chr_off + 0x2000]  # 8KB
 
-    # PT1 (BG tiles 0–255):    chr_data[0x0000–0x0FFF]  = PPU $1000–$1FFF
-    # PT0 (sprite tiles 0–255): chr_data[0x1000–0x1FFF]  = PPU $0000–$0FFF
+    # BG tiles 0–255:     chr_data[0x0000–0x0FFF] (file $A010–$AFFF)
+    # Sprite tiles 0–255: chr_data[0x1000–0x1FFF] (file $B010–$BFFF)
     chr_pt1 = [decode_tile(chr_data, i * 16)          for i in range(256)]
     chr_pt0 = [decode_tile(chr_data, 0x1000 + i * 16) for i in range(256)]
 

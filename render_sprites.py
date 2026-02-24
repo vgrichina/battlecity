@@ -174,9 +174,9 @@ def main():
         rom = f.read()
     assert rom[:4] == b'NES\x1a'
 
-    prg_banks = rom[4]
-    chr_off   = 16 + prg_banks * 16384
-    chr_data  = rom[chr_off : chr_off + 16384]  # 16KB CHR
+    # Bank pair 1 (mapper banks 2+3, file $A010): correct for stage 1 gameplay
+    chr_off   = 0xA010
+    chr_data  = rom[chr_off : chr_off + 0x2000]  # 8KB: BG + sprite tiles
 
     total_tiles = len(chr_data) // 16
     tiles = [decode_tile(chr_data, i * 16) for i in range(total_tiles)]

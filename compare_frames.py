@@ -427,9 +427,9 @@ def main():
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
-    prg_banks = rom[4]
-    chr_off = 16 + prg_banks * 16384
-    chr_data = rom[chr_off:chr_off + 16384]
+    # Bank pair 1 (mapper banks 2+3, file $A010): correct for stage 1 gameplay
+    chr_off = 0xA010
+    chr_data = rom[chr_off:chr_off + 0x2000]  # 8KB: BG tiles + sprite tiles
     chr_pt1 = [decode_tile(chr_data, i * 16) for i in range(256)]
 
     os.makedirs(OUT_DIR, exist_ok=True)

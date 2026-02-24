@@ -281,10 +281,9 @@ def main():
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
-    # Decode CHR tiles
-    prg_banks = rom[4]
-    chr_off   = 16 + prg_banks * 16384
-    chr_data  = rom[chr_off : chr_off + 16384]
+    # Decode CHR tiles from bank pair 1 (mapper banks 2+3, $A010): stage 1 gameplay
+    chr_off   = 0xA010
+    chr_data  = rom[chr_off : chr_off + 0x2000]  # 8KB
     chr_tiles = [decode_tile(chr_data, i * 16) for i in range(len(chr_data) // 16)]
     print(f"Decoded {len(chr_tiles)} CHR tiles  |  rendering stages: {stages}")
 
