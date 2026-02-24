@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""compare_frames.py — Compare render_frame.py reference vs game.js rendering.
+"""compare_frames.py — Compare NES-accurate reference vs game.js rendering.
 
 Produces:
-  output_gfx/ref_enhanced_stage01.png   — Enhanced reference (nametable + eagle walls + eagle BG tiles)
-  output_gfx/gamejs_sim_stage01.png     — Simulated game.js output (256×240 crop)
+  output_gfx/ref_enhanced_stage01.png   — NES reference: BG nametable (chr_bg) + eagle OAM (chr_spr)
+  output_gfx/gamejs_sim_stage01.png     — game.js simulation: all tiles from BG bank only
   output_gfx/diff_stage01.png           — Pixel diff (red = differs, green = match)
 
-Reports all pixel-level discrepancies between the two.
+Reference uses separate BG ($A010) and sprite ($B010) pattern tables — NES-accurate.
+Game.js sim uses BG bank for everything, matching game.js's current behavior.
+Diff categorizes mismatches as intentional (EMPTY tile) vs fixable (eagle sprite bank).
 """
 
 import os, sys, struct, zlib
@@ -250,21 +252,22 @@ def build_enhanced_nametable(stage_num, rom):
 
     return bytes(nt), bytes(attr), grid
 
-def render_reference(nt_tiles, attr_table, chr_pt1):
-    """Render BG layer + eagle OAM sprites (full NES frame)."""
+def render_reference(nt_tiles, attr_table, chr_bg, chr_spr):
+    """Render BG layer (chr_bg) + eagle OAM sprites (chr_spr) — NES-accurate."""
     canvas = Canvas()
-    # 1. BG nametable
+    # 1. BG nametable — uses BG pattern table
     for row in range(NT_ROWS):
         for col in range(NT_COLS):
             tile_idx = nt_tiles[row * NT_COLS + col]
             pal_idx = attr_pal(attr_table, col, row)
-            pix = chr_pt1[tile_idx]
+            pix = chr_bg[tile_idx]
             pal = ALL_PAL[pal_idx]
             canvas.draw_tile(pix, pal, col * 8, row * 8, transparent=False)
 
     # 2. Eagle OAM sprites — ROM $E3F2 EagleDrawFull: 4×2 grid of 8×16 entries, SP3
-    #    row0 OAM_Y=200: col104→$D1, col112→$D3, col120→$D5, col128→$D7
-    #    row1 OAM_Y=216: col104→$D9, col112→$DB, col120→$DD, col128→$DF
+    #    NES 8×16 sprite mode: tile bit 0 selects pattern table (odd→PT1=sprites).
+    #    All eagle tiles are odd ($D1,$D3,...) → sprite pattern table.
+    #    Tile pair: top = T&0xFE, bot = (T&0xFE)+1, both from sprite bank.
     eagle_pal = ALL_PAL[7]  # SP3
     intact_oam = [0xD1, 0xD3, 0xD5, 0xD7, 0xD9, 0xDB, 0xDD, 0xDF]
     ex, ey = 120, 216  # eagle center
@@ -275,16 +278,21 @@ def render_reference(nt_tiles, attr_table, chr_pt1):
             T = intact_oam[row * 4 + col]
             t_top = T & 0xFE
             t_bot = (T & 0xFE) + 1
-            canvas.draw_tile(chr_pt1[t_top], eagle_pal, xs[col], ys[row], transparent=True)
-            canvas.draw_tile(chr_pt1[t_bot], eagle_pal, xs[col], ys[row] + 8, transparent=True)
+            canvas.draw_tile(chr_spr[t_top], eagle_pal, xs[col], ys[row], transparent=True)
+            canvas.draw_tile(chr_spr[t_bot], eagle_pal, xs[col], ys[row] + 8, transparent=True)
 
     return canvas
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GAME.JS SIMULATION: replicate game.js drawField + drawTile + drawEagleBase
 # ══════════════════════════════════════════════════════════════════════════════
-def render_gamejs(stage_grid, chr_pt1):
-    """Simulate game.js rendering at 1× NES pixel scale (matches current game.js)."""
+def render_gamejs(stage_grid, chr_bg):
+    """Simulate game.js rendering at 1× NES pixel scale.
+
+    Uses chr_bg for ALL tiles (BG and sprites) because game.js maps all tile
+    indices to the BG bank rows of chr_all.png — it does not use the sprite bank.
+    """
+    chr_pt1 = chr_bg  # game.js uses BG bank for everything
     canvas = Canvas(bg=BG_COLOR)  # black background
 
     # game.js normalizes partial brick types to T.BRICK (4)
@@ -427,22 +435,24 @@ def main():
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
-    # Bank pair 1 (mapper banks 2+3, file $A010): correct for stage 1 gameplay
-    chr_off = 0xA010
-    chr_data = rom[chr_off:chr_off + 0x2000]  # 8KB: BG tiles + sprite tiles
-    chr_pt1 = [decode_tile(chr_data, i * 16) for i in range(256)]
+    # Bank pair 1 (mapper banks 2+3): BG at $A010, sprites at $B010
+    chr_bg_data = rom[0xA010:0xA010 + 0x1000]   # 4KB BG pattern table (PT0)
+    chr_spr_data = rom[0xB010:0xB010 + 0x1000]  # 4KB sprite pattern table (PT1)
+    chr_bg  = [decode_tile(chr_bg_data, i * 16) for i in range(256)]
+    chr_spr = [decode_tile(chr_spr_data, i * 16) for i in range(256)]
 
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    # 1. Enhanced reference (nametable + eagle walls)
+    # 1. NES-accurate reference: BG nametable (chr_bg) + eagle OAM sprites (chr_spr)
     nt_data, attr_data, stage_grid = build_enhanced_nametable(stage, rom)
-    ref_canvas = render_reference(nt_data, attr_data, chr_pt1)
+    ref_canvas = render_reference(nt_data, attr_data, chr_bg, chr_spr)
     ref_path = os.path.join(OUT_DIR, f'ref_enhanced_stage{stage:02d}.png')
     ref_canvas.save(ref_path)
     print(f"Reference: {ref_path}")
 
-    # 2. Game.js simulation
-    gjs_canvas = render_gamejs(stage_grid, chr_pt1)
+    # 2. Game.js simulation: uses chr_bg for everything (game.js maps all tile
+    #    indices to BG bank rows in chr_all.png, even for OAM sprites)
+    gjs_canvas = render_gamejs(stage_grid, chr_bg)
     gjs_path = os.path.join(OUT_DIR, f'gamejs_sim_stage{stage:02d}.png')
     gjs_canvas.save(gjs_path)
     print(f"Game.js sim: {gjs_path}")
@@ -458,43 +468,41 @@ def main():
     for region, count in sorted(regions.items(), key=lambda x: -x[1]):
         print(f"  {region:20s}: {count:6d} pixels")
 
-    # 4. Detailed analysis: sample some mismatching pixels
-    print(f"\nSample mismatching pixels (first 20):")
-    count = 0
+    # 4. Categorize differences
+    # "Intentional" = game.js renders EMPTY cells as black vs NES tile $00 glyph
+    # "Eagle sprite bank" = game.js uses BG bank for eagle OAM instead of sprite bank
+    empty_px = 0
+    eagle_sprite_px = 0
+    other_px = 0
+    eagle_rect = (104, 200, 136, 232)  # x1,y1,x2,y2 of eagle OAM area
     for y in range(SCR_H):
         for x in range(SCR_W):
-            if ref_canvas.get(x, y) != gjs_canvas.get(x, y):
-                r = ref_canvas.get(x, y)
-                g = gjs_canvas.get(x, y)
-                print(f"  ({x:3d},{y:3d}): ref={r} gjs={g}")
-                count += 1
-                if count >= 20:
-                    break
-        if count >= 20:
-            break
-
-    # 5. Check playfield-only discrepancies (most important)
-    pf_mismatches = 0
-    pf_details = {}
-    for y in range(FY, FY + MAP_ROWS * 16):
-        for x in range(FX, FX + MAP_COLS * 16):
-            r = ref_canvas.get(x, y)
-            g = gjs_canvas.get(x, y)
-            if r != g:
-                pf_mismatches += 1
-                # Determine which metatile
+            if ref_canvas.get(x, y) == gjs_canvas.get(x, y):
+                continue
+            # Is this in the eagle OAM sprite area?
+            if eagle_rect[0] <= x < eagle_rect[2] and eagle_rect[1] <= y < eagle_rect[3]:
+                eagle_sprite_px += 1
+                continue
+            # Is this a playfield EMPTY cell?
+            if FX <= x < FX + MAP_COLS * 16 and FY <= y < FY + MAP_ROWS * 16:
                 mc = (x - FX) // 16
                 mr = (y - FY) // 16
-                key = (mr, mc)
-                if key not in pf_details:
-                    pf_details[key] = {'count': 0, 'tile_type': stage_grid[mr][mc]}
-                pf_details[key]['count'] += 1
+                if stage_grid[mr][mc] >= 13:
+                    empty_px += 1
+                    continue
+            other_px += 1
 
-    print(f"\nPlayfield-only mismatches: {pf_mismatches}")
-    if pf_details:
-        print("  Mismatching metatiles:")
-        for (mr, mc), info in sorted(pf_details.items()):
-            print(f"    metatile ({mc},{mr}) type={info['tile_type']}: {info['count']} pixels differ")
+    print(f"\nDifference breakdown:")
+    print(f"  EMPTY tile $00 glyph (NES) vs black (game.js): {empty_px:6d} px")
+    print(f"  Eagle OAM sprite bank (NES=PT1) vs BG (game.js): {eagle_sprite_px:6d} px")
+    if other_px:
+        print(f"  Other / unexpected:                               {other_px:6d} px")
+    print(f"\nNotes:")
+    print(f"  - EMPTY diff is intentional: game.js fills EMPTY cells black")
+    print(f"    NES nametable has tile $00 everywhere (\"0\" numeral glyph)")
+    print(f"  - Eagle diff: game.js uses BG bank tiles for OAM sprites,")
+    print(f"    NES uses sprite pattern table (PT1). Fix: drawCHRTile for")
+    print(f"    eagle sprites should offset by +256 to reach sprite bank rows")
 
 
 if __name__ == '__main__':
