@@ -16,7 +16,7 @@
 </style>
 </head>
 <body>
-<h1>Battle City CHR Tile Viewer — chr_pt0.png (512 tiles: 0–255 BG/PT1, 256–511 Sprite/PT0)</h1>
+<h1>Battle City CHR Tile Viewer — chr_all.png (512 tiles: 0–255 BG, 256–511 Sprite) — Bank pair 1 (banks 2+3)</h1>
 
 <div id="palette-sel">
   Palette:
@@ -32,10 +32,10 @@
 </div>
 
 <div class="legend">
-  <div class="legend-item"><span class="swatch" style="background:#224;"></span> BG tiles 0–255 (PT1, PPU $1000, file $8010)</div>
+  <div class="legend-item"><span class="swatch" style="background:#224;"></span> BG tiles 0–255 (PPU $0000, file $A010)</div>
   <div class="legend-item"><span class="swatch" style="background:#244;"></span> BG terrain $00–$3F (brick/steel/water/trees/ice)</div>
   <div class="legend-item"><span class="swatch" style="background:#244244;"></span> BG HUD/score $60–$7F</div>
-  <div class="legend-item"><span class="swatch" style="background:#224;"></span> Sprite tiles 256–511 (PT0, PPU $0000, file $9010)</div>
+  <div class="legend-item"><span class="swatch" style="background:#224;"></span> Sprite tiles 256–511 (PPU $1000, file $B010)</div>
   <div class="legend-item"><span class="swatch" style="background:#442;"></span> Player tanks $00–$7F</div>
   <div class="legend-item"><span class="swatch" style="background:#422;"></span> Enemy tanks $80–$FF</div>
   <div class="legend-item"><span class="swatch" style="background:#244;"></span> Spawn anim $A0–$AF (BG/PT1)</div>
@@ -50,9 +50,10 @@
 
 <script>
 // ROM: PPUCTRL=$B0 (8×16 sprites, BG at $1000, sprite-even at $0000)
-// chr_pt0.png layout: 512 tiles in 32×16 grid, 9px cell (8px tile + 1px border)
-// tiles  0–255 = PPU $1000 = file $8010 = BG / PT1
-// tiles 256–511 = PPU $0000 = file $9010 = Sprite / PT0
+// chr_all.png layout: 512 tiles in 32×16 grid, 9px cell (8px tile + 1px border)
+// Bank pair 1 (mapper banks 2+3) — used for stage 1 gameplay
+// tiles  0–255 = PPU $0000 = file $A010 = BG
+// tiles 256–511 = PPU $1000 = file $B010 = Sprite
 
 const NES_PAL = [
   ['#000000','#8A4600','#7B0E00','#626262'],  // BG0 brick
@@ -68,7 +69,7 @@ const NES_PAL = [
 // Category border colors for tile highlighting
 function tileCategory(idx) {
   if (idx < 256) {
-    // BG bank (PT1, file $8010)
+    // BG bank (file $A010, bank pair 1)
     const t = idx;
     if (t >= 0xA0 && t <= 0xAF) return { name: `BG spawn-anim PT1 tile $${t.toString(16).toUpperCase()}`, col: '#00ffaa' };
     if (t >= 0xB0 && t <= 0xB7) return { name: `BG bullet-expl PT1 tile $${t.toString(16).toUpperCase()}`, col: '#ff88ff' };
@@ -81,7 +82,7 @@ function tileCategory(idx) {
     if (t <= 0x1F)               return { name: `BG terrain tile $${t.toString(16).toUpperCase()} (brick/steel/water/trees)`, col: '#88ccff' };
     return { name: `BG misc tile $${t.toString(16).toUpperCase()}`, col: '#667799' };
   } else {
-    // Sprite bank (PT0, file $9010): OAM tile byte T → PNG 256+T
+    // Sprite bank (file $B010, bank pair 1): OAM tile byte T → PNG 256+T
     const t = idx - 256;   // OAM tile byte
     if (t >= 0x00 && t <= 0x7F) return { name: `Sprite P1/P2 tank (OAM $${t.toString(16).toUpperCase()}) — base=$${(t & 0xF0).toString(16).toUpperCase()} dir=${['up','left','down','right'][(t>>3)&3]} anim=${t&1}`, col: '#ffffaa' };
     if (t >= 0x80 && t <= 0x9F) return { name: `Sprite enemy tier-0 (OAM $${t.toString(16).toUpperCase()})`, col: '#ffaaaa' };
@@ -127,7 +128,7 @@ function drawAllTiles() {
 function drawTile(idx, highlight) {
   if (!chrOff) return;
   const col = idx % COLS, row = (idx / COLS) | 0;
-  // source in chr_pt0.png
+  // source in chr_all.png
   const sx = (idx % 32) * CELL + 1;
   const sy = ((idx / 32) | 0) * CELL + 1;
   // dest on canvas
@@ -169,7 +170,7 @@ function drawTile(idx, highlight) {
 }
 
 const img = new Image();
-img.src = '../tiles/chr_pt0.png';
+img.src = '../tiles/chr_all.png';
 img.onload = () => {
   const oc = document.createElement('canvas');
   oc.width = img.width; oc.height = img.height;
