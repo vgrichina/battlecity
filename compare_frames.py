@@ -251,8 +251,9 @@ def build_enhanced_nametable(stage_num, rom):
     return bytes(nt), bytes(attr), grid
 
 def render_reference(nt_tiles, attr_table, chr_pt1):
-    """Render BG layer from nametable (render_frame.py style)."""
+    """Render BG layer + eagle OAM sprites (full NES frame)."""
     canvas = Canvas()
+    # 1. BG nametable
     for row in range(NT_ROWS):
         for col in range(NT_COLS):
             tile_idx = nt_tiles[row * NT_COLS + col]
@@ -260,13 +261,30 @@ def render_reference(nt_tiles, attr_table, chr_pt1):
             pix = chr_pt1[tile_idx]
             pal = ALL_PAL[pal_idx]
             canvas.draw_tile(pix, pal, col * 8, row * 8, transparent=False)
+
+    # 2. Eagle OAM sprites — ROM $E3F2 EagleDrawFull: 4×2 grid of 8×16 entries, SP3
+    #    row0 OAM_Y=200: col104→$D1, col112→$D3, col120→$D5, col128→$D7
+    #    row1 OAM_Y=216: col104→$D9, col112→$DB, col120→$DD, col128→$DF
+    eagle_pal = ALL_PAL[7]  # SP3
+    intact_oam = [0xD1, 0xD3, 0xD5, 0xD7, 0xD9, 0xDB, 0xDD, 0xDF]
+    ex, ey = 120, 216  # eagle center
+    xs = [ex - 16, ex - 8, ex, ex + 8]
+    ys = [ey - 16, ey]
+    for row in range(2):
+        for col in range(4):
+            T = intact_oam[row * 4 + col]
+            t_top = T & 0xFE
+            t_bot = (T & 0xFE) + 1
+            canvas.draw_tile(chr_pt1[t_top], eagle_pal, xs[col], ys[row], transparent=True)
+            canvas.draw_tile(chr_pt1[t_bot], eagle_pal, xs[col], ys[row] + 8, transparent=True)
+
     return canvas
 
 # ══════════════════════════════════════════════════════════════════════════════
 # GAME.JS SIMULATION: replicate game.js drawField + drawTile + drawEagleBase
 # ══════════════════════════════════════════════════════════════════════════════
 def render_gamejs(stage_grid, chr_pt1):
-    """Simulate game.js rendering at 1× NES pixel scale."""
+    """Simulate game.js rendering at 1× NES pixel scale (matches current game.js)."""
     canvas = Canvas(bg=BG_COLOR)  # black background
 
     # game.js normalizes partial brick types to T.BRICK (4)
@@ -277,25 +295,39 @@ def render_gamejs(stage_grid, chr_pt1):
             if 0 <= grid[r][c] < 4:
                 grid[r][c] = 4
 
-    # drawField: border + field + tiles
-    # fillRect(FX-4, FY-4, GW*META+8, GH*META+8+8, C.BORDER) — gray border
-    # Actually game.js C.BORDER = '#545454' = (84,84,84), C.FIELD = '#000000'
-    # But for 256×240 comparison, the border is outside the playfield
-    # game.js draws border at (12,12) size (216,224) then field at (16,16) size (208,216)
-    C_BORDER = (84, 84, 84)
+    # game.js drawField(): fillRect black for playfield, then drawBorderTiles, then tiles
     C_FIELD = (0, 0, 0)
-    canvas.fill_rect(FX - 4, FY - 4, MAP_COLS * 16 + 8, MAP_ROWS * 16 + 8 + 8, C_BORDER)
     canvas.fill_rect(FX, FY, MAP_COLS * 16, MAP_ROWS * 16 + 8, C_FIELD)
 
-    # Draw each metatile
+    # game.js drawBorderTiles(): tile $00 with BG0 palette at all border positions
+    border_pal = ALL_PAL[0]  # BG0
+    # Top 2 rows (rows 0–1, all 32 cols)
+    for r in range(2):
+        for c in range(32):
+            canvas.draw_tile(chr_pt1[0x00], border_pal, c * 8, r * 8, transparent=False)
+    # Bottom 2 rows (rows 28–29, all 32 cols)
+    for r in range(28, 30):
+        for c in range(32):
+            canvas.draw_tile(chr_pt1[0x00], border_pal, c * 8, r * 8, transparent=False)
+    # Left 2 cols (rows 2–27, cols 0–1)
+    for r in range(2, 28):
+        for c in range(2):
+            canvas.draw_tile(chr_pt1[0x00], border_pal, c * 8, r * 8, transparent=False)
+    # Right 4 cols (rows 2–27, cols 28–31)
+    for r in range(2, 28):
+        for c in range(28, 32):
+            canvas.draw_tile(chr_pt1[0x00], border_pal, c * 8, r * 8, transparent=False)
+
+    # game.js drawTile(): each metatile
     for row in range(MAP_ROWS):
         for col in range(MAP_COLS):
             t = grid[row][col]
             px = FX + col * 16
             py = FY + row * 16
 
-            # fillRect black first (already done by field fill)
-            if t == 13 or t >= 13:
+            # game.js: fillRect black first, then skip if EMPTY
+            canvas.fill_rect(px, py, 16, 16, C_FIELD)
+            if t >= 13:
                 continue  # empty
 
             if t == 4:  # BRICK (including normalized partial bricks)
@@ -315,7 +347,7 @@ def render_gamejs(stage_grid, chr_pt1):
                 for si, (dx, dy) in enumerate([(0,0), (8,0), (0,8), (8,8)]):
                     canvas.draw_tile(chr_pt1[chr4[si]], pal, px + dx, py + dy, transparent=False)
 
-    # drawEagleBase: Π-shaped brick walls + eagle BG tiles
+    # game.js drawEagleBase(): Π-shaped brick walls + eagle OAM sprites
     ex, ey = 120, 216  # EAGLE position
     # Walls: brick tiles in Π shape
     wall_pal = ALL_PAL[0]  # BG0 for brick
@@ -329,8 +361,7 @@ def render_gamejs(stage_grid, chr_pt1):
     canvas.draw_tile(chr_pt1[0x0F], wall_pal, ex + 8, ey - 8, transparent=False)
     canvas.draw_tile(chr_pt1[0x0F], wall_pal, ex + 8, ey, transparent=False)
 
-    # Eagle: drawn as sprites using SP3 palette, but game.js uses CHR tiles from PT1 bank
-    # drawCHRTile(T & 0xFE, 7, ...) where palIdx 7 = SP3
+    # Eagle: SP3 palette, 4×2 grid of 8×16 OAM entries from PT1/BG bank
     eagle_pal = ALL_PAL[7]  # SP3 palette
     intact_oam = [0xD1, 0xD3, 0xD5, 0xD7, 0xD9, 0xDB, 0xDD, 0xDF]
     xs = [ex - 16, ex - 8, ex, ex + 8]
