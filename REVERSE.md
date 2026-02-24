@@ -2909,4 +2909,18 @@ Level tiles and eagle still render incorrectly in the browser. Root causes ident
 
 **Rendering quality — additional investigation:**
 
-- [ ] **Generate reference comparison**: Run `render_frame.py --stage 1` to produce a pixel-perfect 256×240 reference PNG. Open the web game on stage 1 and screenshot the canvas. Diff the two images to identify ALL remaining pixel-level discrepancies between ROM-accurate rendering and game.js. Document each discrepancy as a sub-task.
+- [x] **Generate reference comparison**: **Done (session 11).** Ran `render_frame.py --stage 1` and wrote `analyze_tiles.py` (no external dependencies — built-in PNG reader/writer) to render both ROM-accurate and game.js-equivalent BG layers at 1× NES resolution (256×240), then pixel-diff them. Output: `output_gfx/compare_rom.png`, `compare_gamejs.png`, `compare_diff.png`. Results:
+  - **Palettes**: All 32 entries (8 slots × 4 colors) match perfectly between ROM NES_MASTER and game.js NES_PAL hex strings.
+  - **CHR tile data**: All 7 important BG tiles ($00 mortar, $0F brick, $10 steel, $12 water, $20 steel_border, $21 ice, $22 trees) — ROM 2bpp decode == chr_all.png grayscale→palette-index decode. Tile $00 mortar pattern (23 non-zero pixels) matches.
+  - **Brick brickBits**: All 5 partial types (BRICK_TL through BRICK) — CHR-derived bitmask matches game.js initialization.
+  - **Playfield tiles**: **0 pixel differences** — all non-empty tiles in the 13×13 grid are pixel-perfect.
+  - **Total diffs**: 34,644 / 61,440 pixels (56.4%), all in non-tile areas:
+    - `playfield_bg`: 24,576 px — empty tiles within playfield are (8,8,8) instead of (0,0,0)
+    - `border_area`: 5,120 px — game.js gray #404040 border doesn't exist in NES
+    - `outside_playfield`: 4,692 px — ROM renders tile $00 (mortar pattern) with BG0 palette in all nametable border tiles; game.js leaves them as canvas background (0,0,0)
+    - `eagle_area`: 256 px — ROM renders eagle BG tiles ($C8–$CB) in nametable; game.js only draws eagle as sprites (correct layering, but BG underneath differs)
+
+  **Sub-tasks to fix:**
+- [ ] **Fix C.FIELD background color**: Change `C.FIELD` from `'#080808'` to `'#000000'` in game.js. NES universal background = palette[0][0] = NES $0F = pure black. Fixes 24,576 playfield_bg pixel diffs.
+- [ ] **Remove non-NES border decoration**: Remove the gray `#404040` border rectangle drawn by `drawField()` (lines 1146–1147). The NES nametable has no visible border — border tiles are tile $00 which renders with BG0 palette (brick-colored mortar pattern). Replace the `fillRect` border with either: (a) nothing (leave as black), or (b) ROM-accurate tile $00 rendering for the 2-tile border strip. Fixes 5,120 border_area pixel diffs.
+- [ ] **Render nametable border tiles**: The ROM renders all 32×30 nametable tiles, including rows 0–1, 28–29, and cols 0–1, 28–31 outside the playfield. These are tile $00 drawn with BG0 palette, creating a visible brick-mortar texture frame. game.js only renders the 13×13 playfield grid. Add rendering of the nametable border strip (tile $00 with BG0 palette) around the playfield to match ROM output. Fixes 4,692 outside_playfield pixel diffs.

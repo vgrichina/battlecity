@@ -1,450 +1,450 @@
 #!/usr/bin/env python3
-"""analyze_tiles.py — Compare render_frame.py reference vs game.js rendering.
+"""analyze_tiles.py — Compare ROM-accurate rendering vs game.js rendering for stage 1.
 
-Produces:
-  output_gfx/ref_enhanced_stage01.png   — Enhanced reference (nametable + eagle walls + eagle BG tiles)
-  output_gfx/gamejs_sim_stage01.png     — Simulated game.js output (256x240 crop)
-  output_gfx/diff_stage01.png           — Pixel diff (red = differs, green = match)
-
-Reports all pixel-level discrepancies between the two.
+No external dependencies — uses built-in PNG reader/writer via struct/zlib.
 """
 
-import os, sys, struct, zlib
+import os, struct, zlib
 
 ROM_PATH = "VS. Battle City (1985)(Namco).nes"
+CHR_PNG  = "tiles/chr_all.png"
 OUT_DIR  = "output_gfx"
 
-# ── NES master palette ───────────────────────────────────────────────────────
+# ── Built-in PNG reader ──────────────────────────────────────────────────────
+def read_png(path):
+    """Read PNG → (width, height, rows) where rows is list of bytearrays (RGBA)."""
+    with open(path, 'rb') as f:
+        sig = f.read(8)
+        assert sig == b'\x89PNG\r\n\x1a\n', "Not a PNG"
+        chunks = {}
+        idat_data = b''
+        while True:
+            hdr = f.read(8)
+            if len(hdr) < 8: break
+            length, ctype = struct.unpack('>I4s', hdr)
+            data = f.read(length)
+            f.read(4)  # CRC
+            ctype = ctype.decode('ascii')
+            if ctype == 'IHDR':
+                w, h, depth, ctype_i, comp, filt, intl = struct.unpack('>IIBBBBB', data)
+                chunks['IHDR'] = (w, h, depth, ctype_i)
+            elif ctype == 'IDAT':
+                idat_data += data
+            elif ctype == 'IEND':
+                break
+
+    w, h, depth, ct = chunks['IHDR']
+    raw = zlib.decompress(idat_data)
+
+    # Determine bytes per pixel
+    if ct == 0: bpp = 1  # grayscale
+    elif ct == 2: bpp = 3  # RGB
+    elif ct == 4: bpp = 2  # grayscale+alpha
+    elif ct == 6: bpp = 4  # RGBA
+    else: raise ValueError(f"Unsupported color type {ct}")
+
+    stride = 1 + w * bpp  # filter byte + row data
+    rows = []
+    prev_row = bytearray(w * bpp)
+    for y in range(h):
+        off = y * stride
+        filt = raw[off]
+        row = bytearray(raw[off+1 : off+1+w*bpp])
+        if filt == 1:  # Sub
+            for i in range(len(row)):
+                a = row[i - bpp] if i >= bpp else 0
+                row[i] = (row[i] + a) & 0xFF
+        elif filt == 2:  # Up
+            for i in range(len(row)):
+                row[i] = (row[i] + prev_row[i]) & 0xFF
+        elif filt == 3:  # Average
+            for i in range(len(row)):
+                a = row[i - bpp] if i >= bpp else 0
+                row[i] = (row[i] + (a + prev_row[i]) // 2) & 0xFF
+        elif filt == 4:  # Paeth
+            for i in range(len(row)):
+                a = row[i - bpp] if i >= bpp else 0
+                b = prev_row[i]
+                c = prev_row[i - bpp] if i >= bpp else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                if pa <= pb and pa <= pc: pr = a
+                elif pb <= pc: pr = b
+                else: pr = c
+                row[i] = (row[i] + pr) & 0xFF
+
+        # Convert to RGBA
+        rgba_row = bytearray(w * 4)
+        for x in range(w):
+            if ct == 0:  # grayscale
+                g = row[x]
+                rgba_row[x*4:x*4+4] = bytes([g, g, g, 255])
+            elif ct == 2:  # RGB
+                rgba_row[x*4:x*4+4] = bytes([row[x*3], row[x*3+1], row[x*3+2], 255])
+            elif ct == 4:  # gray+alpha
+                g = row[x*2]
+                rgba_row[x*4:x*4+4] = bytes([g, g, g, row[x*2+1]])
+            elif ct == 6:  # RGBA
+                rgba_row[x*4:x*4+4] = row[x*4:x*4+4]
+        rows.append(rgba_row)
+        prev_row = row if ct == 6 else bytearray(row)
+        # For filter reconstruction we need the raw (pre-RGBA-conversion) row
+        # Fix: store the bpp-native row for filter, not the RGBA version
+    # Redo with correct filter reconstruction
+    rows = []
+    prev_row = bytearray(w * bpp)
+    for y in range(h):
+        off = y * stride
+        filt = raw[off]
+        row = bytearray(raw[off+1 : off+1+w*bpp])
+        if filt == 1:
+            for i in range(len(row)):
+                a = row[i - bpp] if i >= bpp else 0
+                row[i] = (row[i] + a) & 0xFF
+        elif filt == 2:
+            for i in range(len(row)):
+                row[i] = (row[i] + prev_row[i]) & 0xFF
+        elif filt == 3:
+            for i in range(len(row)):
+                a = row[i - bpp] if i >= bpp else 0
+                row[i] = (row[i] + (a + prev_row[i]) // 2) & 0xFF
+        elif filt == 4:
+            for i in range(len(row)):
+                a = row[i - bpp] if i >= bpp else 0
+                b = prev_row[i]
+                c = prev_row[i - bpp] if i >= bpp else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                if pa <= pb and pa <= pc: pr = a
+                elif pb <= pc: pr = b
+                else: pr = c
+                row[i] = (row[i] + pr) & 0xFF
+
+        rgba_row = bytearray(w * 4)
+        for x in range(w):
+            if ct == 0:
+                g = row[x]
+                rgba_row[x*4:x*4+4] = bytes([g, g, g, 255])
+            elif ct == 2:
+                rgba_row[x*4:x*4+4] = bytes([row[x*3], row[x*3+1], row[x*3+2], 255])
+            elif ct == 4:
+                g = row[x*2]
+                rgba_row[x*4:x*4+4] = bytes([g, g, g, row[x*2+1]])
+            elif ct == 6:
+                rgba_row[x*4:x*4+4] = row[x*4:x*4+4]
+        rows.append(rgba_row)
+        prev_row = row
+    return w, h, rows
+
+# ── NES palette ──────────────────────────────────────────────────────────────
 NES_MASTER = [
-    (84,84,84),    (0,30,116),    (8,16,144),    (48,0,136),
-    (68,0,100),    (92,0,48),     (84,4,0),      (60,24,0),
-    (32,42,0),     (8,58,0),      (0,64,0),      (0,60,0),
-    (0,50,60),     (0,0,0),       (0,0,0),       (0,0,0),
-    (152,150,152), (8,76,196),    (48,50,236),   (92,30,228),
-    (136,20,176),  (160,20,100),  (152,34,32),   (120,60,0),
-    (84,90,0),     (40,114,0),    (8,124,0),     (0,118,40),
-    (0,102,120),   (0,0,0),       (0,0,0),       (0,0,0),
-    (236,238,236), (76,154,236),  (120,124,236), (176,98,236),
-    (228,84,236),  (236,88,180),  (236,106,100), (212,136,32),
-    (160,170,0),   (116,196,0),   (76,208,32),   (56,204,108),
-    (56,180,204),  (60,60,60),    (0,0,0),       (0,0,0),
-    (236,238,236), (168,204,236), (188,188,236), (212,178,236),
-    (236,174,236), (236,174,212), (236,180,176), (228,196,144),
-    (204,210,120), (180,222,120), (168,226,144), (152,226,180),
-    (160,214,228), (160,162,160), (0,0,0),       (0,0,0),
+    (84,84,84),(0,30,116),(8,16,144),(48,0,136),(68,0,100),(92,0,48),(84,4,0),(60,24,0),
+    (32,42,0),(8,58,0),(0,64,0),(0,60,0),(0,50,60),(0,0,0),(0,0,0),(0,0,0),
+    (152,150,152),(8,76,196),(48,50,236),(92,30,228),(136,20,176),(160,20,100),(152,34,32),(120,60,0),
+    (84,90,0),(40,114,0),(8,124,0),(0,118,40),(0,102,120),(0,0,0),(0,0,0),(0,0,0),
+    (236,238,236),(76,154,236),(120,124,236),(176,98,236),(228,84,236),(236,88,180),(236,106,100),(212,136,32),
+    (160,170,0),(116,196,0),(76,208,32),(56,204,108),(56,180,204),(60,60,60),(0,0,0),(0,0,0),
+    (236,238,236),(168,204,236),(188,188,236),(212,178,236),(236,174,236),(236,174,212),(236,180,176),(228,196,144),
+    (204,210,120),(180,222,120),(168,226,144),(152,226,180),(160,214,228),(160,162,160),(0,0,0),(0,0,0),
 ]
 
 ROM_PAL_BYTES = [
-    [0x0F, 0x17, 0x06, 0x00],  # BG0 brick
-    [0x0F, 0x3C, 0x10, 0x12],  # BG1 water
-    [0x0F, 0x29, 0x09, 0x0B],  # BG2 trees
-    [0x0F, 0x00, 0x10, 0x20],  # BG3 steel/ice
-    [0x0F, 0x18, 0x27, 0x38],  # SP0 P1
-    [0x0F, 0x0A, 0x1B, 0x3B],  # SP1 P2
-    [0x0F, 0x0C, 0x10, 0x20],  # SP2 enemy
-    [0x0F, 0x04, 0x16, 0x20],  # SP3 special/eagle
+    [0x0F,0x17,0x06,0x00],[0x0F,0x3C,0x10,0x12],[0x0F,0x29,0x09,0x0B],[0x0F,0x00,0x10,0x20],
+    [0x0F,0x18,0x27,0x38],[0x0F,0x0A,0x1B,0x3B],[0x0F,0x0C,0x10,0x20],[0x0F,0x04,0x16,0x20],
 ]
-ALL_PAL = [[NES_MASTER[c & 0x3F] for c in slot] for slot in ROM_PAL_BYTES]
-BG_COLOR = NES_MASTER[0x0F & 0x3F]  # (0,0,0)
+ROM_PAL = [[NES_MASTER[c & 0x3F] for c in slot] for slot in ROM_PAL_BYTES]
 
-# ── Screen constants ─────────────────────────────────────────────────────────
-SCR_W, SCR_H = 256, 240
-NT_COLS, NT_ROWS = 32, 30
-NT_TILES = NT_COLS * NT_ROWS
-ATTR_BYTES = 64
+def hex2rgb(h):
+    return (int(h[1:3],16), int(h[3:5],16), int(h[5:7],16))
 
-# ── Level constants ──────────────────────────────────────────────────────────
+JS_PAL = [
+    [hex2rgb(c) for c in ['#000000','#783C00','#540400','#545454']],
+    [hex2rgb(c) for c in ['#000000','#A0D6E4','#989698','#3032EC']],
+    [hex2rgb(c) for c in ['#000000','#74C400','#083A00','#003C00']],
+    [hex2rgb(c) for c in ['#000000','#545454','#989698','#ECEEEC']],
+    [hex2rgb(c) for c in ['#000000','#545A00','#D48820','#CCD278']],
+    [hex2rgb(c) for c in ['#000000','#004000','#007628','#98E2B4']],
+    [hex2rgb(c) for c in ['#000000','#00323C','#989698','#ECEEEC']],
+    [hex2rgb(c) for c in ['#000000','#440064','#982220','#ECEEEC']],
+]
+
+# ── Palette check ────────────────────────────────────────────────────────────
+print("=== PALETTE COMPARISON ===")
+any_diff = False
+for i in range(8):
+    for j in range(4):
+        if ROM_PAL[i][j] != JS_PAL[i][j]:
+            any_diff = True
+            print(f"  MISMATCH pal[{i}][{j}]: ROM={ROM_PAL[i][j]} JS={JS_PAL[i][j]}")
+if not any_diff:
+    print("  All 32 palette entries match perfectly.")
+
+# ── Level / tile data ────────────────────────────────────────────────────────
 LEVEL_OFF = 0x4010 + (0xF27D - 0xC000)
-STAGE_SIZE = 91
-MAP_COLS, MAP_ROWS = 13, 13
-FX, FY = 16, 16  # playfield origin in NES pixels
+STAGE_SIZE, MAP_COLS, MAP_ROWS = 91, 13, 13
 
-# ── Tile type mappings ───────────────────────────────────────────────────────
-TILE_CHR = {
-    0:  [0x00, 0x0F, 0x00, 0x0F],  # BRICK_TL (right-col)
-    1:  [0x00, 0x00, 0x0F, 0x0F],  # BRICK_TR (bottom-row)
-    2:  [0x0F, 0x00, 0x0F, 0x00],  # BRICK_BL (left-col)
-    3:  [0x0F, 0x0F, 0x00, 0x00],  # BRICK_BR (top-row)
-    4:  [0x0F, 0x0F, 0x0F, 0x0F],  # BRICK full
-    5:  [0x20, 0x10, 0x20, 0x10],  # STEEL_TL
-    6:  [0x20, 0x20, 0x10, 0x10],  # STEEL_TR
-    7:  [0x10, 0x20, 0x10, 0x20],  # STEEL_BL
-    8:  [0x10, 0x10, 0x20, 0x20],  # STEEL_BR
-    9:  [0x10, 0x10, 0x10, 0x10],  # STEEL full
-    10: [0x12, 0x12, 0x12, 0x12],  # WATER
-    11: [0x22, 0x22, 0x22, 0x22],  # TREES
-    12: [0x21, 0x21, 0x21, 0x21],  # ICE
-}
-TILE_PAL = {
-    0:0, 1:0, 2:0, 3:0, 4:0,
-    5:3, 6:3, 7:3, 8:3, 9:3,
-    10:1, 11:2, 12:3,
-}
+def decode_stage(raw):
+    grid = []
+    for row in range(MAP_ROWS):
+        r = []
+        for col in range(MAP_COLS):
+            ni = row * 14 + col
+            t = (raw[ni//2] >> 4) & 0xF if ni % 2 == 0 else raw[ni//2] & 0xF
+            r.append(t)
+        grid.append(r)
+    return grid
 
-# game.js brick init bits
-def brick_init_bits(t):
-    if t == 0: return 0b1010  # TR+BR (right col)
-    if t == 1: return 0b1100  # BL+BR (bottom row)
-    if t == 2: return 0b0101  # TL+BL (left col)
-    if t == 3: return 0b0011  # TL+TR (top row)
-    if t == 4: return 0b1111
-    return 0
-
-# ── CHR decode ───────────────────────────────────────────────────────────────
-def decode_tile(data, offset):
+def decode_tile_2bpp(data, offset):
     px = []
     for row in range(8):
-        lo = data[offset + row]
-        hi = data[offset + row + 8]
-        for bit in range(7, -1, -1):
-            px.append(((lo >> bit) & 1) | (((hi >> bit) & 1) << 1))
+        lo, hi = data[offset+row], data[offset+row+8]
+        for bit in range(7,-1,-1):
+            px.append(((lo>>bit)&1) | (((hi>>bit)&1)<<1))
     return px
 
-# ── PNG writer ───────────────────────────────────────────────────────────────
+def gray_to_idx(r):
+    if r < 0x2B: return 0
+    if r < 0x7F: return 1
+    if r < 0xD5: return 2
+    return 3
+
+TILE_CHR = {
+    0:[0x00,0x0F,0x00,0x0F], 1:[0x00,0x00,0x0F,0x0F], 2:[0x0F,0x00,0x0F,0x00],
+    3:[0x0F,0x0F,0x00,0x00], 4:[0x0F,0x0F,0x0F,0x0F],
+    5:[0x20,0x10,0x20,0x10], 6:[0x20,0x20,0x10,0x10], 7:[0x10,0x20,0x10,0x20],
+    8:[0x10,0x10,0x20,0x20], 9:[0x10,0x10,0x10,0x10],
+    10:[0x12,0x12,0x12,0x12], 11:[0x22,0x22,0x22,0x22], 12:[0x21,0x21,0x21,0x21],
+}
+TILE_PAL_IDX = {0:0,1:0,2:0,3:0,4:0, 5:3,6:3,7:3,8:3,9:3, 10:1,11:2,12:3}
+
 def write_png(path, width, height, rgb_pixels):
     def chunk(tag, data):
         body = tag + data
-        return struct.pack('>I', len(data)) + body + struct.pack('>I', zlib.crc32(body) & 0xFFFFFFFF)
+        return struct.pack('>I',len(data)) + body + struct.pack('>I',zlib.crc32(body)&0xFFFFFFFF)
     raw = bytearray()
     for y in range(height):
         raw.append(0)
         for x in range(width):
-            r, g, b = rgb_pixels[y * width + x]
-            raw += bytes([r, g, b])
+            r,g,b = rgb_pixels[y*width+x]
+            raw += bytes([r,g,b])
     data = (b'\x89PNG\r\n\x1a\n'
-            + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
-            + chunk(b'IDAT', zlib.compress(bytes(raw), 9))
+            + chunk(b'IHDR', struct.pack('>IIBBBBB',width,height,8,2,0,0,0))
+            + chunk(b'IDAT', zlib.compress(bytes(raw),9))
             + chunk(b'IEND', b''))
-    with open(path, 'wb') as f:
-        f.write(data)
+    with open(path,'wb') as f: f.write(data)
 
-# ── Canvas ───────────────────────────────────────────────────────────────────
 class Canvas:
-    def __init__(self, w=SCR_W, h=SCR_H, bg=BG_COLOR):
+    def __init__(self, w, h, bg=(0,0,0)):
         self.w, self.h = w, h
-        self.px = [bg] * (w * h)
-
+        self.px = [bg]*(w*h)
     def set(self, x, y, col):
-        if 0 <= x < self.w and 0 <= y < self.h:
-            self.px[y * self.w + x] = col
-
-    def draw_tile(self, pix, pal, ox, oy, transparent=False):
+        if 0<=x<self.w and 0<=y<self.h: self.px[y*self.w+x] = col
+    def get(self, x, y):
+        if 0<=x<self.w and 0<=y<self.h: return self.px[y*self.w+x]
+        return (0,0,0)
+    def draw_tile(self, pix, pal, ox, oy):
         for ty in range(8):
             for tx in range(8):
-                ci = pix[ty * 8 + tx]
-                if transparent and ci == 0:
-                    continue
-                self.set(ox + tx, oy + ty, pal[ci])
-
+                self.set(ox+tx, oy+ty, pal[pix[ty*8+tx]])
     def fill_rect(self, x, y, w, h, col):
         for dy in range(h):
             for dx in range(w):
-                self.set(x + dx, y + dy, col)
+                self.set(x+dx, y+dy, col)
+    def save(self, path): write_png(path, self.w, self.h, self.px)
 
-    def get(self, x, y):
-        if 0 <= x < self.w and 0 <= y < self.h:
-            return self.px[y * self.w + x]
-        return BG_COLOR
+def main():
+    with open(ROM_PATH,'rb') as f: rom = f.read()
+    prg_banks = rom[4]
+    chr_data = rom[16+prg_banks*16384 : 16+prg_banks*16384+16384]
+    rom_bg_tiles = [decode_tile_2bpp(chr_data, i*16) for i in range(256)]
 
-    def save(self, path):
-        write_png(path, self.w, self.h, self.px)
+    # Load chr_all.png
+    pw, ph, png_rows = read_png(CHR_PNG)
+    CHR_CELL, CHR_BORDER = 9, 1
 
-# ── Level decode ─────────────────────────────────────────────────────────────
-def decode_stage(raw):
-    grid = []
-    for row in range(MAP_ROWS):
-        row_tiles = []
-        for col in range(MAP_COLS):
-            ni = row * 14 + col
-            t = (raw[ni // 2] >> 4) & 0xF if ni % 2 == 0 else raw[ni // 2] & 0xF
-            row_tiles.append(t)
-        grid.append(row_tiles)
-    return grid
+    def get_png_tile(tile_abs):
+        tcol, trow = tile_abs % 32, tile_abs // 32
+        sx, sy = tcol*CHR_CELL+CHR_BORDER, trow*CHR_CELL+CHR_BORDER
+        pix = []
+        for py in range(8):
+            for px in range(8):
+                if sy+py < ph:
+                    r = png_rows[sy+py][(sx+px)*4]
+                else:
+                    r = 0
+                pix.append(gray_to_idx(r))
+        return pix
 
-# ── Attribute table palette lookup ───────────────────────────────────────────
-def attr_pal(attr_table, tile_col, tile_row):
-    ax = tile_col >> 2
-    ay = tile_row >> 2
-    idx = ay * 8 + ax
-    if idx >= ATTR_BYTES:
-        return 0
-    byte = attr_table[idx]
-    quad = ((tile_row >> 1) & 1) * 2 + ((tile_col >> 1) & 1)
-    return (byte >> (quad * 2)) & 3
+    off = LEVEL_OFF
+    grid = decode_stage(rom[off:off+STAGE_SIZE])
+    FX, FY, META = 16, 16, 16
 
-# ===========================================================================
-# REFERENCE: render_frame.py logic + eagle walls + eagle BG tiles
-# ===========================================================================
-def build_enhanced_nametable(stage_num, rom):
-    """Build nametable with level tiles + eagle walls + eagle BG tiles."""
-    off = LEVEL_OFF + STAGE_SIZE * (stage_num - 1)
-    grid = decode_stage(rom[off:off + STAGE_SIZE])
-
-    nt = bytearray(NT_TILES)
-    attr = bytearray(ATTR_BYTES)
-
-    # Write level tiles
+    # ── ROM-accurate BG ──────────────────────────────────────────────────────
+    rom_canvas = Canvas(256, 240)
+    attr = bytearray(64)
+    nt = bytearray(960)
     for mr in range(MAP_ROWS):
         for mc in range(MAP_COLS):
             t = grid[mr][mc]
             chr4 = TILE_CHR.get(t)
-            if chr4 is None:
-                continue
-            pi = TILE_PAL.get(t, 0)
-            for si, (dr, dc) in enumerate([(0,0), (0,1), (1,0), (1,1)]):
-                tr = mr * 2 + dr + 2
-                tc = mc * 2 + dc + 2
-                if tr < NT_ROWS and tc < NT_COLS:
-                    nt[tr * NT_COLS + tc] = chr4[si]
-            tc_base = mc * 2 + 2
-            tr_base = mr * 2 + 2
-            ax = tc_base >> 2
-            ay = tr_base >> 2
-            aidx = ay * 8 + ax
-            if aidx < ATTR_BYTES:
-                quad = (((tr_base >> 1) & 1) << 1) | ((tc_base >> 1) & 1)
-                shift = quad * 2
-                attr[aidx] = (attr[aidx] & ~(0x03 << shift)) | (pi << shift)
+            if chr4 is None: continue
+            pi = TILE_PAL_IDX.get(t,0)
+            for si,(dr,dc) in enumerate([(0,0),(0,1),(1,0),(1,1)]):
+                tr, tc = mr*2+dr+2, mc*2+dc+2
+                if tr<30 and tc<32: nt[tr*32+tc] = chr4[si]
+            tcb, trb = mc*2+2, mr*2+2
+            ax, ay = tcb>>2, trb>>2
+            aidx = ay*8+ax
+            if aidx < 64:
+                q = (((trb>>1)&1)<<1)|((tcb>>1)&1)
+                attr[aidx] = (attr[aidx] & ~(3<<(q*2))) | (pi<<(q*2))
 
-    # Eagle walls (BrickWallInit $C912) -- ROM $D22D data
-    # Eagle center at NES pixel (0x78, 0xD8) = (120, 216)
-    # Nametable tile position: col=120/8=15, row=216/8=27
-    ex_tile, ey_tile = 15, 27  # eagle center tile position
-    wall_tile = 0x0F  # brick
-    wall_data = [
-        (-2, -2, wall_tile), (-2, -1, wall_tile), (-2, 0, wall_tile), (-2, 1, wall_tile),
-        (-1, -2, wall_tile), (-1, -1, 0xC8), (-1, 0, 0xCA), (-1, 1, wall_tile),
-        (0, -2, wall_tile), (0, -1, 0xC9), (0, 0, 0xCB), (0, 1, wall_tile),
-    ]
-    for dr, dc, tile in wall_data:
-        tr = ey_tile + dr
-        tc = ex_tile + dc
-        if 0 <= tr < NT_ROWS and 0 <= tc < NT_COLS:
-            nt[tr * NT_COLS + tc] = tile
+    for row in range(30):
+        for col in range(32):
+            ti = nt[row*32+col]
+            ax, ay = col>>2, row>>2
+            aidx = ay*8+ax
+            b = attr[aidx] if aidx<64 else 0
+            q = ((row>>1)&1)*2+((col>>1)&1)
+            pi = (b>>(q*2))&3
+            rom_canvas.draw_tile(rom_bg_tiles[ti], ROM_PAL[pi], col*8, row*8)
 
-    # Set attribute for eagle wall area (BG0 palette for brick walls)
-    for dr, dc, tile in wall_data:
-        tr = ey_tile + dr
-        tc = ex_tile + dc
-        if 0 <= tr < NT_ROWS and 0 <= tc < NT_COLS:
-            ax_idx = tc >> 2
-            ay_idx = tr >> 2
-            aidx = ay_idx * 8 + ax_idx
-            if aidx < ATTR_BYTES:
-                quad = (((tr >> 1) & 1) << 1) | ((tc >> 1) & 1)
-                shift = quad * 2
-                pi = 0  # BG0 for brick walls; eagle BG tiles also get BG0 here
-                attr[aidx] = (attr[aidx] & ~(0x03 << shift)) | (pi << shift)
-
-    return bytes(nt), bytes(attr), grid
-
-def render_reference(nt_tiles, attr_table, chr_pt1):
-    """Render BG layer from nametable (render_frame.py style)."""
-    canvas = Canvas()
-    for row in range(NT_ROWS):
-        for col in range(NT_COLS):
-            tile_idx = nt_tiles[row * NT_COLS + col]
-            pal_idx = attr_pal(attr_table, col, row)
-            pix = chr_pt1[tile_idx]
-            pal = ALL_PAL[pal_idx]
-            canvas.draw_tile(pix, pal, col * 8, row * 8, transparent=False)
-    return canvas
-
-# ===========================================================================
-# GAME.JS SIMULATION: replicate game.js drawField + drawTile + drawEagleBase
-# ===========================================================================
-def render_gamejs(stage_grid, chr_pt1):
-    """Simulate game.js rendering at 1x NES pixel scale."""
-    canvas = Canvas(bg=BG_COLOR)  # black background
-
-    # game.js normalizes partial brick types to T.BRICK (4)
-    grid = [row[:] for row in stage_grid]
-    brick_bits = [[brick_init_bits(t) for t in row] for row in stage_grid]
-    for r in range(MAP_ROWS):
-        for c in range(MAP_COLS):
-            if 0 <= grid[r][c] < 4:
-                grid[r][c] = 4
-
-    # drawField: border + field + tiles
-    C_BORDER = (84, 84, 84)
-    C_FIELD = (0, 0, 0)
-    canvas.fill_rect(FX - 4, FY - 4, MAP_COLS * 16 + 8, MAP_ROWS * 16 + 8 + 8, C_BORDER)
-    canvas.fill_rect(FX, FY, MAP_COLS * 16, MAP_ROWS * 16 + 8, C_FIELD)
-
-    # Draw each metatile
-    for row in range(MAP_ROWS):
-        for col in range(MAP_COLS):
-            t = grid[row][col]
-            px = FX + col * 16
-            py = FY + row * 16
-
-            if t == 13 or t >= 13:
-                continue  # empty
-
-            if t == 4:  # BRICK (including normalized partial bricks)
-                bits = brick_bits[row][col]
-                for q in range(4):
-                    tile_idx = 0x0F if (bits & (1 << q)) else 0x00
-                    qx = 8 if (q & 1) else 0
-                    qy = 8 if q >= 2 else 0
-                    pal = ALL_PAL[TILE_PAL[4]]  # BG0
-                    canvas.draw_tile(chr_pt1[tile_idx], pal, px + qx, py + qy, transparent=False)
-                continue
-
-            chr4 = TILE_CHR.get(t)
-            if chr4:
-                pi = TILE_PAL.get(t, 0)
-                pal = ALL_PAL[pi]
-                for si, (dx, dy) in enumerate([(0,0), (8,0), (0,8), (8,8)]):
-                    canvas.draw_tile(chr_pt1[chr4[si]], pal, px + dx, py + dy, transparent=False)
-
-    # drawEagleBase: Pi-shaped brick walls + eagle sprite
     ex, ey = 120, 216
-    wall_pal = ALL_PAL[0]  # BG0 for brick
-    for dx in [-16, -8, 0, 8]:
-        canvas.draw_tile(chr_pt1[0x0F], wall_pal, ex + dx, ey - 16, transparent=False)
-    canvas.draw_tile(chr_pt1[0x0F], wall_pal, ex - 16, ey - 8, transparent=False)
-    canvas.draw_tile(chr_pt1[0x0F], wall_pal, ex - 16, ey, transparent=False)
-    canvas.draw_tile(chr_pt1[0x0F], wall_pal, ex + 8, ey - 8, transparent=False)
-    canvas.draw_tile(chr_pt1[0x0F], wall_pal, ex + 8, ey, transparent=False)
-
-    # Eagle: drawn as sprites using SP3 palette
-    eagle_pal = ALL_PAL[7]  # SP3 palette
-    intact_oam = [0xD1, 0xD3, 0xD5, 0xD7, 0xD9, 0xDB, 0xDD, 0xDF]
-    xs = [ex - 16, ex - 8, ex, ex + 8]
-    ys = [ey - 16, ey]
-    for row in range(2):
-        for col in range(4):
-            T = intact_oam[row * 4 + col]
-            t_top = T & 0xFE
-            t_bot = (T & 0xFE) + 1
-            canvas.draw_tile(chr_pt1[t_top], eagle_pal, xs[col], ys[row], transparent=True)
-            canvas.draw_tile(chr_pt1[t_bot], eagle_pal, xs[col], ys[row] + 8, transparent=True)
-
-    return canvas
-
-# ===========================================================================
-# DIFF
-# ===========================================================================
-def diff_canvases(ref, gjs):
-    """Compare two canvases pixel by pixel. Return diff canvas and stats."""
-    diff = Canvas(bg=(0, 40, 0))  # dark green = match
-    total = 0
-    mismatches = 0
-    regions = {}
-
-    for y in range(SCR_H):
-        for x in range(SCR_W):
-            total += 1
-            r_col = ref.get(x, y)
-            g_col = gjs.get(x, y)
-            if r_col != g_col:
-                mismatches += 1
-                diff.set(x, y, (255, 0, 0))
-
-                in_playfield = (FX <= x < FX + MAP_COLS * 16 and
-                                FY <= y < FY + MAP_ROWS * 16)
-                in_eagle_area = (104 <= x < 136 and 200 <= y < 232)
-                in_border = (12 <= x < 220 and 12 <= y < 236 and not in_playfield and not in_eagle_area)
-                in_hud = (x >= 208)
-
-                if in_eagle_area:
-                    region = "eagle_area"
-                elif in_playfield:
-                    region = "playfield"
-                elif in_border:
-                    region = "border"
-                elif in_hud:
-                    region = "hud_area"
-                else:
-                    region = "outer_border"
-
-                regions[region] = regions.get(region, 0) + 1
-            else:
-                diff.set(x, y, (0, 80, 0))
-
-    return diff, total, mismatches, regions
-
-# ===========================================================================
-# MAIN
-# ===========================================================================
-def main():
-    stage = 1
-    with open(ROM_PATH, 'rb') as f:
-        rom = f.read()
-
-    prg_banks = rom[4]
-    chr_off = 16 + prg_banks * 16384
-    chr_data = rom[chr_off:chr_off + 16384]
-    chr_pt1 = [decode_tile(chr_data, i * 16) for i in range(256)]
+    bt, bp = rom_bg_tiles[0x0F], ROM_PAL[0]
+    for dx in [-16,-8,0,8]: rom_canvas.draw_tile(bt, bp, ex+dx, ey-16)
+    rom_canvas.draw_tile(bt, bp, ex-16, ey-8)
+    rom_canvas.draw_tile(bt, bp, ex-16, ey)
+    rom_canvas.draw_tile(bt, bp, ex+8, ey-8)
+    rom_canvas.draw_tile(bt, bp, ex+8, ey)
+    for ti2,tx,ty in [(0xC8,ex-8,ey-8),(0xCA,ex,ey-8),(0xC9,ex-8,ey),(0xCB,ex,ey)]:
+        tcol2,trow2 = tx//8, ty//8
+        aidx2 = (trow2>>2)*8+(tcol2>>2)
+        b2 = attr[aidx2] if aidx2<64 else 0
+        q2 = ((trow2>>1)&1)*2+((tcol2>>1)&1)
+        pi2 = (b2>>(q2*2))&3
+        rom_canvas.draw_tile(rom_bg_tiles[ti2], ROM_PAL[pi2], tx, ty)
 
     os.makedirs(OUT_DIR, exist_ok=True)
+    rom_canvas.save(os.path.join(OUT_DIR, 'compare_rom.png'))
+    print(f"ROM-accurate BG -> {OUT_DIR}/compare_rom.png")
 
-    # 1. Enhanced reference (nametable + eagle walls)
-    nt_data, attr_data, stage_grid = build_enhanced_nametable(stage, rom)
-    ref_canvas = render_reference(nt_data, attr_data, chr_pt1)
-    ref_path = os.path.join(OUT_DIR, 'ref_enhanced_stage01.png')
-    ref_canvas.save(ref_path)
-    print('Reference: ' + ref_path)
+    # ── game.js-equivalent BG ────────────────────────────────────────────────
+    JS_FIELD, JS_BORDER = (8,8,8), (64,64,64)
+    js_canvas = Canvas(256, 240)
+    js_canvas.fill_rect(FX-4, FY-4, MAP_COLS*META+8, MAP_ROWS*META+8+8, JS_BORDER)
+    js_canvas.fill_rect(FX, FY, MAP_COLS*META, MAP_ROWS*META+8, JS_FIELD)
 
-    # 2. Game.js simulation
-    gjs_canvas = render_gamejs(stage_grid, chr_pt1)
-    gjs_path = os.path.join(OUT_DIR, 'gamejs_sim_stage01.png')
-    gjs_canvas.save(gjs_path)
-    print('Game.js sim: ' + gjs_path)
+    for mr in range(MAP_ROWS):
+        for mc in range(MAP_COLS):
+            t = grid[mr][mc]
+            px_x, px_y = FX+mc*META, FY+mr*META
+            js_canvas.fill_rect(px_x, px_y, META, META, JS_FIELD)
+            if t == 13 or t > 13: continue
+            chr4 = TILE_CHR.get(t)
+            if chr4 is None: continue
+            pi = TILE_PAL_IDX.get(t,0)
+            pal = JS_PAL[pi]
+            if t <= 4:
+                bits = {0:0b1010,1:0b1100,2:0b0101,3:0b0011,4:0xF}[t]
+                for q in range(4):
+                    ti2 = 0x0F if (bits&(1<<q)) else 0x00
+                    qx, qy = 8 if (q&1) else 0, 8 if q>=2 else 0
+                    js_canvas.draw_tile(get_png_tile(ti2), pal, px_x+qx, px_y+qy)
+            else:
+                for si,(dr,dc) in enumerate([(0,0),(0,1),(1,0),(1,1)]):
+                    js_canvas.draw_tile(get_png_tile(chr4[si]), pal, px_x+dc*8, px_y+dr*8)
 
-    # 3. Diff
-    diff_canvas, total, mismatches, regions = diff_canvases(ref_canvas, gjs_canvas)
-    diff_path = os.path.join(OUT_DIR, 'diff_stage01.png')
-    diff_canvas.save(diff_path)
-    print('Diff: ' + diff_path)
-    print('')
-    print('Total pixels: %d' % total)
-    print('Mismatches:   %d (%.2f%%)' % (mismatches, 100*mismatches/total))
-    print('')
-    print('Mismatches by region:')
-    for region, count in sorted(regions.items(), key=lambda x: -x[1]):
-        print('  %-20s: %6d pixels' % (region, count))
+    bpng, jbp = get_png_tile(0x0F), JS_PAL[0]
+    for dx in [-16,-8,0,8]: js_canvas.draw_tile(bpng, jbp, ex+dx, ey-16)
+    js_canvas.draw_tile(bpng, jbp, ex-16, ey-8)
+    js_canvas.draw_tile(bpng, jbp, ex-16, ey)
+    js_canvas.draw_tile(bpng, jbp, ex+8, ey-8)
+    js_canvas.draw_tile(bpng, jbp, ex+8, ey)
 
-    # 4. Sample mismatching pixels
-    print('')
-    print('Sample mismatching pixels (first 20):')
-    count = 0
-    for y in range(SCR_H):
-        for x in range(SCR_W):
-            if ref_canvas.get(x, y) != gjs_canvas.get(x, y):
-                r = ref_canvas.get(x, y)
-                g = gjs_canvas.get(x, y)
-                print('  (%3d,%3d): ref=%s gjs=%s' % (x, y, r, g))
-                count += 1
-                if count >= 20:
-                    break
-        if count >= 20:
-            break
+    js_canvas.save(os.path.join(OUT_DIR, 'compare_gamejs.png'))
+    print(f"game.js-equivalent BG -> {OUT_DIR}/compare_gamejs.png")
 
-    # 5. Playfield-only discrepancies
-    pf_mismatches = 0
-    pf_details = {}
-    for y in range(FY, FY + MAP_ROWS * 16):
-        for x in range(FX, FX + MAP_COLS * 16):
-            r = ref_canvas.get(x, y)
-            g = gjs_canvas.get(x, y)
-            if r != g:
-                pf_mismatches += 1
-                mc = (x - FX) // 16
-                mr = (y - FY) // 16
-                key = (mr, mc)
-                if key not in pf_details:
-                    pf_details[key] = {'count': 0, 'tile_type': stage_grid[mr][mc]}
-                pf_details[key]['count'] += 1
+    # ── Pixel diff ───────────────────────────────────────────────────────────
+    diff_canvas = Canvas(256, 240)
+    dc = 0
+    rd = {'playfield_tiles':0,'playfield_bg':0,'border_area':0,'outside_playfield':0,'eagle_area':0}
+    for y in range(240):
+        for x in range(256):
+            rp, jp = rom_canvas.get(x,y), js_canvas.get(x,y)
+            if rp != jp:
+                dc += 1
+                diff_canvas.set(x, y, (255,0,0))
+                ipf = FX<=x<FX+MAP_COLS*META and FY<=y<FY+MAP_ROWS*META
+                ibr = FX-4<=x<FX+MAP_COLS*META+4 and FY-4<=y<FY+MAP_ROWS*META+4+8
+                iea = ex-16<=x<ex+16 and ey-16<=y<ey+8
+                if iea: rd['eagle_area']+=1
+                elif ipf:
+                    mc2,mr2 = (x-FX)//META,(y-FY)//META
+                    if 0<=mr2<MAP_ROWS and 0<=mc2<MAP_COLS:
+                        rd['playfield_bg' if grid[mr2][mc2]==13 else 'playfield_tiles']+=1
+                    else: rd['playfield_bg']+=1
+                elif ibr: rd['border_area']+=1
+                else: rd['outside_playfield']+=1
+            else:
+                diff_canvas.set(x,y,(rp[0]//4,rp[1]//4,rp[2]//4))
+    diff_canvas.save(os.path.join(OUT_DIR, 'compare_diff.png'))
+    print(f"Diff image -> {OUT_DIR}/compare_diff.png")
 
-    print('')
-    print('Playfield-only mismatches: %d' % pf_mismatches)
-    if pf_details:
-        print('  Mismatching metatiles:')
-        for (mr, mc), info in sorted(pf_details.items()):
-            print('    metatile (%d,%d) type=%d: %d pixels differ' % (mc, mr, info['tile_type'], info['count']))
+    print(f"\n=== PIXEL DIFF SUMMARY ===")
+    print(f"Total: {dc} / {256*240} ({100*dc/(256*240):.1f}%)")
+    for k,v in sorted(rd.items(), key=lambda x:-x[1]):
+        if v: print(f"  {k}: {v}")
 
+    print(f"\n=== DETAILED DISCREPANCIES ===")
+    print(f"\n1. BACKGROUND COLOR: ROM=(0,0,0) vs JS=(8,8,8) C.FIELD")
+    print(f"\n2. BORDER: ROM=none, JS=gray #404040 rect ({rd['border_area']} px)")
+    print(f"\n3. OUTSIDE PLAYFIELD: ROM=full nametable, JS=only 13x13 ({rd['outside_playfield']} px)")
+
+    if rd['playfield_tiles'] > 0:
+        print(f"\n4. PLAYFIELD TILES: {rd['playfield_tiles']} pixel diffs!")
+        s = 0
+        for y in range(FY, FY+MAP_ROWS*META):
+            for x in range(FX, FX+MAP_COLS*META):
+                mc2,mr2 = (x-FX)//META,(y-FY)//META
+                if 0<=mr2<MAP_ROWS and 0<=mc2<MAP_COLS and grid[mr2][mc2]!=13:
+                    rp,jp = rom_canvas.get(x,y), js_canvas.get(x,y)
+                    if rp!=jp and s<10:
+                        print(f"   type {grid[mr2][mc2]} at ({mc2},{mr2}) px({x},{y}): ROM={rp} JS={jp}")
+                        s+=1
+    else:
+        print(f"\n4. PLAYFIELD TILES: All match!")
+
+    if rd['eagle_area']:
+        print(f"\n5. EAGLE AREA: {rd['eagle_area']} diffs (ROM has BG tiles $C8-CB; JS uses sprites)")
+
+    print(f"\n6. TILE $00 (MORTAR): ROM==PNG: {rom_bg_tiles[0]==get_png_tile(0)}")
+    if rom_bg_tiles[0] != get_png_tile(0):
+        for py in range(8):
+            r1,r2 = rom_bg_tiles[0][py*8:(py+1)*8], get_png_tile(0)[py*8:(py+1)*8]
+            if r1!=r2: print(f"   Row {py}: ROM={r1} PNG={r2}")
+
+    print(f"\n7. CHR TILES (ROM vs PNG):")
+    tiles = [0x00,0x0F,0x10,0x12,0x20,0x21,0x22]
+    names = {0x00:'mortar',0x0F:'brick',0x10:'steel',0x12:'water',0x20:'steel_brd',0x21:'ice',0x22:'trees'}
+    ok = True
+    for ti in tiles:
+        if rom_bg_tiles[ti] != get_png_tile(ti):
+            ok = False
+            print(f"   MISMATCH ${ti:02X} ({names.get(ti,'?')})")
+            for py in range(8):
+                r1,r2 = rom_bg_tiles[ti][py*8:(py+1)*8], get_png_tile(ti)[py*8:(py+1)*8]
+                if r1!=r2: print(f"     Row {py}: ROM={r1} PNG={r2}")
+    if ok: print(f"   All {len(tiles)} tiles match.")
+
+    print(f"\n8. BRICK brickBits:")
+    for t in range(5):
+        chr4 = TILE_CHR[t]
+        bits = sum((1<<q) for q in range(4) if chr4[q]==0x0F)
+        js = {0:0b1010,1:0b1100,2:0b0101,3:0b0011,4:0xF}[t]
+        n = ['BRICK_TL','BRICK_TR','BRICK_BL','BRICK_BR','BRICK'][t]
+        print(f"   {n}: CHR=0b{bits:04b} JS=0b{js:04b} {'OK' if bits==js else 'MISMATCH!'}")
+
+    print("\n=== DONE ===")
 
 if __name__ == '__main__':
     main()
