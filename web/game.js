@@ -37,7 +37,7 @@ const NES_PAL = [
 function grayToIdx(r) { return r < 0x2B ? 0 : r < 0x7F ? 1 : r < 0xD5 ? 2 : 3; }
 
 let chrOff = null;                // offscreen canvas 2d context for CHR sheet
-const tileCache = new Map();      // cached ImageData keyed by "abs_pal_transp"
+const tileCache = new Map();      // cached offscreen canvases keyed by "abs_pal_transp"
 
 function initCHR() {
   const img = new Image();
@@ -54,17 +54,22 @@ function initCHR() {
 // Draw one 8×8 CHR tile at NES pixel (destX, destY).
 // tileAbs: 0–255 = BG bank, 256–511 = sprite bank.
 // transparent: skip color-0 pixels (sprites show BG underneath).
+// Uses offscreen canvas cache + drawImage for proper alpha compositing.
 function drawCHRTile(tileAbs, palIdx, destX, destY, transparent = false) {
   if (!chrOff) return;
   const key = `${tileAbs}_${palIdx}_${transparent ? 1 : 0}`;
-  let idata = tileCache.get(key);
-  if (!idata) {
+  let cached = tileCache.get(key);
+  if (!cached) {
     const tcol = tileAbs % 32, trow = (tileAbs / 32) | 0;
     const sx = tcol * CHR_CELL + CHR_BORDER;
     const sy = trow * CHR_CELL + CHR_BORDER;
     const pdata = chrOff.getImageData(sx, sy, 8, 8).data;
     const pal = NES_PAL[palIdx];
-    idata = ctx.createImageData(8 * SCALE, 8 * SCALE);
+    const w = 8 * SCALE, h = 8 * SCALE;
+    cached = document.createElement('canvas');
+    cached.width = w; cached.height = h;
+    const cctx = cached.getContext('2d');
+    const idata = cctx.createImageData(w, h);
     for (let py = 0; py < 8; py++) {
       for (let px2 = 0; px2 < 8; px2++) {
         const cidx = grayToIdx(pdata[(py * 8 + px2) * 4]);
@@ -75,14 +80,15 @@ function drawCHRTile(tileAbs, palIdx, destX, destY, transparent = false) {
         const bb = parseInt(hex.slice(5, 7), 16);
         for (let sy2 = 0; sy2 < SCALE; sy2++)
           for (let sx2 = 0; sx2 < SCALE; sx2++) {
-            const i = ((py * SCALE + sy2) * (8 * SCALE) + (px2 * SCALE + sx2)) * 4;
+            const i = ((py * SCALE + sy2) * w + (px2 * SCALE + sx2)) * 4;
             idata.data[i] = rr; idata.data[i+1] = gg; idata.data[i+2] = bb; idata.data[i+3] = 255;
           }
       }
     }
-    tileCache.set(key, idata);
+    cctx.putImageData(idata, 0, 0);
+    tileCache.set(key, cached);
   }
-  ctx.putImageData(idata, Math.round(destX * SCALE), Math.round(destY * SCALE));
+  ctx.drawImage(cached, Math.round(destX * SCALE), Math.round(destY * SCALE));
 }
 
 // Draw 2×2 BG metatile (16×16px): chrTiles = [TL, TR, BL, BR] BG tile indices
