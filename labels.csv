@@ -248,8 +248,12 @@
 1,C18A,GameLoopTop
 1,C1A0,StageEndHandler
 0,99D2,ControllerDoubleRead
+1,C912,BrickWallInit
+1,C9BB,SteelWallFortify
 1,D214,StrGAME
 1,D219,StrOVER
+1,D22D,EagleWallBrickData
+1,D249,EagleWallSteelData
 1,D291,StrPeaceBeWithYou
 1,D2A4,StrNowLongWar
 1,D2B1,StrComesTo

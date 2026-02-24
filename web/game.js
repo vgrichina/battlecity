@@ -1102,25 +1102,38 @@ function eagleAnimPhase(t) {
   return Math.abs(Math.abs(a - 5) - 5);
 }
 
-// ROM $E3F2 DrawEagleWalls  $E3E2 EagleWallClosed  EAGLE_POS (120,216)
+// ROM $C912 BrickWallInit / $C9BB SteelWallFortify — EAGLE_POS (120,216)
+// Walls are 8 individual 8×8 BG tiles in a Π (inverted-U) shape around the
+// 16×16 eagle BG area.  ROM nametable data ($D22D/$D249):
+//   Row 25 (ey-16): [00, 0F, 0F, 0F, 0F, 00]  — top bar, 4 tiles
+//   Row 26 (ey-8):  [00, 0F, E,  E,  0F, 00]  — left+right legs + eagle top
+//   Row 27 (ey):    [00, 0F, E,  E,  0F, 00]  — left+right legs + eagle bottom
+// Tile $0F = brick (BG0), $10 = steel (BG3).
 function drawEagleBase() {
   const ex = EAGLE.x, ey = EAGLE.y;
 
-  // Surrounding wall tiles: 4 × 16×16 metatile blocks surrounding 32×32 eagle area
-  // ROM $E3F2 positions: (ex-16,ey-16), (ex,ey-16), (ex-16,ey), (ex,ey)
   // Flash steel↔brick when shovelTimer < 4 (last 64 frames); full steel ≥4; brick at 0
   const isFort = shovelTimer >= 4 || (shovelTimer > 0 && !!((frameCount >> 3) & 1));
   if (chrOff) {
     const wTile = isFort ? 0x10 : 0x0F;  // steel or brick CHR tile
     const wPal  = isFort ? 3 : 0;         // BG3 steel or BG0 brick
-    const wt4 = [wTile, wTile, wTile, wTile];
-    drawMetatile(wt4, wPal, ex - 16, ey - 16);
-    drawMetatile(wt4, wPal, ex,      ey - 16);
-    drawMetatile(wt4, wPal, ex - 16, ey);
-    drawMetatile(wt4, wPal, ex,      ey);
+    // Top bar: 4 tiles across  (ex-16..ex+8, ey-16)
+    drawCHRTile(wTile, wPal, ex - 16, ey - 16);
+    drawCHRTile(wTile, wPal, ex - 8,  ey - 16);
+    drawCHRTile(wTile, wPal, ex,      ey - 16);
+    drawCHRTile(wTile, wPal, ex + 8,  ey - 16);
+    // Left leg: 2 tiles  (ex-16, ey-8..ey)
+    drawCHRTile(wTile, wPal, ex - 16, ey - 8);
+    drawCHRTile(wTile, wPal, ex - 16, ey);
+    // Right leg: 2 tiles  (ex+8, ey-8..ey)
+    drawCHRTile(wTile, wPal, ex + 8,  ey - 8);
+    drawCHRTile(wTile, wPal, ex + 8,  ey);
   } else {
     const wc = isFort ? C.BASE_FORT : C.BASE_WALL;
-    fillRect(ex - 16, ey - 16, 32, 32, wc);
+    // Π shape fallback: top bar + two legs
+    fillRect(ex - 16, ey - 16, 32, 8, wc);   // top bar
+    fillRect(ex - 16, ey - 8,  8, 16, wc);    // left leg
+    fillRect(ex + 8,  ey - 8,  8, 16, wc);    // right leg
   }
 
   // Eagle sprite: 8 OAM entries in 4×2 grid = 32×32px, top-left at (ex-16, ey-16)
