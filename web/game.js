@@ -1139,10 +1139,34 @@ function drawTile(col, row) {
   }
 }
 
+// ROM nametable border: tile $00 (mortar pattern) with BG0 palette at all
+// positions outside the 26×26 playfield grid (cols 2–27, rows 2–27).
+// NES nametable = 32 cols × 30 rows of 8×8 tiles = 256×240.
+function drawBorderTiles() {
+  if (!chrOff) return;
+  // Top 2 rows (rows 0–1, all 32 cols)
+  for (let r = 0; r < 2; r++)
+    for (let c = 0; c < 32; c++)
+      drawCHRTile(0x00, 0, c * 8, r * 8);
+  // Bottom 2 rows (rows 28–29, all 32 cols)
+  for (let r = 28; r < 30; r++)
+    for (let c = 0; c < 32; c++)
+      drawCHRTile(0x00, 0, c * 8, r * 8);
+  // Left 2 cols (rows 2–27, cols 0–1)
+  for (let r = 2; r < 28; r++)
+    for (let c = 0; c < 2; c++)
+      drawCHRTile(0x00, 0, c * 8, r * 8);
+  // Right 4 cols (rows 2–27, cols 28–31)
+  for (let r = 2; r < 28; r++)
+    for (let c = 28; c < 32; c++)
+      drawCHRTile(0x00, 0, c * 8, r * 8);
+}
+
 // ROM $F239 LevelTileLoader: draws all 13×13 metatiles
 function drawField() {
-  // NES PPU nametable: no border decoration; playfield is pure black
+  // NES PPU nametable: playfield is pure black, border gets tile $00 mortar
   fillRect(FX, FY, GW * META, GH * META + 8, C.FIELD);
+  drawBorderTiles();
 
   for (let row = 0; row < GH; row++)
     for (let col = 0; col < GW; col++)
