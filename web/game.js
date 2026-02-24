@@ -253,7 +253,6 @@ function passable8(px, py) {
 const C = {
   BG:        '#000000',
   FIELD:     '#000000',
-  BORDER:    '#404040',
   BRICK:     '#b03000',
   BRICK_HL:  '#e84000',
   STEEL:     '#607090',
@@ -1142,8 +1141,7 @@ function drawTile(col, row) {
 
 // ROM $F239 LevelTileLoader: draws all 13×13 metatiles
 function drawField() {
-  // Border rectangle  ROM NES PPU nametable borders
-  fillRect(FX - 4, FY - 4, GW * META + 8, GH * META + 8 + 8, C.BORDER);
+  // NES PPU nametable: no border decoration; playfield is pure black
   fillRect(FX, FY, GW * META, GH * META + 8, C.FIELD);
 
   for (let row = 0; row < GH; row++)
