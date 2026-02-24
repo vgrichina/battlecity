@@ -395,3 +395,7 @@
 # Session: NMI handler full decode
 1,D394,WaitFrame
 1,D439,ResetPPUAddr
+# Session: reference comparison investigation
+1,D7EC,NametableClearAll
+1,C830,PreLevelInit
+1,D7CA,AdvanceNTPointer
