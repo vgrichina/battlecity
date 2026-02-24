@@ -110,6 +110,64 @@ function drawSprite16(sprTiles, palIdx, px, py, pt1 = false) {
   drawCHRTile(ti(sprTiles[3]), palIdx, px+8, py+8, true);
 }
 
+// Draw a single CHR tile magnified 4× (8×8 → 32×32 NES pixels) for big text
+// ROM $D87E DrawBigSpriteTile: renders each CHR tile as 4×4 OAM sprites
+function drawBigCHRTile(tileAbs, palIdx, destX, destY) {
+  if (!chrOff) return;
+  // Reuse the normal transparent-mode cached tile (8*SCALE px)
+  const key = `${tileAbs}_${palIdx}_1`;
+  let cached = tileCache.get(key);
+  if (!cached) {
+    drawCHRTile(tileAbs, palIdx, -100, -100, true);
+    cached = tileCache.get(key);
+    if (!cached) return;
+  }
+  const prev = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(cached,
+    Math.round(destX * SCALE), Math.round(destY * SCALE),
+    32 * SCALE, 32 * SCALE);
+  ctx.imageSmoothingEnabled = prev;
+}
+
+// Draw NES-style text using BG-bank CHR font tiles
+// ROM $D8F7 DrawSpriteString: ASCII-indexed tiles ($41='A'..$5A='Z', $30='0'..$39='9', $20=space)
+// x,y = top-left corner in NES pixels; palIdx = BG palette index
+function drawNesText(str, x, y, palIdx) {
+  const s = str.toUpperCase();
+  if (chrOff) {
+    for (let i = 0; i < s.length; i++) {
+      const code = s.charCodeAt(i);
+      if (code >= 0x21 && code <= 0x5F) {
+        drawCHRTile(code, palIdx, x + i * 8, y);
+      }
+    }
+  } else {
+    // Canvas font fallback (before CHR sheet loads)
+    ctx.fillStyle = NES_PAL[palIdx][3];
+    ctx.font = `bold ${8 * SCALE}px monospace`;
+    ctx.fillText(s, Math.round(x * SCALE), Math.round((y + 7) * SCALE));
+  }
+}
+
+// Draw magnified NES text (4×: each 8×8 char → 32×32 NES pixels)
+// ROM $C53E DrawGameOverScreen uses DrawBigSpriteTile for "GAME"/"OVER"
+function drawBigNesText(str, x, y, palIdx) {
+  const s = str.toUpperCase();
+  if (chrOff) {
+    for (let i = 0; i < s.length; i++) {
+      const code = s.charCodeAt(i);
+      if (code >= 0x21 && code <= 0x5F) {
+        drawBigCHRTile(code, palIdx, x + i * 32, y);
+      }
+    }
+  } else {
+    ctx.fillStyle = NES_PAL[palIdx][3];
+    ctx.font = `bold ${28 * SCALE}px monospace`;
+    ctx.fillText(s, Math.round(x * SCALE), Math.round((y + 28) * SCALE));
+  }
+}
+
 // ─── Playfield geometry  ──────────────────────────────────────────────────────
 // ROM $D5FC TileAddrCompute, ROM $F27D LevelMapData comment (16 px origin)
 const FX   = 16;   // ROM $10 — playfield left edge (NES pixels)
@@ -1431,57 +1489,64 @@ function drawHUD() {
 
   // Enemy count  ROM $C7BD DrawAllHUDKillIcons: 10 pairs of tank icons (2 columns)
   // ROM: BG tile $6A = small enemy tank icon; $11 = blank (erased on spawn)
-  text('ENEMY', hx + 1, hy + 8, C.HUD_TEXT, 5);
   const total = enemiesLeft + activeEnemyCount;
   for (let i = 0; i < Math.min(total, 20); i++) {
     const col = i % 2, row = Math.floor(i / 2);
     if (chrOff) {
-      drawCHRTile(0x6A, 3, hx + 2 + col * 8, hy + 8 + row * 8);
+      drawCHRTile(0x6A, 3, hx + 2 + col * 8, hy + 2 + row * 8);
     } else {
-      fillRect(hx + 2 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
-      fillRect(hx + 3 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
-      fillRect(hx + 7 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 2 + col * 8, hy + 2 + row * 8, 8, 6, C.ENEMY);
+      fillRect(hx + 3 + col * 8, hy + 3 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 7 + col * 8, hy + 3 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
     }
   }
 
-  // Stage number  ROM $41 StageNum
-  text(`S${stageIdx + 1}`, hx + 3, hy + 108, C.HUD_TEXT, 6);
+  // Stage number  ROM $41 StageNum — flag icon ($6B) + digit tiles
+  if (chrOff) {
+    drawCHRTile(0x6B, 3, hx + 4, hy + 90);  // flag icon
+    const sn = String(stageIdx + 1).padStart(2);
+    drawNesText(sn, hx + 4, hy + 98, 3);
+  } else {
+    text('S' + (stageIdx + 1), hx + 3, hy + 108, C.HUD_TEXT, 6);
+  }
 
-  // P1 lives  ROM $51 P1Lives; icon = BG tile $14 (PT1), BG3 palette (palIdx 3)
-  text('P1', hx + 3, hy + 124, C.P1, 6);
-  if (chrOff) drawCHRTile(0x14, 3, hx + 3, hy + 127);
-  else fillRect(hx + 3, hy + 127, 8, 6, C.P1);  // life tank icon fallback
-  text(`×${p1Lives + 1}`, hx + 13, hy + 133, C.HUD_TEXT, 6);
+  // P1 lives  ROM $51 P1Lives; "IP" label + tank icon ($14) + digit
+  if (chrOff) {
+    drawNesText('IP', hx + 4, hy + 114, 3);
+    drawCHRTile(0x14, 3, hx + 4, hy + 122);
+    drawNesText(String(p1Lives + 1), hx + 12, hy + 122, 3);
+  } else {
+    text('P1', hx + 3, hy + 124, C.P1, 6);
+    fillRect(hx + 3, hy + 127, 8, 6, C.P1);
+    text(String(p1Lives + 1), hx + 13, hy + 133, C.HUD_TEXT, 6);
+  }
 
   // Score  ROM $15-$1B P1Score (BCD in ROM; plain int here)
-  text('SCORE', hx + 1, hy + 152, C.HUD_TEXT, 5);
-  text(p1Score.toString().padStart(6, '0'), hx + 1, hy + 162, C.SCORE_COL, 6);
+  drawNesText(p1Score.toString().padStart(6, '0'), hx, hy + 138, 3);
 
   // Freeze indicator  ROM $0100 EnemyFreezeTimer
   if (freezeTimer > 0) {
-    text('FREEZE', hx + 1, hy + 175, '#40ffff', 5);
+    drawNesText('FREEZE', hx, hy + 152, 3);
   }
 }
 
-// ROM $CFAA PreGameDraw — "STAGE XX" banner
+// ROM $CFAA PreGameDraw — "STAGE XX" banner (CHR tile text, BG3 palette)
 function drawStageBanner() {
-  const bx = 42, by = 96, bw = 160, bh = 28;
+  const stageStr = 'STAGE  ' + String(stageIdx + 1);
+  const tw = stageStr.length * 8;  // text width in NES px
+  const bx = (256 - tw) / 2 - 8, by = 108, bw = tw + 16, bh = 16;
   fillRect(bx, by, bw, bh, '#000');
-  ctx.fillStyle = C.SCORE_COL;
-  ctx.font = `bold ${11 * SCALE}px monospace`;
-  ctx.fillText(`STAGE  ${stageIdx + 1}`, (bx + 12) * SCALE, (by + 20) * SCALE);
+  drawNesText(stageStr, bx + 8, by + 4, 3);
 }
 
-// ROM $C53E DrawGameOverScreen
+// ROM $C53E DrawGameOverScreen — big 32×32 CHR tiles via DrawBigSpriteTile ($D87E)
 function drawGameOver() {
-  fillRect(42, 88, 160, 40, '#000');
-  ctx.fillStyle = C.GAMEOVER;
-  ctx.font = `bold ${14 * SCALE}px monospace`;
-  ctx.fillText('GAME', 58 * SCALE, 112 * SCALE);
-  ctx.fillText('OVER', 58 * SCALE, 128 * SCALE);
-  ctx.fillStyle = '#888';
-  ctx.font      = `${6 * SCALE}px monospace`;
-  ctx.fillText('SPACE/ENTER to retry', 20 * SCALE, 148 * SCALE);
+  // "GAME" and "OVER": 4 chars × 32px = 128px wide, centered at x=64
+  fillRect(32, 80, 192, 84, '#000');
+  drawBigNesText('GAME', 64, 84, 3);
+  drawBigNesText('OVER', 64, 116, 3);
+  // Retry hint (web-only)
+  drawNesText('SPACE TO RETRY', 72, 152, 3);
 }
 
 // ROM $CAF1 StageClearTallyScreen → TallyScreenInit ($CD04)
@@ -1492,12 +1557,9 @@ function drawStageClear() {
   const px = 32, py = 68, pw = 192, ph = 100;
   fillRect(px, py, pw, ph, '#000000');
 
-  // Title
-  ctx.fillStyle = '#f8e800';
-  ctx.font = `bold ${9 * SCALE}px monospace`;
-  ctx.textAlign = 'center';
-  ctx.fillText('STAGE  CLEAR !', (px + pw / 2) * SCALE, (py + 12) * SCALE);
-  ctx.textAlign = 'left';
+  // Title — CHR tile text, BG3 palette (white)
+  const title = 'STAGE  CLEAR!';
+  drawNesText(title, px + (pw - title.length * 8) / 2, py + 4, 3);
 
   if (!tallyState) return;
   const ts = tallyState;
@@ -1530,21 +1592,17 @@ function drawStageClear() {
       fillRect(px + 2, ry, 16, 16, ['#aaaaaa','#ffaa44','#ff4444','#444444'][row]);
     }
 
-    // Type label
-    ctx.fillStyle = (tallied > 0 || row <= ts.row) ? '#ffffff' : '#666666';
-    ctx.font = `${6 * SCALE}px monospace`;
-    ctx.fillText(TYPE_NAMES[row], (px + 22) * SCALE, (ry + 10) * SCALE);
+    // Type label — CHR tile text
+    if (tallied > 0 || row <= ts.row) {
+      drawNesText(TYPE_NAMES[row], px + 22, ry + 4, 3);
+    }
 
     // Kill count × pts = score  (only show if row has been reached)
     if (row <= ts.row || (ts.done && total > 0)) {
       const rowScore = tallied * PTS[row];
-      ctx.fillStyle = '#f8e800';
-      ctx.font = `${6 * SCALE}px monospace`;
-      ctx.textAlign = 'right';
-      ctx.fillText(`${tallied}×${PTS[row]}`, (px + pw - 50) * SCALE, (ry + 10) * SCALE);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(rowScore.toString().padStart(5), (px + pw - 2) * SCALE, (ry + 10) * SCALE);
-      ctx.textAlign = 'left';
+      const killStr = tallied + 'X' + PTS[row];
+      drawNesText(killStr, px + pw - 50, ry + 4, 3);
+      drawNesText(rowScore.toString().padStart(5), px + pw - 42, ry + 4, 3);
     }
   }
 
@@ -1553,12 +1611,8 @@ function drawStageClear() {
     const totalScore = killCounts.reduce((s, n, i) => s + n * PTS[i], 0);
     const ly = py + ph - 8;
     fillRect(px + 2, ly - 8, pw - 4, 1, '#666666');
-    ctx.fillStyle = '#f8e800';
-    ctx.font = `bold ${6 * SCALE}px monospace`;
-    ctx.fillText('TOTAL', (px + 4) * SCALE, ly * SCALE);
-    ctx.textAlign = 'right';
-    ctx.fillText(totalScore.toString().padStart(6), (px + pw - 2) * SCALE, ly * SCALE);
-    ctx.textAlign = 'left';
+    drawNesText('TOTAL', px + 4, ly - 7, 3);
+    drawNesText(totalScore.toString().padStart(6), px + pw - 50, ly - 7, 3);
   }
 }
 
@@ -1612,10 +1666,8 @@ function render() {
   if (gamePhase === 'gameover') drawGameOver();
   if (gamePhase === 'clear')    drawStageClear();
 
-  // Controls reminder
-  ctx.fillStyle = '#404040';
-  ctx.font = `${4 * SCALE}px monospace`;
-  ctx.fillText('WASD/ARROWS: move  SPACE/X: fire', 8 * SCALE, 235 * SCALE);
+  // Controls reminder (web-only, CHR tile text)
+  drawNesText('ARROWS:MOVE  SPACE:FIRE', 36, 228, 0);
 }
 
 // ─── Boot  ────────────────────────────────────────────────────────────────────
