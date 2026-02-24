@@ -2901,7 +2901,7 @@ Level tiles and eagle still render incorrectly in the browser. Root causes ident
 
 - [x] **Verify eagle area in LEVEL_MAPS grid data**: **Done (session 7).** Checked Stage 1 `LEVEL_MAPS[0]`: row 11 cols 5–7 = [13,13,13], row 12 cols 5–7 = [13,13,13] — all type 13 (empty). The level grid does NOT contain wall tiles at the eagle area. Confirmed: `drawEagleBase()` must draw the Π-shaped walls (fixed in the task above).
 
-- [ ] **Fix NES_PAL comment labels (BG1/BG2 swapped)**: game.js:27–28 comments say `BG1 trees` and `BG2 water` but ROM $D44E (BG1) = $0F,$3C,$10,$12 is the **water** palette (NES $3C = light cyan) and ROM $D452 (BG2) = $0F,$29,$09,$0B is the **trees** palette (NES $29 = green). The actual hex color values in the arrays are correct — only the comment labels are swapped. Fix: swap "trees" and "water" in the comments on lines 27–28.
+- [x] **Fix NES_PAL comment labels (BG1/BG2 swapped)**: **Done (session 8).** Swapped comment labels on web/game.js lines 27–28: BG1 now says "water" (ROM $D44E: $0F,$3C,$10,$12 — NES $3C = light cyan) and BG2 now says "trees" (ROM $D452: $0F,$29,$09,$0B — NES $29 = green). Hex color values were already correct; only the comment text was swapped.
 
 **Text rendering — replace canvas fonts with NES CHR tiles:**
 
