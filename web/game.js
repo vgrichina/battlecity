@@ -252,7 +252,7 @@ function passable8(px, py) {
 // ROM $D44A PaletteData  $D475 PaletteColorTable
 const C = {
   BG:        '#000000',
-  FIELD:     '#080808',
+  FIELD:     '#000000',
   BORDER:    '#404040',
   BRICK:     '#b03000',
   BRICK_HL:  '#e84000',
