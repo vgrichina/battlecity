@@ -556,7 +556,11 @@ function spawnEnemy() {
 // ─── Input  ───────────────────────────────────────────────────────────────────
 // ROM $D68A NMI_Sub2  $DC23 PlayerInputUpdate
 const keys = {};
-window.addEventListener('keydown', e => { keys[e.code] = true;  e.preventDefault(); });
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyM') toggleSound();  // M = mute/unmute
+  e.preventDefault();
+});
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
 
 // Returns direction (0-3) or -1 if no d-pad held
@@ -786,6 +790,7 @@ function moveBullets() {
         Math.abs(b.y - EAGLE.y) < 8) {
       eagleAlive    = false;
       eagleExpTimer = 39;  // ROM $E838 STA #$27 → $68; $27=39 decimal
+      sfxEagleHit();  // ROM $030B=1
       triggerBulletExplosion(b);
       b.active = false;
       continue;
@@ -886,6 +891,7 @@ function bulletEntityCollision() {
         if (e.armorHits > 0) {
           e.armorHits--;
           e.blinkFrame = 20;   // brief blink to signal hit  ROM $EA63
+          sfxArmorHit();  // ROM $030E=1 player bullet hits armored tank
         } else {
           killEntity(e);
         }
@@ -960,12 +966,14 @@ function killEntity(e) {
     const killer = e.lastHitBy || 0;
     if (killer === 0) {
       p1Score += pts;
-      while (p1Score >= p1NextLifeScore) { p1Lives++; p1NextLifeScore += 20000; }
+      while (p1Score >= p1NextLifeScore) { p1Lives++; sfxLifeUp(0); p1NextLifeScore += 20000; }
     } else {
       p2Score += pts;
-      while (p2Score >= p2NextLifeScore) { p2Lives++; p2NextLifeScore += 20000; }
+      while (p2Score >= p2NextLifeScore) { p2Lives++; sfxLifeUp(1); p2NextLifeScore += 20000; }
     }
     killCounts[Math.min(e.type, 3)]++;  // ROM $CD04 TallyScreenInit: per-type kill counter
+
+    sfxEntityKill();  // ROM $030A=1 entity kill explosion + noise burst
 
     // Power-up tank drops power-up  ROM $E35D PowerUpSpawn
     if (e.powerUpTank && !powerUp) {
@@ -991,6 +999,7 @@ function spawnPowerUp() {
     if (!powerUp || Math.abs(x - powerUp.x) >= 8 || Math.abs(y - powerUp.y) >= 8) break;
   }
   powerUp = { x, y, type };
+  sfxPowerUpAppear();  // ROM $0309=1
 }
 
 function checkPowerUpCollision() {
@@ -1031,7 +1040,7 @@ function applyPowerUp(e, type) {
       }
       break;
     case 5:  // Tank/1-Up  ROM $EBE3: INC $51/$52
-      if (e.slot === 0) p1Lives++; else p2Lives++;
+      if (e.slot === 0) { p1Lives++; sfxLifeUp(0); } else { p2Lives++; sfxLifeUp(1); }
       break;
   }
 }
@@ -1080,6 +1089,7 @@ function checkStageClear() {
   if (enemiesLeft === 0 && activeEnemyCount === 0) {
     gamePhase  = 'clear';
     phaseTimer = 60;    // initial pause before tally drain begins  ROM $CAF1 StageClearTallyScreen
+    sfxStageClear();  // ROM stage-clear melody (stops BGM, plays slots 21-23)
     tallyState = {
       countsLeft: [...killCounts],  // counts down to 0 as score is tallied
       row:        0,                // current row being drained (0-3)
@@ -1147,6 +1157,7 @@ function update() {
           gamePhase      = 'victory';
           victoryPhase   = 0;
           victoryTimer   = 180;   // ~3s on "PEACE BE WITH YOU" screen
+          sfxVictory();  // ROM victory melody (stops BGM, plays slots 24-26)
           victoryScrollX = 0;
         } else {
           initLevel(stageIdx + 1);
@@ -1209,6 +1220,7 @@ function update() {
       if (goScrollTimer === 0) {
         gamePhase  = 'gameover';           // ROM $C53E DrawGameOverScreen follows
         phaseTimer = 240;
+        sfxGameOver();  // stop BGM on game over
         // ROM $D9F0 CompareAndUpdateHiScore: compare P1/P2 scores vs hiScore
         newHiScorePlayer = 0;
         if (p1Score > hiScore) { hiScore = p1Score; newHiScorePlayer = 1; }
@@ -1930,6 +1942,7 @@ function drawVictoryScreen() {
 // ROM $C65C AttractWait: 240-frame loop with BlinkTitleSprite ($C69A)
 // ROM $CFAA PreGameDraw: draws "BATTLE" (26,46) + "CITY" (60,86) via DrawSpriteString
 function enterTitle() {
+  stopAllSounds();  // silence everything on return to title
   gamePhase   = 'title';
   titleFrame  = 0;
   titleSelect = 0;  // default: 1 PLAYER
