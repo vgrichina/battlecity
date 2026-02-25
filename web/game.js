@@ -313,7 +313,7 @@ const C = {
 // ─── Game state  ──────────────────────────────────────────────────────────────
 let stageIdx;       // ROM $41 StageNum
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
-let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover'
+let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory'
 let titleFrame;     // frame counter for title screen blink animation
 let titleSelect;    // 0 = 1 PLAYER, 1 = 2 PLAYERS (title screen menu cursor)
 let titleSelectHeld = false;  // edge-detect for title menu navigation
@@ -346,6 +346,9 @@ let goScrollTimer;   // ROM $0108: countdown (17→0, decrements every 16 frames
 let goScrollFrame;   // frame counter for 16-frame decrement interval
 let killCounts;             // [4] per-type enemy kills this stage  ROM $C625 ClearKillTallies
 let tallyState;             // tally animation state during 'clear' phase
+let victoryPhase;           // ROM $C44D DrawVictoryScreen phases: 0=peace text, 1=scroll, 2=war-end text, 3=wait
+let victoryTimer;           // frame counter for current victory phase
+let victoryScrollX;         // ROM $4F: horizontal scroll offset (0→240 over 240 frames)
 
 // ─── Brick sub-tile init  ─────────────────────────────────────────────────────
 // ROM $D745 SubTileBitmask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
@@ -1131,13 +1134,42 @@ function update() {
       }
     } else {
       phaseTimer--;
-      if (phaseTimer <= 0) initLevel(stageIdx + 1);
+      if (phaseTimer <= 0) {
+        if (stageIdx === LEVEL_MAPS.length - 1) {
+          // ROM $C44D: victory screen after all 35 stages cleared
+          gamePhase      = 'victory';
+          victoryPhase   = 0;
+          victoryTimer   = 180;   // ~3s on "PEACE BE WITH YOU" screen
+          victoryScrollX = 0;
+        } else {
+          initLevel(stageIdx + 1);
+        }
+      }
     }
     return;
   }
   if (gamePhase === 'gameover') {
     phaseTimer--;
     if (phaseTimer <= 0 && (keys['Space'] || keys['Enter'])) enterTitle();
+    return;
+  }
+  // ROM $C44D DrawVictoryScreen: 4-phase victory sequence
+  if (gamePhase === 'victory') {
+    victoryTimer--;
+    if (victoryPhase === 0) {
+      // Phase 0: "PEACE BE WITH YOU" held for ~3s
+      if (victoryTimer <= 0) { victoryPhase = 1; victoryTimer = 240; }
+    } else if (victoryPhase === 1) {
+      // Phase 1: 240-frame horizontal scroll (ROM: INC $4F until $F0)
+      victoryScrollX = 240 - victoryTimer;
+      if (victoryTimer <= 0) { victoryPhase = 2; victoryTimer = 240; victoryScrollX = 0; }
+    } else if (victoryPhase === 2) {
+      // Phase 2: "NOW LONG WAR" / "COMES TO" / "AN END" held ~4s
+      if (victoryTimer <= 0) victoryPhase = 3;
+    } else {
+      // Phase 3: wait for keypress → return to title
+      if (keys['Space'] || keys['Enter']) enterTitle();
+    }
     return;
   }
 
@@ -1789,7 +1821,8 @@ function drawStageClear() {
 // ROM $D96D FlushPPUQueue  NMI OAM DMA
 function render() {
   // ROM $C65C AttractWait: title screen is a separate full-screen render
-  if (gamePhase === 'title') { drawTitleScreen(); return; }
+  if (gamePhase === 'title')   { drawTitleScreen();   return; }
+  if (gamePhase === 'victory') { drawVictoryScreen(); return; }
 
   ctx.fillStyle = C.BG;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1830,6 +1863,42 @@ function render() {
 
   // Controls reminder (web-only, CHR tile text)
   drawNesText('ARROWS:MOVE  SPACE:FIRE', 36, 228, 0);
+}
+
+// ─── Victory screen  ────────────────────────────────────────────────────────
+// ROM $C44D DrawVictoryScreen: "PEACE BE WITH YOU" + decorative tiles + scroll
+// + "NOW LONG WAR" / "COMES TO" / "AN END"
+function drawVictoryScreen() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (victoryPhase === 0 || victoryPhase === 1) {
+    // Screen 1: "PEACE BE WITH YOU" + decorative tiles
+    // ROM: PPUQueueTiles from $D291, col=7 row=10 → NES (56,80)
+    // ROM: PPUQueueTiles from $D145, col=12 row=14 → NES (96,112), 9 deco tiles $60-$68
+    const sx = -victoryScrollX;  // scroll offset (0 during phase 0)
+    drawNesText('PEACE BE WITH YOU', 56 + sx, 80, 3);
+    // Decorative tiles $60-$68 at (96,112)
+    if (chrOff) {
+      for (let i = 0; i < 9; i++) {
+        drawCHRTile(0x60 + i, 3, 96 + i * 8 + sx, 112, true);
+      }
+    }
+  }
+  if (victoryPhase === 1 || victoryPhase >= 2) {
+    // Screen 2: "NOW LONG WAR" / "COMES TO" / "AN END"
+    // ROM: DrawRowTiles at col=10 row=7 (80,56), col=12 row=10 (96,80), col=13 row=13 (104,104)
+    const sx2 = victoryPhase === 1 ? (256 - victoryScrollX) : 0;
+    drawNesText('NOW LONG WAR', 80 + sx2, 56, 3);
+    drawNesText('COMES TO', 96 + sx2, 80, 3);
+    drawNesText('AN END', 104 + sx2, 104, 3);
+  }
+  if (victoryPhase === 3) {
+    // Blink "PRESS START" to return to title
+    if ((frameCount >> 4) & 1) {
+      drawNesText('PRESS START', 76, 160, 3);
+    }
+  }
 }
 
 // ─── Title screen  ───────────────────────────────────────────────────────────
