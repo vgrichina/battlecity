@@ -324,6 +324,8 @@ let p1NextLifeScore; // ROM $CF44 LivesGrantCheck: next score multiple of 20000 
 let p2Score;        // ROM $1C–$22 P2Score
 let p2Lives;        // ROM $52 P2Lives
 let p2NextLifeScore;
+let hiScore;        // ROM $3D–$43 HiScore (7-digit BCD in ROM; plain int here)
+let newHiScorePlayer; // ROM CompareAndUpdateHiScore ($D9F0): 0=none, 1=P1, 2=P2
 let enemiesLeft;    // ROM $7F EnemiesRemaining (total to spawn)
 let activeEnemyCount;
 let freezeTimer;    // ROM $0100 EnemyFreezeTimer (Timer power-up)
@@ -1102,6 +1104,7 @@ function update() {
       numPlayers = titleSelect + 1;  // 1 or 2
       p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
       p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
+      newHiScorePlayer = 0;
       initLevel(0);   // sets gamePhase='start'
     }
     return;
@@ -1200,6 +1203,10 @@ function update() {
       if (goScrollTimer === 0) {
         gamePhase  = 'gameover';           // ROM $C53E DrawGameOverScreen follows
         phaseTimer = 240;
+        // ROM $D9F0 CompareAndUpdateHiScore: compare P1/P2 scores vs hiScore
+        newHiScorePlayer = 0;
+        if (p1Score > hiScore) { hiScore = p1Score; newHiScorePlayer = 1; }
+        if (numPlayers === 2 && p2Score > hiScore) { hiScore = p2Score; newHiScorePlayer = 2; }
       }
     }
     if (goScrollTimer >= 10) {
@@ -1710,23 +1717,27 @@ function drawHUD() {
   // Score  ROM $15-$1B P1Score (BCD in ROM; plain int here)
   drawNesText(p1Score.toString().padStart(6, '0'), hx, hy + 138, 3);
 
+  // Hi-score  ROM $3D-$43 HiScore; "HI" label ($48,$49,$6B at nametable col 11)
+  drawNesText('HI', hx + 4, hy + 148, 3);
+  drawNesText(hiScore.toString().padStart(6, '0'), hx, hy + 156, 3);
+
   // P2 lives + score  ROM $52 P2Lives, $1C-$22 P2Score
   if (numPlayers === 2) {
     if (chrOff) {
-      drawNesText('IIP', hx, hy + 150, 3);
-      drawCHRTile(0x14, 3, hx + 4, hy + 158, true);
-      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 12, hy + 158, 3);
+      drawNesText('IIP', hx, hy + 168, 3);
+      drawCHRTile(0x14, 3, hx + 4, hy + 176, true);
+      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 12, hy + 176, 3);
     } else {
-      text('P2', hx + 3, hy + 156, C.P2, 6);
-      fillRect(hx + 3, hy + 160, 8, 6, C.P2);
-      text(String(Math.max(0, p2Lives + 1)), hx + 13, hy + 166, C.HUD_TEXT, 6);
+      text('P2', hx + 3, hy + 174, C.P2, 6);
+      fillRect(hx + 3, hy + 178, 8, 6, C.P2);
+      text(String(Math.max(0, p2Lives + 1)), hx + 13, hy + 184, C.HUD_TEXT, 6);
     }
-    drawNesText(p2Score.toString().padStart(6, '0'), hx, hy + 170, 3);
+    drawNesText(p2Score.toString().padStart(6, '0'), hx, hy + 188, 3);
   }
 
   // Freeze indicator  ROM $0100 EnemyFreezeTimer
   if (freezeTimer > 0) {
-    const fy = numPlayers === 2 ? hy + 184 : hy + 152;
+    const fy = numPlayers === 2 ? hy + 200 : hy + 168;
     drawNesText('FREEZE', hx, fy, 3);
   }
 }
@@ -1741,13 +1752,21 @@ function drawStageBanner() {
 }
 
 // ROM $C53E DrawGameOverScreen — big 32×32 CHR tiles via DrawBigSpriteTile ($D87E)
+// ROM $C4E9 NewHiScoreDisplay: "HISCORE" label ($D16B) + hi-score value ($D9C4) + palette flash
 function drawGameOver() {
   // "GAME" and "OVER": 4 chars × 32px = 128px wide, centered at x=64
-  fillRect(32, 80, 192, 84, '#000');
+  fillRect(32, 76, 192, 100, '#000');
   drawBigNesText('GAME', 64, 84, 3);
   drawBigNesText('OVER', 64, 116, 3);
+  // ROM $D9F0 CompareAndUpdateHiScore → NewHiScoreDisplay ($C4E9)
+  if (newHiScorePlayer > 0) {
+    // ROM: random palette flash via QueuePaletteWrite; approximate with cycling palIdx
+    const flashPal = (frameCount >> 2) & 7;  // cycle all 8 palette slots
+    drawNesText('HISCORE', 88, 148, flashPal);
+    drawNesText(hiScore.toString().padStart(6, '0'), 88, 158, flashPal);
+  }
   // Retry hint (web-only; ROM returns to attract loop via $C0A6)
-  drawNesText('PRESS START', 76, 152, 3);
+  drawNesText('PRESS START', 76, 172, 3);
 }
 
 // ROM $CAF1 StageClearTallyScreen → TallyScreenInit ($CD04)
@@ -1920,7 +1939,10 @@ function drawTitleScreen() {
   drawBigNesText('CITY', 60, 86, 3);
 
   // ROM copyright line (small text, BG3 palette)
-  drawNesText('NAMCO 1985', 80, 134, 3);
+  drawNesText('NAMCO 1985', 80, 126, 3);
+
+  // ROM HUD top score strip: "HI" + hi-score at nametable col 11
+  drawNesText('HI-' + hiScore.toString().padStart(6, '0'), 80, 134, 3);
 
   // ROM mode selection: "1 PLAYER" / "2 PLAYERS" with cursor
   drawNesText('1 PLAYER', 88, 142, 3);
@@ -1950,6 +1972,8 @@ function drawTitleScreen() {
 p1Score  = 0;
 p1Lives  = 2;  // display shows +1 (3 lives)
 p1NextLifeScore = 20000;  // ROM $CF44 LivesGrantCheck: first bonus-life threshold
+hiScore  = 20000;   // ROM $3D–$43: default starting hi-score
+newHiScorePlayer = 0;
 frameCount = 0;
 enterTitle();
 initCHR();     // load both CHR tile sheets (chr_all.png + chr_all_alt.png); setCHRBank() selects per stage
