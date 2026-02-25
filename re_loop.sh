@@ -3,7 +3,6 @@
 # Each session starts with a prompt; you watch/interact, then exit to trigger the next.
 # Usage: ./re_loop.sh [--max N] [--tasks N] [--dry-run]
 set -euo pipefail
-set -x
 
 cleanup() {
   echo ""; echo "Interrupted — killing session..."
@@ -24,7 +23,8 @@ done
 
 cd "$(dirname "$0")"
 remaining() { grep -c '^- \[ \]' REVERSE.md 2>/dev/null || true; }
-
+mkdir -p re_loop_sessions
+RUN_TS=$(date '+%Y%m%d_%H%M%S')
 
 for (( i=1; i<=MAX; i++ )); do
   [[ $(remaining) -eq 0 ]] && echo "All tasks done!" && break
@@ -32,9 +32,13 @@ for (( i=1; i<=MAX; i++ )); do
   echo "=== Session $i ($(remaining) tasks left) ==="
   [[ "$DRY" == true ]] && echo "[dry-run]" && break
 
+  LOG="re_loop_sessions/${RUN_TS}_session_$(printf '%03d' $i).txt"
+
   PROMPT="Continue the Battle City NES reverse-engineering and web port project.
 
-Read REVERSE.md Next Tasks. Pick the top $TASKS unchecked items (\`- [ ]\`).
+Before picking a task, read the 2-3 most recent session logs in re_loop_sessions/ (format: YYYYMMDD_HHMMSS_session_NNN.txt, sorted by name — pick the last few). Skim them to understand what was just investigated and what dead ends were hit, so you don't repeat the same work.
+
+Then read REVERSE.md Next Tasks. Pick the top $TASKS unchecked items (\`- [ ]\`).
 
 Tasks fall into two categories:
 
@@ -73,8 +77,8 @@ Do not re-document already-covered addresses. Stop after $TASKS tasks."
   echo "$PROMPT" | claude -p \
     --output-format stream-json \
     --max-turns 50 \
-    --allowedTools "Bash(python dis.py*),Bash(python xref.py*),Bash(python search_bytes.py*),Bash(python decode_tables.py*),Bash(python extract_tiles.py*),Bash(python render_screen.py*),Bash(python render_sprites.py*),Bash(python extract_level_maps.py*),Bash(python render_level.py*),Bash(python render_frame.py*),Bash(python dump_tiles.py*),Bash(python analyze_*),Bash(python3 analyze_*),Bash(python audit_*),Bash(python3 audit_*),Bash(python check_*),Bash(python3 check_*),Bash(python gen_*),Bash(python3 gen_*),Bash(python3 -m http.server*),Read,Edit,Write,Glob,Grep" \
-    | jq -r '
+    --allowedTools "Bash(python dis.py*),Bash(python xref.py*),Bash(python search_bytes.py*),Bash(python decode_tables.py*),Bash(python extract_tiles.py*),Bash(python render_screen.py*),Bash(python render_sprites.py*),Bash(python extract_level_maps.py*),Bash(python render_level.py*),Bash(python render_frame.py*),Bash(python compare_frames.py*),Bash(python dump_tiles.py*),Bash(python analyze_*),Bash(python3 analyze_*),Bash(python audit_*),Bash(python3 audit_*),Bash(python check_*),Bash(python3 check_*),Bash(python gen_*),Bash(python3 gen_*),Bash(python3 -m http.server*),Read,Edit,Write,Glob,Grep" \
+    | jq --unbuffered -r '
         if .type == "assistant" then
           .message.content[] |
           if .type == "text" then .text
@@ -98,7 +102,7 @@ Do not re-document already-covered addresses. Stop after $TASKS tasks."
           end
         else empty
         end
-      ' &
+      ' | tee "$LOG" &
   wait $!
 
   SUMMARY=$(git diff REVERSE.md | grep '^+- \[x\]' | head -1 | sed 's/^+- \[x\] //' || true)
@@ -106,8 +110,8 @@ Do not re-document already-covered addresses. Stop after $TASKS tasks."
 
   git add REVERSE.md labels.csv comments.csv web/ *.py
   if git diff --cached --quiet; then
-    echo "No changes — stopping loop."
-    break
+    echo "No changes — retrying same task..."
+    continue
   fi
 
   git commit -m "RE loop session $i: $SUMMARY"
