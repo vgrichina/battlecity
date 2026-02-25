@@ -315,9 +315,15 @@ let stageIdx;       // ROM $41 StageNum
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
 let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover'
 let titleFrame;     // frame counter for title screen blink animation
+let titleSelect;    // 0 = 1 PLAYER, 1 = 2 PLAYERS (title screen menu cursor)
+let titleSelectHeld = false;  // edge-detect for title menu navigation
+let numPlayers;     // 1 or 2; set at title screen before game start
 let p1Score;        // ROM $15–$1B P1Score (int; BCD in ROM)
 let p1Lives;        // ROM $51 P1Lives
 let p1NextLifeScore; // ROM $CF44 LivesGrantCheck: next score multiple of 20000 to award a life
+let p2Score;        // ROM $1C–$22 P2Score
+let p2Lives;        // ROM $52 P2Lives
+let p2NextLifeScore;
 let enemiesLeft;    // ROM $7F EnemiesRemaining (total to spawn)
 let activeEnemyCount;
 let freezeTimer;    // ROM $0100 EnemyFreezeTimer (Timer power-up)
@@ -334,7 +340,7 @@ let grid;           // GH×GW array of tile types (mutable, brick quarters get c
 let brickBits;      // GH×GW 4-bit brick sub-tile masks  ROM $D745 SubTileBitmask
 let entities;       // 8 entity objects (slots 0-7)
 let bullets;        // 10 bullet slots (0-7 primary per entity; 8-9 player double-shot)
-let playerRespawnTimer = 0;
+let playerRespawnTimer = [0, 0];  // per-player respawn timers
 let goScrollY;       // ROM $0106: Y position of in-field "GAME OVER" sprites (240=off-screen)
 let goScrollTimer;   // ROM $0108: countdown (17→0, decrements every 16 frames; 0=inactive)
 let goScrollFrame;   // frame counter for 16-frame decrement interval
@@ -375,6 +381,7 @@ function makeEntity(slot) {
     aiTimer: 0,       // AI direction-change countdown  ROM $DDFC RandomDirChange
     fireTimer: 0,     // unused; ROM $E216 uses per-frame 1/32 check instead
     deathTimer: 0,    // death explosion countdown: 12→0, drawn even while alive=false  ROM $E073 EntityKillDispatch
+    lastHitBy: 0,     // player slot that last hit this entity (for score routing in 2P)
     isPlayer: slot < 2,
   };
 }
@@ -413,7 +420,7 @@ function initLevel(idx) {
   spawnDelay        = Math.max(50, 190 - stageIdx * 4); // ROM $84 SpawnDelayMax: 190 - stageNum*4, min 50
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
   activeEnemyCount  = 0;
-  playerRespawnTimer = 0;
+  playerRespawnTimer = [0, 0];
   goScrollY     = 240;  // off-screen
   goScrollTimer = 0;    // inactive
   goScrollFrame = 0;
@@ -438,8 +445,9 @@ function initLevel(idx) {
   // Init bullet slots  ROM $E4C6 ClearBulletSlots
   bullets  = Array.from({ length: 10 }, (_, i) => makeBullet(i));
 
-  // Spawn P1  ROM $E417 PlayerRespawn
+  // Spawn players  ROM $E417 PlayerRespawn
   spawnPlayer(0);
+  if (numPlayers === 2) spawnPlayer(1);
 }
 
 // ─── Player respawn  ──────────────────────────────────────────────────────────
@@ -547,11 +555,25 @@ window.addEventListener('keydown', e => { keys[e.code] = true;  e.preventDefault
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
 
 // Returns direction (0-3) or -1 if no d-pad held
+// P1: Arrows (+ WASD in 1P mode); P2: WASD
 function p1Dir() {
-  if (keys['ArrowUp']    || keys['KeyW']) return 0;
-  if (keys['ArrowLeft']  || keys['KeyA']) return 1;
-  if (keys['ArrowDown']  || keys['KeyS']) return 2;
-  if (keys['ArrowRight'] || keys['KeyD']) return 3;
+  if (keys['ArrowUp'])    return 0;
+  if (keys['ArrowLeft'])  return 1;
+  if (keys['ArrowDown'])  return 2;
+  if (keys['ArrowRight']) return 3;
+  if (numPlayers === 1) {
+    if (keys['KeyW']) return 0;
+    if (keys['KeyA']) return 1;
+    if (keys['KeyS']) return 2;
+    if (keys['KeyD']) return 3;
+  }
+  return -1;
+}
+function p2Dir() {
+  if (keys['KeyW']) return 0;
+  if (keys['KeyA']) return 1;
+  if (keys['KeyS']) return 2;
+  if (keys['KeyD']) return 3;
   return -1;
 }
 
@@ -609,10 +631,12 @@ function moveEntities() {
     const onIce = irow >= 0 && irow < GH && icol >= 0 && icol < GW && grid[irow][icol] === T.ICE;
 
     if (e.isPlayer) {
+      // Skip P2 slot in 1P mode
+      if (e.slot === 1 && numPlayers === 1) continue;
       // ROM $DC23 frame throttle: process on 3 of every 4 frames
       if ((frameCount & 3) === 2) continue;
 
-      const d = p1Dir();
+      const d = e.slot === 0 ? p1Dir() : p2Dir();
       if (!onIce) {
         // Off ice: normal input — stop if no key, allow direction change
         if (d === -1) continue;
@@ -673,15 +697,26 @@ function dirToward(ex, ey, tx, ty) {
 
 // ─── Firing  ──────────────────────────────────────────────────────────────────
 // ROM $E140 FireBullet  $E1D6 PlayerFireCheck  $E216 EnemyFireCheck
-let fireHeld = false;
+let fireHeld = [false, false];  // per-player fire-held state
 
 function handlePlayerFire() {
-  const pressing = !!(keys['Space'] || keys['KeyX'] || keys['KeyJ']);
-  if (pressing && !fireHeld) {
+  // P1 fire: Space / X / J (+ E in 1P mode)
+  const p1press = !!(keys['Space'] || keys['KeyX'] || keys['KeyJ'] || (numPlayers === 1 && keys['KeyE']));
+  if (p1press && !fireHeld[0]) {
     const e = entities[0];
     if (e.alive && e.spawnAnim === 0) tryFire(e);
   }
-  fireHeld = pressing;
+  fireHeld[0] = p1press;
+
+  // P2 fire: E / Q  (only in 2P mode)
+  if (numPlayers === 2) {
+    const p2press = !!(keys['KeyE'] || keys['KeyQ']);
+    if (p2press && !fireHeld[1]) {
+      const e = entities[1];
+      if (e.alive && e.spawnAnim === 0) tryFire(e);
+    }
+    fireHeld[1] = p2press;
+  }
 }
 
 // ROM $E216 EnemyFireCheck: for each active enemy, fire if RNG & $1F == 0 (1/32 per frame)
@@ -839,6 +874,7 @@ function bulletEntityCollision() {
         killEntity(e);
       } else {
         // Player bullet → enemy  ROM $E8B1 armor check  $EA63 flash
+        e.lastHitBy = b.owner;  // track which player gets the kill score
         if (e.armorHits > 0) {
           e.armorHits--;
           e.blinkFrame = 20;   // brief blink to signal hit  ROM $EA63
@@ -853,8 +889,8 @@ function bulletEntityCollision() {
 // ─── Bullet–bullet cancel  ────────────────────────────────────────────────────
 // ROM $EAB5 BulletVsBulletCancel: player bullet vs enemy bullet within 6 px
 function bulletBulletCancel() {
-  // Player bullet slots: 0, 1, 8, 9  ROM $EAB5: slot&$06==0
-  const playerSlots = [0, 8];
+  // Player bullet slots: 0, 8 (P1), 1, 9 (P2)  ROM $EAB5: slot&$06==0
+  const playerSlots = numPlayers === 2 ? [0, 1, 8, 9] : [0, 8];
   for (const pi of playerSlots) {
     const pb = bullets[pi];
     if (!pb.active) continue;
@@ -871,6 +907,17 @@ function bulletBulletCancel() {
   }
 }
 
+// ROM $C62F CheckGameOver: start in-field scroll if all players are dead (no lives)
+function checkGameOverScroll() {
+  // In 2P, only trigger gameover scroll when BOTH players are out of lives
+  if (numPlayers === 2 && (p1Lives >= 0 || p2Lives >= 0)) return;
+  if (goScrollTimer === 0) {
+    goScrollY     = 240;  // ROM $0106 = $F0 (off-screen bottom)
+    goScrollTimer = 17;   // ROM $0108 = $11
+    goScrollFrame = 0;
+  }
+}
+
 // ─── Entity death  ────────────────────────────────────────────────────────────
 // ROM $DEBA PlayerKilled  $DEC9 EnemyKilled
 function killEntity(e) {
@@ -879,30 +926,38 @@ function killEntity(e) {
   e.deathTimer = 12;  // ROM $E073: 3-phase explosion × 4 frames each
 
   if (e.isPlayer) {
-    // ROM $DEBA: DEC $51 P1Lives
-    p1Lives--;
-    if (p1Lives < 0) {
-      // ROM $C62F CheckGameOver → $C63E: start in-field "GAME OVER" scroll
-      if (goScrollTimer === 0) {
-        goScrollY     = 240;  // ROM $0106 = $F0 (off-screen bottom)
-        goScrollTimer = 17;   // ROM $0108 = $11
-        goScrollFrame = 0;
+    // ROM $DEBA/$DEBC: DEC $51/$52 lives for P1/P2
+    const slot = e.slot;
+    if (slot === 0) {
+      p1Lives--;
+      if (p1Lives < 0) {
+        checkGameOverScroll();
+      } else {
+        playerRespawnTimer[0] = 120;
       }
     } else {
-      playerRespawnTimer = 120;  // ~2 s delay before respawn
+      p2Lives--;
+      if (p2Lives < 0) {
+        checkGameOverScroll();
+      } else {
+        playerRespawnTimer[1] = 120;
+      }
     }
   } else {
     // ROM $DEC9: DEC $80 EnemyKillsPool; ROM $D2C2 KillScoreTable
     activeEnemyCount--;
     const pts = (1 + Math.min(e.type, 3)) * 100;  // 100/200/300/400
-    p1Score += pts;
-    killCounts[Math.min(e.type, 3)]++;  // ROM $CD04 TallyScreenInit: per-type kill counter
-
-    // ROM $CF44 LivesGrantCheck: award 1 life each time score crosses a multiple of 20000
-    while (p1Score >= p1NextLifeScore) {
-      p1Lives++;
-      p1NextLifeScore += 20000;
+    // Award score to whichever player's bullet killed this enemy
+    // (tracked by e.lastHitBy set in bulletEntityCollision; default P1)
+    const killer = e.lastHitBy || 0;
+    if (killer === 0) {
+      p1Score += pts;
+      while (p1Score >= p1NextLifeScore) { p1Lives++; p1NextLifeScore += 20000; }
+    } else {
+      p2Score += pts;
+      while (p2Score >= p2NextLifeScore) { p2Lives++; p2NextLifeScore += 20000; }
     }
+    killCounts[Math.min(e.type, 3)]++;  // ROM $CD04 TallyScreenInit: per-type kill counter
 
     // Power-up tank drops power-up  ROM $E35D PowerUpSpawn
     if (e.powerUpTank && !powerUp) {
@@ -967,8 +1022,8 @@ function applyPowerUp(e, type) {
         if (entities[i].alive) killEntity(entities[i]);
       }
       break;
-    case 5:  // Tank/1-Up  ROM $EBE3: INC $51
-      p1Lives++;
+    case 5:  // Tank/1-Up  ROM $EBE3: INC $51/$52
+      if (e.slot === 0) p1Lives++; else p2Lives++;
       break;
   }
 }
@@ -999,10 +1054,12 @@ function tickTimers() {
     if (e.blinkFrame > 0) e.blinkFrame--;
     if (!e.alive && e.deathTimer > 0) e.deathTimer--;
   }
-  if (playerRespawnTimer > 0) {
-    playerRespawnTimer--;
-    if (playerRespawnTimer === 0 && !entities[0].alive) {
-      spawnPlayer(0);  // ROM $DEE8 SpawnP1
+  for (let pi = 0; pi < numPlayers; pi++) {
+    if (playerRespawnTimer[pi] > 0) {
+      playerRespawnTimer[pi]--;
+      if (playerRespawnTimer[pi] === 0 && !entities[pi].alive) {
+        spawnPlayer(pi);  // ROM $DEE8 SpawnP1/$DEEB SpawnP2
+      }
     }
   }
   if (eagleExpTimer > 0) eagleExpTimer--;  // ROM $E390 DEC $68
@@ -1032,10 +1089,16 @@ function update() {
   // ROM $C65C AttractWait: loop until credits, blinking title sprite
   if (gamePhase === 'title') {
     titleFrame++;
+    // Up/Down toggles 1P/2P selection (edge-detect via titleSelectHeld)
+    const selDown = !!(keys['ArrowDown'] || keys['KeyS']);
+    const selUp   = !!(keys['ArrowUp']   || keys['KeyW']);
+    if (selDown && !titleSelectHeld) titleSelect = 1;
+    if (selUp   && !titleSelectHeld) titleSelect = 0;
+    titleSelectHeld = selDown || selUp;
     if (keys['Space'] || keys['Enter']) {
-      p1Score = 0;
-      p1Lives = 2;
-      p1NextLifeScore = 20000;
+      numPlayers = titleSelect + 1;  // 1 or 2
+      p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
+      p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
       initLevel(0);   // sets gamePhase='start'
     }
     return;
@@ -1615,9 +1678,24 @@ function drawHUD() {
   // Score  ROM $15-$1B P1Score (BCD in ROM; plain int here)
   drawNesText(p1Score.toString().padStart(6, '0'), hx, hy + 138, 3);
 
+  // P2 lives + score  ROM $52 P2Lives, $1C-$22 P2Score
+  if (numPlayers === 2) {
+    if (chrOff) {
+      drawNesText('IIP', hx, hy + 150, 3);
+      drawCHRTile(0x14, 3, hx + 4, hy + 158, true);
+      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 12, hy + 158, 3);
+    } else {
+      text('P2', hx + 3, hy + 156, C.P2, 6);
+      fillRect(hx + 3, hy + 160, 8, 6, C.P2);
+      text(String(Math.max(0, p2Lives + 1)), hx + 13, hy + 166, C.HUD_TEXT, 6);
+    }
+    drawNesText(p2Score.toString().padStart(6, '0'), hx, hy + 170, 3);
+  }
+
   // Freeze indicator  ROM $0100 EnemyFreezeTimer
   if (freezeTimer > 0) {
-    drawNesText('FREEZE', hx, hy + 152, 3);
+    const fy = numPlayers === 2 ? hy + 184 : hy + 152;
+    drawNesText('FREEZE', hx, fy, 3);
   }
 }
 
@@ -1758,8 +1836,9 @@ function render() {
 // ROM $C65C AttractWait: 240-frame loop with BlinkTitleSprite ($C69A)
 // ROM $CFAA PreGameDraw: draws "BATTLE" (26,46) + "CITY" (60,86) via DrawSpriteString
 function enterTitle() {
-  gamePhase  = 'title';
-  titleFrame = 0;
+  gamePhase   = 'title';
+  titleFrame  = 0;
+  titleSelect = 0;  // default: 1 PLAYER
 }
 
 function drawTitleScreen() {
@@ -1774,14 +1853,27 @@ function drawTitleScreen() {
   // ROM copyright line (small text, BG3 palette)
   drawNesText('NAMCO 1985', 80, 134, 3);
 
-  // ROM $C69A BlinkTitleSprite: toggles $D1A7 "PLEASE INSERT COIN" / $D1BA blank
-  // every ~32 frames ($0B & $20, bit 5 = ~1 Hz). Web: "PRESS START" blinking.
+  // ROM mode selection: "1 PLAYER" / "2 PLAYERS" with cursor
+  drawNesText('1 PLAYER', 88, 142, 3);
+  drawNesText('2 PLAYERS', 88, 158, 3);
+  // ROM cursor: tank icon at selected option
+  if (chrOff) {
+    const cy = titleSelect === 0 ? 142 : 158;
+    drawCHRTile(256 + 0x00, 4, 72, cy, true);     // TL
+    drawCHRTile(256 + 0x02, 4, 80, cy, true);     // TR
+    drawCHRTile(256 + 0x01, 4, 72, cy + 8, true); // BL
+    drawCHRTile(256 + 0x03, 4, 80, cy + 8, true); // BR
+  } else {
+    drawNesText('>', 72, titleSelect === 0 ? 142 : 158, 3);
+  }
+
+  // ROM $C69A BlinkTitleSprite blink — show controls hint
   if (titleFrame & 0x20) {
-    drawNesText('PRESS START', 76, 158, 3);
+    drawNesText('PRESS START', 76, 178, 3);
   }
 
   // Controls hint
-  drawNesText('ARROWS:MOVE  SPACE:FIRE', 36, 190, 0);
+  drawNesText('P1:ARROWS+SPACE P2:WASD+E', 20, 210, 0);
 }
 
 // ─── Boot  ────────────────────────────────────────────────────────────────────
