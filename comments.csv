@@ -156,3 +156,11 @@
 1,E838,BulletTileCollision: (X=px,Y=py)→TilePosLookup→SubTileBitmask→TileCollidableCheck; eagle→$68=$27,$030B=$0307=1; water→$030D=1 player only; steel→$030D=1 player only; brick→TileDestroyBrick,$030C=1 player only; returns A=1 (hit) A=0 (no hit)
 1,DD30,MoveGridSnap: entity coords ($90,X $98,X) are CENTER-pixel of 16×16 tank; body = X-8..X+7, Y-8..Y+7; enemy checks 8px grid alignment (AND #$07); leading-edge probes via $DD4B cover exact front face corners
 1,DD4B,MoveGridSnap_ProbeSetup: $58=|dx|*8 $59=|dy|*8 $56=entity_X+dx $57=entity_Y+dy; probe1=(X+$58+$59,Y+$58+$59) probe2=(X+$58-$59,Y+$59-$58); for RIGHT: probes (entity_X+8,entity_Y+7) and (entity_X+8,entity_Y-8); for UP: probes (entity_X-8,entity_Y-9) and (entity_X+7,entity_Y-9)
+# Session: CHR tile ID origin trace — 8×16 sprite mode EVEN/ODD bank selection
+1,E09F,MoveTankSpriteCalc: A=$A0,X AND#$03(dir) PUSH; A=$A8,X AND#$F0(type top nibble)+$B0,X(anim 0/4)→$53; PLA dir; JSR DrawTank2x2(A*8+$53); ALWAYS EVEN→PT0(sprite bank $B010)
+1,E0BF,DrawShootSprite: in-flight bullet visible sprite; A=|($A0,X&$0F)-7|*2 AND#$FC + $A1→$53; ALWAYS ODD→PT1(BG bank $A010); tiles $A1-$AD
+1,E1BF,BulletExplode tile setup: $53=$B1 → ODD→PT1(BG bank); dir*2 added by $DAF3; tiles $B0-$B7
+1,E302,PowerUpFlashDraw: $53=$3B → ODD→PT1(BG bank); tiles $3A-$3D at collect position
+1,E30D,PowerUpActiveDraw: $53=$88*4+$81 → ODD→PT1(BG bank); type 0-5 → tiles $80-$97 FROM BG BANK (not sprite bank!); game.js BUG: uses sprite bank instead
+1,DFC6,DrawSpawnSprite tile: $53=(($A8,X>>3)&$FC)-$10+$B9; ALWAYS ODD→PT1(BG bank); tiles $A9-$B9
+1,E3F2,EagleDrawFull: tiles $D1/$D5/$D9/$DD (+$69 for damaged); ALL ODD→PT1(BG bank); tiles $D0-$EF from BG bank

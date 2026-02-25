@@ -30,10 +30,10 @@
 | 0x00000 | 0x0000F | 16 B   | Header  | iNES header |
 | 0x00010 | 0x04010 | 16 KB  | PRG bank 0 | CPU $8000–$BFFF — level code + level data |
 | 0x04010 | 0x08010 | 16 KB  | PRG bank 1 | CPU $C000–$FFFF — all engine code |
-| 0x08010 | 0x09010 | 4 KB   | CHR bank 0 | PPU $1000–$1FFF (BG pattern table / PT1) — chr_pt0.png tiles 0–255 |
-| 0x09010 | 0x0A010 | 4 KB   | CHR bank 1 | PPU $0000–$0FFF (sprite pattern table / PT0) — chr_pt0.png tiles 256–511 |
-| 0x0A010 | 0x0B010 | 4 KB   | CHR bank 2 | PPU (alternate) |
-| 0x0B010 | 0x0C010 | 4 KB   | CHR bank 3 | PPU (alternate) |
+| 0x08010 | 0x09010 | 4 KB   | CHR bank 0 | D2=1 → PPU $0000 (PT0/sprites) for stages 0-2,4-8,11 — tanks, numerals |
+| 0x09010 | 0x0A010 | 4 KB   | CHR bank 1 | D2=1 → PPU $1000 (PT1/BG) for stages 0-2,4-8,11 — terrain, eagle, spawn |
+| 0x0A010 | 0x0B010 | 4 KB   | CHR bank 2 | D2=0 → PPU $0000 (PT0/sprites) for stages 3,9,10,12 |
+| 0x0B010 | 0x0C010 | 4 KB   | CHR bank 3 | D2=0 → PPU $1000 (PT1/BG) for stages 3,9,10,12 |
 
 ---
 
@@ -1175,19 +1175,29 @@ PPU ctrl ($2000) final value = **$B0** = `1011 0000`:
 - Bit 4 = BG pattern table at **$1000** (pattern table 1)
 - Bit 3 = sprite pattern table at **$0000** (pattern table 0)
 
-### CHR-ROM Layout (16KB = 1024 tiles total)
-| File offset | PPU addr | Tiles   | Purpose               |
-|-------------|----------|---------|-----------------------|
-| $8010–$8FFF | $1000–$1FFF | 0–255  | BG pattern table (PT1) — chr_pt0.png tiles 0–255 |
-| $9010–$9FFF | $0000–$0FFF | 256–511| Sprite pattern table (PT0) — chr_pt0.png tiles 256–511 |
-| $A010–$AFFF | (bank 1) | 512–767 | BG tiles, bank 1  |
-| $B010–$BFFF | (bank 1) | 768–1023| Sprite tiles, bank 1      |
+### CHR-ROM Layout (16KB = 4 × 4KB banks)
+| File offset | Bank | Contents |
+|-------------|------|----------|
+| $8010–$8FFF | 0 | **Sprite pattern table** (D2=1) — player/enemy tanks, numerals, explosions |
+| $9010–$9FFF | 1 | **BG pattern table** (D2=1) — terrain, HUD text, eagle, power-ups, spawn |
+| $A010–$AFFF | 2 | Sprite pattern table (D2=0) — alternate stage graphics |
+| $B010–$BFFF | 3 | BG pattern table (D2=0) — alternate stage graphics |
 
-**Bank mapping note**: PPUCTRL $B0 (bit4=1 → BG at $1000, bit5=1 → 8×16 sprites).
-In 8×16 mode, even OAM tile byte T → PT0 ($0000 = file $9010) → PNG index 256+T;
-odd OAM tile byte T → PT1 ($1000 = file $8010) → PNG index T&$FE.
-This is consistent with data-range map (lines 33–34) and game.js `drawCHRTile(256+T)` for sprite bank.
-**Previous version of this section had $0000/$1000 swapped — now corrected.**
+### Mapper 99 CHR Bank Select ($4016 D2)
+$4016 D2 selects 8KB CHR bank. **Polarity is inverted** from naive A13 interpretation:
+- **D2=1** ($04) → CHR $0000–$1FFF → banks 0+1 ($8010/$9010)
+- **D2=0** ($00) → CHR $2000–$3FFF → banks 2+3 ($A010/$B010)
+
+PPUCTRL $B0: bit4=1 → BG at PPU $1000 (PT1), bit3=0 + bit5=1 → 8×16 sprites at PPU $0000 (PT0).
+
+| $4016 | Stages | PT0 ($0000) sprites | PT1 ($1000) BG |
+|-------|--------|---------------------|----------------|
+| D2=1 ($04) | 0,1,2,4,5,6,7,8,11 | bank 0 ($8010) | bank 1 ($9010) |
+| D2=0 ($00) | 3,9,10,12 | bank 2 ($A010) | bank 3 ($B010) |
+
+In 8×16 mode: even OAM tile byte T → PT0 (sprites); odd OAM tile byte T → PT1 (BG).
+
+**Confirmed by tile content AND compare_frames.py diff (session 32)**: bank 1 tile $00 = blank (correct for empty BG), bank 0 has tank sprites. Switching to banks 0+1 eliminated 9216px EMPTY tile diff (was caused by bank 2/3 tile $00 = "0" numeral glyph). Only 696px eagle diff remains (separate sprite bank issue).
 
 ### Tile Format (NES 2bpp)
 - Each tile = 16 bytes: 8 bytes plane-0 + 8 bytes plane-1
@@ -1195,8 +1205,8 @@ This is consistent with data-range map (lines 33–34) and game.js `drawCHRTile(
 - Bit 7 of each row byte = leftmost pixel (x=0)
 
 ### Extracted Output
-`extract_tiles.py` produces:
-- `tiles/chr_all.png` — all 1024 tiles in 32×32 grid (289×289 px)
+`extract_tiles.py` produces (using correct mapper 99 independent bank select):
+- `tiles/chr_all.png` — 512 tiles in 32×16 grid: rows 0–7 = BG (bank 1/$9010), rows 8–15 = sprites (bank 2/$A010)
 - `tiles/chr_pt0.png` — pattern table 0 (sprite tiles 0–511)
 - `tiles/chr_pt1.png` — pattern table 1 (bg tiles 256–511 of first CHR bank)
 
@@ -2944,3 +2954,63 @@ Evidence: tile $00 in bank 0 = mortar pattern (23 non-zero px), tile $00 in bank
 - [x] **Fix `game.js` CHR tile sheet path**: **Done (session 28).** Verified `initCHR()` already loads `../tiles/chr_all.png` and calls `tileCache.clear()` on load — no code change needed. Re-ran `extract_tiles.py` (default bank pair 1, banks 2+3) to confirm `chr_all.png` contains correct stage 1 graphics (tile $00 = "0" numeral, p0=384cc6c6c6643800). All tile index tables in game.js (TILE_CHR, spawn anim $A0-$AF, eagle, HUD icons, tank sprites) are bank-independent — same indices regardless of bank. Updated `tile_viewer.html`: changed image source from old `chr_pt0.png` to `chr_all.png`, updated title/legend/comments to reflect bank pair 1 file offsets ($A010 BG / $B010 sprites).
 - [x] **Fix all Python render scripts to use correct CHR bank**: **Done (session 29).** Updated `compare_frames.py`, `render_frame.py`, `render_level.py`, `render_sprites.py` to decode CHR tiles from bank pair 1 (mapper banks 2+3, file offset $A010) instead of bank pair 0 ($8010). Changed `chr_off` from `16 + prg_banks * 16384` to `0xA010` and read size from 16KB to 8KB (`0x2000`). All four scripts re-ran successfully. `compare_frames.py` diff confirms remaining mismatches are only on type=13 EMPTY tiles (NES renders BG tile $00 = "0" numeral glyph with BG0 palette; game.js renders black) and 88 eagle-area pixels — tracked by next task.
 - [x] **Update compare_frames.py to produce pixel-accurate reference**: **Done (session 30).** Fixed compare_frames.py to decode both BG ($A010, 256 tiles) and sprite ($B010, 256 tiles) pattern tables separately. Reference now renders NES-accurately: BG nametable uses `chr_bg`, eagle OAM sprites use `chr_spr` (sprite pattern table PT1). Game.js sim uses `chr_bg` for everything — matching game.js's current behavior where all tile indices map to BG bank rows in chr_all.png. Diff now cleanly categorizes: 9216 px = EMPTY tile $00 glyph (intentional — NES shows "0" numeral, game.js shows black), 752 px = eagle OAM sprite bank difference (game.js bug: uses BG bank tiles $D0-$DF instead of sprite bank), 0 px other/unexpected. Eagle tiles confirmed all 16 differ between BG and sprite banks. **Next fix needed: game.js drawCHRTile for eagle/tank OAM sprites should use sprite bank (tile index + 256 in chr_all.png) instead of BG bank.**
+
+### Mapper 99 D2 polarity investigation (session 31)
+
+**Problem**: Session 25 concluded D2=1 (StageFlagsTable $04) → banks 2+3 via standard CHR A13 mapping. But visual inspection of all 4 banks reveals **strong contradictions**:
+
+**Tile $00 (empty BG tile) per bank:**
+| Bank | File offset | Tile $00 content | Valid for BG empty? |
+|------|-----------|------------------|-------------------|
+| Bank 0 ($8010) | p0=000001014171557c | Mortar pattern (23 non-zero px) | NO |
+| Bank 1 ($9010) | p0=0000000000000000 | **Completely blank** (all zeros) | **YES** |
+| Bank 2 ($A010) | p0=384cc6c6c6643800 | "0" numeral glyph | NO |
+| Bank 3 ($B010) | p0=384cc6c6c6643800, p1=ffffffffffffffff | "0" numeral + all plane1 set | NO |
+
+**Only bank 1 has a truly blank tile $00** — required for NES BG empty spaces. Bank 2/3 would render "0" characters everywhere in the playfield.
+
+**Eagle tiles ($D0-$DF) rendered as 32×32 composites** (see `output_gfx/eagle_Bank*.png`):
+| Bank | Visual result |
+|------|-------------|
+| Bank 0 ($8010) | Tank sprite pairs (not eagle) |
+| Bank 1 ($9010) | **Radiating star/phoenix pattern** — recognizable VS System eagle |
+| Bank 2 ($A010) | Text characters "A","T","L","P" (font data) |
+| Bank 3 ($B010) | Simple purple blocks (font/UI data) |
+
+**Only bank 1 has a recognizable eagle** at tiles $D0-$DF.
+
+**Terrain tile $0F (brick) comparison:**
+- Bank 0: p0=740cf8feaaaa0000 — dense brick pattern
+- Bank 1: p0=08fbfbff80bfbfff — dense brick pattern (different style)
+- Bank 2: p0=0000008080800080 — **sparse (6 non-zero px)** — barely visible
+- Bank 3: p0=fec0c0fcc0c0c000, p1=all FF — resembles letter "F" (font data)
+
+**Conclusion**: Visual evidence overwhelmingly suggests **D2 is inverted** on this VS System board — D2=1 selects banks 0+1 (not 2+3). This would give:
+- PT0 = bank 0 ($8010) → sprites (tank tiles confirmed correct ✓)
+- PT1 = bank 1 ($9010) → BG (blank tile $00 ✓, recognizable eagle ✓, dense terrain ✓)
+
+The 9216px "EMPTY tile $00 numeral" diff from session 30 would **disappear** with banks 0+1 (bank 1 tile $00 = blank = black).
+
+**Previous sessions 25-30 used banks 2+3 based on standard mapper documentation**, but the visual content of those banks contradicts gameplay use. **Session 32 confirmed: D2 polarity is inverted — D2=1 → banks 0+1, D2=0 → banks 2+3.** compare_frames.py diff dropped from 9968px to 696px (only eagle sprite bank diff remains). Banks 2+3 are the alternate visual theme for stages 3,9,10,12,13.
+
+### Open tasks (session 31)
+
+- [x] **Resolve mapper 99 D2 polarity definitively**: **Done (session 32).** D2=1 → banks 0+1 CONFIRMED. Re-extracted `chr_all.png` from banks 0+1 (bank 1/$9010=BG, bank 0/$8010=sprites). `compare_frames.py` diff: EMPTY tile $00 mismatch dropped from 9216→0 px (bank 1 tile $00 = blank vs bank 2/3 = "0" numeral). Only 696px eagle area diff remains (separate sprite bank task). Updated all Python render scripts (`compare_frames.py`, `render_frame.py`, `render_level.py`, `render_sprites.py`) from $A010/$B010 to $8010/$9010 with correct PT0/PT1 assignments. Updated `extract_tiles.py` docstring. Inverted D2 polarity confirmed: D2=1 selects banks 0+1 (not 2+3 as standard mapper docs suggest).
+
+- [ ] **Fix eagle rendering in game.js**: D2 polarity resolved (session 32) — banks 0+1 confirmed. Eagle uses ODD OAM tiles ($D1-$DF) → PT1 (BG bank 1/$9010) in 8×16 mode. Bank 1 $D0-$DF = recognizable phoenix pattern. Currently `drawCHRTile(T & 0xFE, 7, ...)` uses BG-bank indices (0-255) which already maps to bank 1 in chr_all.png. Eagle rendering should already be correct with the re-extracted chr_all.png. compare_frames.py still shows 696px diff in eagle area — investigate whether this is game.js sprite bank indexing vs BG bank, or a rendering/positioning issue.
+
+- [ ] **Fix HUD text transparency**: Done in code (session 31) — `drawNesText` and HUD icon tiles now pass `transparent=true` to `drawCHRTile`. Needs visual verification in browser.
+
+- [ ] **Implement in-field scrolling GAME OVER text**: NES has a "GAME OVER" text that scrolls upward through the playfield during gameplay (separate from the big "GAME"/"OVER" overlay shown after). ROM `$C53E` (DrawGameOverScreen) writes "GAME" and "OVER" tiles to nametable, then animates via scroll register or tile movement over ~60 frames. game.js currently jumps straight to the overlay. Implement the in-field scrolling version.
+
+- [ ] **Add per-stage CHR bank switching**: StageFlagsTable ($80B6) selects between two CHR bank pairs per stage. Stages 3,9,10,12,13 use one pair; all others use the other. game.js currently loads a single chr_all.png. To support both visual themes: either pre-extract both bank pairs and swap at stage init, or generate a combined 1024-tile sheet. This also requires re-running `extract_tiles.py --all` to produce both sheets.
+
+- [ ] **Implement title/attract screen**: ROM `$C65C` (AttractWait) shows title screen with blinking sprite, waits 240 frames for coin input. ROM `$CFAA` (PreGameDraw) draws stage banner. Currently game.js starts directly into stage 1 with no title screen.
+
+- [ ] **Implement 2-player mode**: P2 entity slot (index 1) is never spawned or controlled. ROM supports simultaneous 2-player with separate lives/score/controls. Requires: P2 spawn, P2 input (separate keys), P2 HUD (life icon at hy+151, score), P2 bullet slots.
+
+- [ ] **Implement victory screen**: ROM `$C44D` (DrawVictoryScreen) shows "PEACE BE WITH YOU" + decorative tiles + 240-frame ScrollX slide after completing all 35 stages. Not implemented.
+
+- [ ] **Implement hi-score tracking**: ROM `$D9F0` (CompareAndUpdateHiScore) compares 7-digit BCD scores, shows "NEW HI SCORE" with palette flash. Currently not tracked or displayed.
+
+- [ ] **Add sound engine**: ROM has 28-slot APU engine ($EC23), 14 sound sequences ($EEA3), 12+ sound triggers ($0309-$030E). All SFX and BGM are absent from the web port. Can use Web Audio API to approximate NES APU channels.

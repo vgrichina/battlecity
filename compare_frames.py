@@ -435,9 +435,9 @@ def main():
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
-    # Bank pair 1 (mapper banks 2+3): BG at $A010, sprites at $B010
-    chr_bg_data = rom[0xA010:0xA010 + 0x1000]   # 4KB BG pattern table (PT0)
-    chr_spr_data = rom[0xB010:0xB010 + 0x1000]  # 4KB sprite pattern table (PT1)
+    # Bank pair 0+1 (D2=1 stages incl. stage 1): BG at $9010, sprites at $8010
+    chr_bg_data = rom[0x9010:0x9010 + 0x1000]   # 4KB BG pattern table (bank 1 = PT1)
+    chr_spr_data = rom[0x8010:0x8010 + 0x1000]  # 4KB sprite pattern table (bank 0 = PT0)
     chr_bg  = [decode_tile(chr_bg_data, i * 16) for i in range(256)]
     chr_spr = [decode_tile(chr_spr_data, i * 16) for i in range(256)]
 
@@ -498,8 +498,8 @@ def main():
     if other_px:
         print(f"  Other / unexpected:                               {other_px:6d} px")
     print(f"\nNotes:")
-    print(f"  - EMPTY diff is intentional: game.js fills EMPTY cells black")
-    print(f"    NES nametable has tile $00 everywhere (\"0\" numeral glyph)")
+    print(f"  - EMPTY diff: now 0 with banks 0+1 (bank 1 tile $00 = blank)")
+    print(f"    (was 9216 px when using banks 2+3 where tile $00 = \"0\" numeral)")
     print(f"  - Eagle diff: game.js uses BG bank tiles for OAM sprites,")
     print(f"    NES uses sprite pattern table (PT1). Fix: drawCHRTile for")
     print(f"    eagle sprites should offset by +256 to reach sprite bank rows")

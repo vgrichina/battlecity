@@ -174,16 +174,16 @@ def main():
         rom = f.read()
     assert rom[:4] == b'NES\x1a'
 
-    # Bank pair 1 (mapper banks 2+3, file $A010): correct for stage 1 gameplay
-    chr_off   = 0xA010
-    chr_data  = rom[chr_off : chr_off + 0x2000]  # 8KB: BG + sprite tiles
+    # Banks 0+1 (D2=1 stages incl. stage 1): BG=bank1($9010), spr=bank0($8010)
+    # Read BG first so tiles[0-255] = BG, tiles[256-511] = sprites
+    chr_data  = rom[0x9010:0x9010 + 0x1000] + rom[0x8010:0x8010 + 0x1000]
 
     total_tiles = len(chr_data) // 16
     tiles = [decode_tile(chr_data, i * 16) for i in range(total_tiles)]
     # tiles[0..255]   = BG bank
     # tiles[256..511] = Sprite bank
 
-    print(f"Decoded {total_tiles} tiles from CHR-ROM (file offset {chr_off:#x})")
+    print(f"Decoded {total_tiles} tiles from CHR-ROM (BG=$9010, spr=$8010)")
 
     # ── Palette diff report ──────────────────────────────────────────────
     print("\n=== NES_PAL comparison: ROM $D44A vs game.js hardcoded ===")

@@ -42,10 +42,10 @@ Nametable shadow layout (CPU RAM $0400–$07FF, 1024 bytes):
     $07C0–$07FF   64 bytes: attribute table (4×4-tile blocks, 8×8 grid)
     Same logical layout as NES PPU nametable 0 ($2000–$23FF).
 
-CHR bank mapping (bank pair 1, file offset $A010, 8 KB):
-    chr_data[0x0000–0x0FFF]  = BG  tiles 0–255 (file $A010–$AFFF)
-    chr_data[0x1000–0x1FFF]  = Sprite tiles 0–255 (file $B010–$BFFF)
-    Bank pair 1 (mapper banks 2+3) is active for stage 1 gameplay.
+CHR bank mapping (banks 0+1, D2=1 stages incl. stage 1):
+    chr_data[0x0000–0x0FFF]  = Sprite tiles 0–255 (file $8010–$8FFF, bank 0 = PT0)
+    chr_data[0x1000–0x1FFF]  = BG  tiles 0–255 (file $9010–$9FFF, bank 1 = PT1)
+    D2=1 selects banks 0+1 (inverted polarity from naive A13 mapping).
 """
 
 import os, sys, struct, zlib, argparse
@@ -344,14 +344,13 @@ def main():
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
-    # Load CHR data from bank pair 1 (mapper banks 2+3, $A010): stage 1 gameplay
-    chr_off   = 0xA010
+    # Load CHR data from banks 0+1 (D2=1 stages incl. stage 1): BG=$9010, spr=$8010
+    chr_off   = 0x8010
     chr_data  = rom[chr_off : chr_off + 0x2000]  # 8KB
 
-    # BG tiles 0–255:     chr_data[0x0000–0x0FFF] (file $A010–$AFFF)
-    # Sprite tiles 0–255: chr_data[0x1000–0x1FFF] (file $B010–$BFFF)
-    chr_pt1 = [decode_tile(chr_data, i * 16)          for i in range(256)]
-    chr_pt0 = [decode_tile(chr_data, 0x1000 + i * 16) for i in range(256)]
+    # Bank 0 ($8010) = PT0 sprites, Bank 1 ($9010) = PT1 BG
+    chr_pt0 = [decode_tile(chr_data, i * 16)          for i in range(256)]  # bank 0 = PT0
+    chr_pt1 = [decode_tile(chr_data, 0x1000 + i * 16) for i in range(256)]  # bank 1 = PT1
 
     if args.ram:
         with open(args.ram, 'rb') as f:

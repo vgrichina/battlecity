@@ -399,3 +399,9 @@
 1,D7EC,NametableClearAll
 1,C830,PreLevelInit
 1,D7CA,AdvanceNTPointer
+# Session: CHR tile ID origin trace
+1,E09F,MoveTankSpriteCalc
+1,E0BF,DrawShootSprite
+1,E302,PowerUpFlashDraw
+1,E30D,PowerUpActiveDraw
+1,DAF3,BulletExplosionDraw

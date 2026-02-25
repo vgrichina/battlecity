@@ -139,7 +139,7 @@ function drawNesText(str, x, y, palIdx) {
     for (let i = 0; i < s.length; i++) {
       const code = s.charCodeAt(i);
       if (code >= 0x21 && code <= 0x5F) {
-        drawCHRTile(code, palIdx, x + i * 8, y);
+        drawCHRTile(code, palIdx, x + i * 8, y, true);
       }
     }
   } else {
@@ -1455,21 +1455,22 @@ function drawBullet(b) {
   else       fillRect(b.x - 1, b.y - 3, 3, 6, C.BULLET);
 }
 
-// ROM $E30D PowerUpDraw: $0B&$08≠0 gate; tile=$81+type*4 (8×16→$80,$81,$82,$83+type*4)
+// ROM $E30D PowerUpDraw: $0B&$08≠0 gate; tile=$81+type*4 (ODD→PT1/BG bank)
 // ROM $DB0A DrawTank: left OAM at entity_x−8, right at entity_x; both OAM_Y = entity_y−8
 // Tile order [TL,TR,BL,BR] = [base, base+2, base+1, base+3]; ROM $04=2 → OAM pal 2 = SP2
 function drawPowerUp() {
   // ROM $E302-$E30A: while $62>0 (post-collect flash), draw tile $3B 8×16 OAM at collect pos
   // 8×16 odd-byte $3B → PT1 tiles: TL=$3A, BL=$3B (left col), TR=$3C, BR=$3D (right col)
   if (puFlashTimer > 0 && puFlashPos) {
-    drawSprite16([0x3A, 0x3C, 0x3B, 0x3D], 6, puFlashPos.x - 8, puFlashPos.y - 8);
+    drawSprite16([0x3A, 0x3C, 0x3B, 0x3D], 6, puFlashPos.x - 8, puFlashPos.y - 8, true);
     return;
   }
   if (!powerUp) return;
   if ((frameCount >> 3) & 1) return;  // blink  ROM $0B&$08 gate
   const x = powerUp.x, y = powerUp.y;
+  // ROM: $53 = type*4 + $81 (ODD) → PT1/BG bank; T&0xFE = $80+type*4
   const base = 0x80 + powerUp.type * 4;
-  drawSprite16([base, base + 2, base + 1, base + 3], 6, x - 8, y - 8);
+  drawSprite16([base, base + 2, base + 1, base + 3], 6, x - 8, y - 8, true);
 }
 
 // ROM $DACC-$DAD4 DrawEntityTile: if sprite on BG tile $22 (tree), ORs OAM attr with $6E=$20
@@ -1515,7 +1516,7 @@ function drawHUD() {
   for (let i = 0; i < Math.min(total, 20); i++) {
     const col = i % 2, row = Math.floor(i / 2);
     if (chrOff) {
-      drawCHRTile(0x6A, 3, hx + 2 + col * 8, hy + 2 + row * 8);
+      drawCHRTile(0x6A, 3, hx + 2 + col * 8, hy + 2 + row * 8, true);
     } else {
       fillRect(hx + 2 + col * 8, hy + 2 + row * 8, 8, 6, C.ENEMY);
       fillRect(hx + 3 + col * 8, hy + 3 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
@@ -1525,7 +1526,7 @@ function drawHUD() {
 
   // Stage number  ROM $41 StageNum — flag icon ($6B) + digit tiles
   if (chrOff) {
-    drawCHRTile(0x6B, 3, hx + 4, hy + 90);  // flag icon
+    drawCHRTile(0x6B, 3, hx + 4, hy + 90, true);  // flag icon
     const sn = String(stageIdx + 1).padStart(2);
     drawNesText(sn, hx + 4, hy + 98, 3);
   } else {
@@ -1535,7 +1536,7 @@ function drawHUD() {
   // P1 lives  ROM $51 P1Lives; "IP" label + tank icon ($14) + digit
   if (chrOff) {
     drawNesText('IP', hx + 4, hy + 114, 3);
-    drawCHRTile(0x14, 3, hx + 4, hy + 122);
+    drawCHRTile(0x14, 3, hx + 4, hy + 122, true);
     drawNesText(String(p1Lives + 1), hx + 12, hy + 122, 3);
   } else {
     text('P1', hx + 3, hy + 124, C.P1, 6);
