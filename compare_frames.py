@@ -2,13 +2,14 @@
 """compare_frames.py — Compare NES-accurate reference vs game.js rendering.
 
 Produces:
-  output_gfx/ref_enhanced_stage01.png   — NES reference: BG nametable (chr_bg) + eagle OAM (chr_spr)
+  output_gfx/ref_enhanced_stage01.png   — NES reference: BG nametable (chr_bg) + eagle OAM (chr_bg)
   output_gfx/gamejs_sim_stage01.png     — game.js simulation: all tiles from BG bank only
   output_gfx/diff_stage01.png           — Pixel diff (red = differs, green = match)
 
-Reference uses separate BG ($A010) and sprite ($B010) pattern tables — NES-accurate.
+Reference uses BG ($9010/PT1) pattern table for nametable and eagle OAM sprites.
+Eagle OAM tiles are all odd ($D1,$D3,...) → bit0=1 → PT1 ($1000) = BG bank.
 Game.js sim uses BG bank for everything, matching game.js's current behavior.
-Diff categorizes mismatches as intentional (EMPTY tile) vs fixable (eagle sprite bank).
+Both should now match exactly in the eagle area.
 """
 
 import os, sys, struct, zlib
@@ -265,9 +266,9 @@ def render_reference(nt_tiles, attr_table, chr_bg, chr_spr):
             canvas.draw_tile(pix, pal, col * 8, row * 8, transparent=False)
 
     # 2. Eagle OAM sprites — ROM $E3F2 EagleDrawFull: 4×2 grid of 8×16 entries, SP3
-    #    NES 8×16 sprite mode: tile bit 0 selects pattern table (odd→PT1=sprites).
-    #    All eagle tiles are odd ($D1,$D3,...) → sprite pattern table.
-    #    Tile pair: top = T&0xFE, bot = (T&0xFE)+1, both from sprite bank.
+    #    NES 8×16 sprite mode: tile bit 0 selects pattern table.
+    #    Odd tiles ($D1,$D3,...) → bit0=1 → PT1 ($1000) = BG bank (bank 1/$9010).
+    #    Tile pair: top = T&0xFE, bot = (T&0xFE)+1, both from BG bank (PT1).
     eagle_pal = ALL_PAL[7]  # SP3
     intact_oam = [0xD1, 0xD3, 0xD5, 0xD7, 0xD9, 0xDB, 0xDD, 0xDF]
     ex, ey = 120, 216  # eagle center
@@ -278,8 +279,8 @@ def render_reference(nt_tiles, attr_table, chr_bg, chr_spr):
             T = intact_oam[row * 4 + col]
             t_top = T & 0xFE
             t_bot = (T & 0xFE) + 1
-            canvas.draw_tile(chr_spr[t_top], eagle_pal, xs[col], ys[row], transparent=True)
-            canvas.draw_tile(chr_spr[t_bot], eagle_pal, xs[col], ys[row] + 8, transparent=True)
+            canvas.draw_tile(chr_bg[t_top], eagle_pal, xs[col], ys[row], transparent=True)
+            canvas.draw_tile(chr_bg[t_bot], eagle_pal, xs[col], ys[row] + 8, transparent=True)
 
     return canvas
 
@@ -470,9 +471,8 @@ def main():
 
     # 4. Categorize differences
     # "Intentional" = game.js renders EMPTY cells as black vs NES tile $00 glyph
-    # "Eagle sprite bank" = game.js uses BG bank for eagle OAM instead of sprite bank
     empty_px = 0
-    eagle_sprite_px = 0
+    eagle_px = 0
     other_px = 0
     eagle_rect = (104, 200, 136, 232)  # x1,y1,x2,y2 of eagle OAM area
     for y in range(SCR_H):
@@ -481,7 +481,7 @@ def main():
                 continue
             # Is this in the eagle OAM sprite area?
             if eagle_rect[0] <= x < eagle_rect[2] and eagle_rect[1] <= y < eagle_rect[3]:
-                eagle_sprite_px += 1
+                eagle_px += 1
                 continue
             # Is this a playfield EMPTY cell?
             if FX <= x < FX + MAP_COLS * 16 and FY <= y < FY + MAP_ROWS * 16:
@@ -494,15 +494,13 @@ def main():
 
     print(f"\nDifference breakdown:")
     print(f"  EMPTY tile $00 glyph (NES) vs black (game.js): {empty_px:6d} px")
-    print(f"  Eagle OAM sprite bank (NES=PT1) vs BG (game.js): {eagle_sprite_px:6d} px")
+    print(f"  Eagle area diff:                                {eagle_px:6d} px")
     if other_px:
-        print(f"  Other / unexpected:                               {other_px:6d} px")
+        print(f"  Other / unexpected:                             {other_px:6d} px")
     print(f"\nNotes:")
-    print(f"  - EMPTY diff: now 0 with banks 0+1 (bank 1 tile $00 = blank)")
-    print(f"    (was 9216 px when using banks 2+3 where tile $00 = \"0\" numeral)")
-    print(f"  - Eagle diff: game.js uses BG bank tiles for OAM sprites,")
-    print(f"    NES uses sprite pattern table (PT1). Fix: drawCHRTile for")
-    print(f"    eagle sprites should offset by +256 to reach sprite bank rows")
+    print(f"  - EMPTY diff: 0 with banks 0+1 (bank 1 tile $00 = blank)")
+    print(f"  - Eagle: reference now uses chr_bg (PT1) for odd OAM tiles — correct")
+    print(f"    (was 696px when reference incorrectly used chr_spr/PT0 for eagle)")
 
 
 if __name__ == '__main__':
