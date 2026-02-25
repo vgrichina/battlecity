@@ -17,7 +17,8 @@ const ctx     = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
 // ─── CHR tile engine ──────────────────────────────────────────────────────────
-// Tile sheet: ../tiles/chr_all.png — 512 tiles in 32×16 grid, 9px cell (8px+1px border)
+// Tile sheets: ../tiles/chr_all.png (banks 0+1) + chr_all_alt.png (banks 2+3)
+// 512 tiles each in 32×16 grid, 9px cell (8px+1px border). Mapper 99 per-stage bank switch.
 // BG tile N: col=N%32 row=N/32   Sprite tile N: abs=N+256
 const CHR_CELL = 9, CHR_BORDER = 1;
 
@@ -36,19 +37,45 @@ const NES_PAL = [
 // Grayscale level → palette index (extract_tiles.py: 0→0, 0x55→1, 0xAA→2, 0xFF→3)
 function grayToIdx(r) { return r < 0x2B ? 0 : r < 0x7F ? 1 : r < 0xD5 ? 2 : 3; }
 
-let chrOff = null;                // offscreen canvas 2d context for CHR sheet
+let chrOff = null;                // offscreen canvas 2d context for active CHR sheet
 const tileCache = new Map();      // cached offscreen canvases keyed by "abs_pal_transp"
 
+// Mapper 99 per-stage CHR bank select via StageFlagsTable ($80B6).
+// D2=1 ($04) → banks 0+1 (default), D2=0 ($00) → banks 2+3 (alt).
+// Index = stageIdx % 14 (StageFlagsTable has 14 entries; stages 14+ repeat).
+// 0=default (chr_all.png), 1=alt (chr_all_alt.png)
+const STAGE_CHR_BANK = [0,0,0,1,0,0,0,0,0,1,1,0,1,1]; // 14 entries from $80B6
+
+const chrSheets = [null, null];   // [0]=default (banks 0+1), [1]=alt (banks 2+3)
+let chrBankIdx = 0;               // which bank pair is currently active
+
 function initCHR() {
-  const img = new Image();
-  img.src = '../tiles/chr_all.png';
-  img.onload = () => {
-    const oc = document.createElement('canvas');
-    oc.width = img.width; oc.height = img.height;
-    chrOff = oc.getContext('2d');
-    chrOff.drawImage(img, 0, 0);
+  const paths = ['../tiles/chr_all.png', '../tiles/chr_all_alt.png'];
+  paths.forEach((src, idx) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => {
+      const oc = document.createElement('canvas');
+      oc.width = img.width; oc.height = img.height;
+      const octx = oc.getContext('2d');
+      octx.drawImage(img, 0, 0);
+      chrSheets[idx] = octx;
+      // Activate default bank on first load
+      if (idx === chrBankIdx) {
+        chrOff = octx;
+        tileCache.clear();
+      }
+    };
+  });
+}
+
+function setCHRBank(stageIdx) {
+  const bankIdx = STAGE_CHR_BANK[stageIdx % STAGE_CHR_BANK.length];
+  if (bankIdx !== chrBankIdx || chrOff !== chrSheets[bankIdx]) {
+    chrBankIdx = bankIdx;
+    chrOff = chrSheets[bankIdx];
     tileCache.clear();
-  };
+  }
 }
 
 // Draw one 8×8 CHR tile at NES pixel (destX, destY).
@@ -370,6 +397,7 @@ function triggerBulletExplosion(b) {
 // ROM $C33D LevelStart  $C625 ClearKillTallies
 function initLevel(idx) {
   stageIdx          = idx % LEVEL_MAPS.length;  // ROM loops back to stage 1 after stage 35
+  setCHRBank(stageIdx);                         // Mapper 99: select CHR bank pair per stage
   frameCount        = 0;
   gamePhase         = 'start';
   phaseTimer        = 180;   // ~3 s stage-start banner  ROM $CFAA PreGameDraw
@@ -1716,7 +1744,7 @@ p1Score  = 0;
 p1Lives  = 2;  // display shows +1 (3 lives)
 p1NextLifeScore = 20000;  // ROM $CF44 LivesGrantCheck: first bonus-life threshold
 initLevel(0);
-initCHR();     // load CHR tile sheet (../tiles/chr_all.png); renders CHR immediately on load
+initCHR();     // load both CHR tile sheets (chr_all.png + chr_all_alt.png); setCHRBank() selects per stage
 
 // ROM $C402 GameFrame loop — requestAnimationFrame at 60 fps
 (function loop() {

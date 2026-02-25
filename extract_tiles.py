@@ -155,14 +155,17 @@ def extract_stage_tiles(rom, stage_group, out_dir):
     sprite_tiles = [decode_tile(pt0_data, i * 16) for i in range(256)]
     all_tiles = bg_tiles + sprite_tiles
 
+    # Use suffix for alternate bank pair; default pair keeps backward-compatible name
+    suffix = '' if stage_group == 'D2=1' else '_alt'
+
     w, h, img = make_tile_sheet(all_tiles, TILES_W)
-    write_png(os.path.join(out_dir, "chr_all.png"), w, h, img)
+    write_png(os.path.join(out_dir, f"chr_all{suffix}.png"), w, h, img)
 
     w, h, img = make_tile_sheet(bg_tiles, TILES_W)
-    write_png(os.path.join(out_dir, "chr_bg.png"), w, h, img)
+    write_png(os.path.join(out_dir, f"chr_bg{suffix}.png"), w, h, img)
 
     w, h, img = make_tile_sheet(sprite_tiles, TILES_W)
-    write_png(os.path.join(out_dir, "chr_sprites.png"), w, h, img)
+    write_png(os.path.join(out_dir, f"chr_sprites{suffix}.png"), w, h, img)
 
     print(f"\n  First 8 BG (PT1) tiles (hex plane0 / plane1):")
     for i in range(8):
