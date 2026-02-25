@@ -313,7 +313,8 @@ const C = {
 // ─── Game state  ──────────────────────────────────────────────────────────────
 let stageIdx;       // ROM $41 StageNum
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
-let gamePhase;      // 'start' | 'play' | 'clear' | 'gameover'
+let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover'
+let titleFrame;     // frame counter for title screen blink animation
 let p1Score;        // ROM $15–$1B P1Score (int; BCD in ROM)
 let p1Lives;        // ROM $51 P1Lives
 let p1NextLifeScore; // ROM $CF44 LivesGrantCheck: next score multiple of 20000 to award a life
@@ -1028,6 +1029,18 @@ function checkStageClear() {
 function update() {
   frameCount++;
 
+  // ROM $C65C AttractWait: loop until credits, blinking title sprite
+  if (gamePhase === 'title') {
+    titleFrame++;
+    if (keys['Space'] || keys['Enter']) {
+      p1Score = 0;
+      p1Lives = 2;
+      p1NextLifeScore = 20000;
+      initLevel(0);   // sets gamePhase='start'
+    }
+    return;
+  }
+
   if (gamePhase === 'start') {
     phaseTimer--;
     if (phaseTimer <= 0) gamePhase = 'play';
@@ -1061,7 +1074,7 @@ function update() {
   }
   if (gamePhase === 'gameover') {
     phaseTimer--;
-    if (phaseTimer <= 0 && (keys['Space'] || keys['Enter'])) initLevel(stageIdx);
+    if (phaseTimer <= 0 && (keys['Space'] || keys['Enter'])) enterTitle();
     return;
   }
 
@@ -1623,8 +1636,8 @@ function drawGameOver() {
   fillRect(32, 80, 192, 84, '#000');
   drawBigNesText('GAME', 64, 84, 3);
   drawBigNesText('OVER', 64, 116, 3);
-  // Retry hint (web-only)
-  drawNesText('SPACE TO RETRY', 72, 152, 3);
+  // Retry hint (web-only; ROM returns to attract loop via $C0A6)
+  drawNesText('PRESS START', 76, 152, 3);
 }
 
 // ROM $CAF1 StageClearTallyScreen → TallyScreenInit ($CD04)
@@ -1697,6 +1710,9 @@ function drawStageClear() {
 // ─── Main render  ─────────────────────────────────────────────────────────────
 // ROM $D96D FlushPPUQueue  NMI OAM DMA
 function render() {
+  // ROM $C65C AttractWait: title screen is a separate full-screen render
+  if (gamePhase === 'title') { drawTitleScreen(); return; }
+
   ctx.fillStyle = C.BG;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -1738,12 +1754,43 @@ function render() {
   drawNesText('ARROWS:MOVE  SPACE:FIRE', 36, 228, 0);
 }
 
+// ─── Title screen  ───────────────────────────────────────────────────────────
+// ROM $C65C AttractWait: 240-frame loop with BlinkTitleSprite ($C69A)
+// ROM $CFAA PreGameDraw: draws "BATTLE" (26,46) + "CITY" (60,86) via DrawSpriteString
+function enterTitle() {
+  gamePhase  = 'title';
+  titleFrame = 0;
+}
+
+function drawTitleScreen() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // ROM $CFAA PreGameDraw: "BATTLE" at (26,46), "CITY" at (60,86) via DrawSpriteString ($D14F/$D156)
+  // Each char 32×32 magnified NES pixels
+  drawBigNesText('BATTLE', 26, 46, 3);
+  drawBigNesText('CITY', 60, 86, 3);
+
+  // ROM copyright line (small text, BG3 palette)
+  drawNesText('NAMCO 1985', 80, 134, 3);
+
+  // ROM $C69A BlinkTitleSprite: toggles $D1A7 "PLEASE INSERT COIN" / $D1BA blank
+  // every ~32 frames ($0B & $20, bit 5 = ~1 Hz). Web: "PRESS START" blinking.
+  if (titleFrame & 0x20) {
+    drawNesText('PRESS START', 76, 158, 3);
+  }
+
+  // Controls hint
+  drawNesText('ARROWS:MOVE  SPACE:FIRE', 36, 190, 0);
+}
+
 // ─── Boot  ────────────────────────────────────────────────────────────────────
 // ROM $C070 Reset  $EBF6 SoundResetInit  $D3BF Init
 p1Score  = 0;
 p1Lives  = 2;  // display shows +1 (3 lives)
 p1NextLifeScore = 20000;  // ROM $CF44 LivesGrantCheck: first bonus-life threshold
-initLevel(0);
+frameCount = 0;
+enterTitle();
 initCHR();     // load both CHR tile sheets (chr_all.png + chr_all_alt.png); setCHRBank() selects per stage
 
 // ROM $C402 GameFrame loop — requestAnimationFrame at 60 fps
