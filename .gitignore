@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+.venv/
+
+# Claude
+.claude/
+
+# ROM files
+*.nes
+*.zip
+
+# Extracted/generated assets
+output_gfx/
+tiles/chr_all_alt.png
+tiles/chr_all_banks.png
+tiles/chr_bank01.png
+tiles/chr_bank23.png
+tiles/chr_bg.png
+tiles/chr_bg_alt.png
+tiles/chr_sprites.png
+tiles/chr_sprites_alt.png
+
+# RE loop session logs
+re_loop_sessions/
