@@ -1404,14 +1404,9 @@ function drawEagleBase() {
     fillRect(ex + 8,  ey - 8,  8, 16, wc);    // right leg
   }
 
-  // Eagle sprite: 8 OAM entries in 4×2 grid = 32×32px, top-left at (ex-16, ey-16)
-  // Each entry is 8×16 (top half = T & 0xFE, bottom half = (T & 0xFE)+1), all PT1
-  // ROM EagleDrawFull ($E3F2): 4 calls to DrawTank, OAM_Y=200 then OAM_Y=216
-  //   row0 OAM_Y=200: col104→$D1, col112→$D3, col120→$D5, col128→$D7
-  //   row1 OAM_Y=216: col104→$D9, col112→$DB, col120→$DD, col128→$DF
-  // Damaged ($E3EA): +$10 offset to all tile indices
-  const intactTiles  = [0xD1,0xD3,0xD5,0xD7, 0xD9,0xDB,0xDD,0xDF];
-  const damagedTiles = [0xE1,0xE3,0xE5,0xE7, 0xE9,0xEB,0xED,0xEF];
+  // ROM nametable: eagle is 2×2 BG metatile at (ex-8, ey-8), palette BG0.
+  // Intact: $C8/$CA/$C9/$CB.  Damaged: $CC/$CE/$CD/$CF.  (from $D265 data)
+  // Sprite tiles $D0-$DF/$E0-$EF are ONLY used during explosion animation.
 
   if (eagleExpTimer > 0) {
     // ROM $E386 EagleStateUpdate: explosion animation driven by $68 (eagleExpTimer)
@@ -1420,55 +1415,30 @@ function drawEagleBase() {
       // NullHandler ($DC9E): no eagle sprite drawn during final 4 frames
     } else if (phase >= 1 && phase <= 3) {
       // ROM EagleExplosion1/2/3 ($E3C6/$E3CB/$E3D0): EagleDrawCenter at X=$78,Y=$D8
-      // DrawTank: left col tile=$F1/$F5/$F9; INC×2; right col tile=$F3/$F7/$FB
-      // DrawEntityTile: OAM_Y = Y-8 = $D0=208; OAM_X = $70=112 or $78=120
-      // In game.js coords: left at (ex-8, ey-8), right at (ex, ey-8)
-      const tileBase = [0xF1, 0xF5, 0xF9][phase - 1];  // OAM tile for left col
+      const tileBase = [0xF1, 0xF5, 0xF9][phase - 1];
       if (chrOff) {
         const tL = tileBase, tR = tileBase + 2;
-        drawCHRTile(tL & 0xFE,       7, ex - 8, ey - 8, true);  // top-left
-        drawCHRTile((tL & 0xFE) + 1, 7, ex - 8, ey,     true);  // bottom-left
-        drawCHRTile(tR & 0xFE,       7, ex,     ey - 8, true);  // top-right
-        drawCHRTile((tR & 0xFE) + 1, 7, ex,     ey,     true);  // bottom-right
+        drawCHRTile(tL & 0xFE,       7, ex - 8, ey - 8, true);
+        drawCHRTile((tL & 0xFE) + 1, 7, ex - 8, ey,     true);
+        drawCHRTile(tR & 0xFE,       7, ex,     ey - 8, true);
+        drawCHRTile((tR & 0xFE) + 1, 7, ex,     ey,     true);
       } else {
         fillRect(ex - 8, ey - 8, 16, 16, phase === 1 ? '#ff8800' : phase === 2 ? '#ffcc00' : '#ff4400');
       }
     } else {
-      // Phase 4 = DrawIntact, phase 5 = DrawDamaged: full 4×2 eagle sprite
-      const oamTiles = (phase === 4) ? intactTiles : damagedTiles;
+      // Phase 4 = intact, phase 5 = damaged (shown as BG metatile)
+      const tiles = (phase === 4) ? [0xC8,0xCA,0xC9,0xCB] : [0xCC,0xCE,0xCD,0xCF];
       if (chrOff) {
-        const xs = [ex - 16, ex - 8, ex, ex + 8];
-        const ys = [ey - 16, ey];
-        for (let row = 0; row < 2; row++) {
-          for (let col = 0; col < 4; col++) {
-            const T = oamTiles[row * 4 + col];
-            drawCHRTile(T & 0xFE,        7, xs[col], ys[row],     true);
-            drawCHRTile((T & 0xFE) + 1,  7, xs[col], ys[row] + 8, true);
-          }
-        }
+        drawMetatile(tiles, 0, ex - 8, ey - 8);
       } else {
-        if (phase === 4) {
-          fillRect(ex - 4, ey - 4, 8, 8, '#000000');
-          fillRect(ex - 2, ey - 4, 4, 8, C.EAGLE_OK);
-          fillRect(ex - 4, ey,     8, 4, C.EAGLE_OK);
-        } else {
-          fillRect(ex - 4, ey - 4, 8, 8, C.EAGLE_DEAD);
-        }
+        fillRect(ex - 8, ey - 8, 16, 16, phase === 4 ? C.EAGLE_OK : C.EAGLE_DEAD);
       }
     }
   } else {
-    // No explosion animation: draw intact or damaged eagle
-    const oamTiles = eagleAlive ? intactTiles : damagedTiles;
+    // Normal gameplay: draw eagle as 2×2 BG metatile (16×16px)
+    const tiles = eagleAlive ? [0xC8,0xCA,0xC9,0xCB] : [0xCC,0xCE,0xCD,0xCF];
     if (chrOff) {
-      const xs = [ex - 16, ex - 8, ex, ex + 8];
-      const ys = [ey - 16, ey];
-      for (let row = 0; row < 2; row++) {
-        for (let col = 0; col < 4; col++) {
-          const T = oamTiles[row * 4 + col];
-          drawCHRTile(T & 0xFE,        7, xs[col], ys[row],     true);
-          drawCHRTile((T & 0xFE) + 1,  7, xs[col], ys[row] + 8, true);
-        }
-      }
+      drawMetatile(tiles, 0, ex - 8, ey - 8);
     } else {
       if (eagleAlive) {
         fillRect(ex - 4, ey - 4, 8, 8, '#000000');
@@ -1476,9 +1446,6 @@ function drawEagleBase() {
         fillRect(ex - 4, ey,     8, 4, C.EAGLE_OK);
       } else {
         fillRect(ex - 4, ey - 4, 8, 8, C.EAGLE_DEAD);
-        ctx.fillStyle = '#ff0000';
-        ctx.font = `bold ${6 * SCALE}px monospace`;
-        ctx.fillText('✕', (ex - 5) * SCALE, (ey + 4) * SCALE);
       }
     }
   }
