@@ -754,6 +754,7 @@ function tryFire(e) {
   b.explodeTimer = 0;
   b.armor        = e.starLevel >= 0x60;  // armor-piercing at max star  ROM $D6,X bit1
   b.owner        = e.slot;
+  if (e.isPlayer) sfxPlayerFire(); else sfxEnemyFire();  // ROM sound triggers
 }
 
 // ─── Bullet movement + tile collision  ────────────────────────────────────────
@@ -816,15 +817,17 @@ function bulletHitsTile(b) {
   // Armor-piercing (starLevel >= $60): destroy steel  ROM $E83E TileDestroyIfNoEntity ($D77F)
   if (t === T.STEEL || (t >= T.STEEL_TL && t <= T.STEEL_BR)) {
     if (b.armor) grid[row][col] = T.EMPTY;
+    if (b.owner < 2) sfxSteelHit();  // ROM $030D=1 player bullet hits steel
     return true;
   }
 
   // Water: stop bullet, no destroy  ROM $E838 water check
-  if (t === T.WATER) return true;
+  if (t === T.WATER) { if (b.owner < 2) sfxSteelHit(); return true; }  // ROM $030D=1
 
   // Brick: destroy quarter  ROM $D763 TileDestroyBrick  $D745 SubTileBitmask
   if (t === T.BRICK || (t >= T.BRICK_TL && t <= T.BRICK_BR)) {
     destroyBrick(row, col, b.x, b.y);
+    if (b.owner < 2) sfxBrickHit();  // ROM $030C=1
     return true;
   }
   return false;
@@ -1101,6 +1104,7 @@ function update() {
     if (selUp   && !titleSelectHeld) titleSelect = 0;
     titleSelectHeld = selDown || selUp;
     if (keys['Space'] || keys['Enter']) {
+      initAudio();  // Web Audio requires user gesture
       numPlayers = titleSelect + 1;  // 1 or 2
       p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
       p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
@@ -1112,7 +1116,7 @@ function update() {
 
   if (gamePhase === 'start') {
     phaseTimer--;
-    if (phaseTimer <= 0) gamePhase = 'play';
+    if (phaseTimer <= 0) { gamePhase = 'play'; startBGM(); }
     return;
   }
   if (gamePhase === 'clear') {
@@ -1177,6 +1181,8 @@ function update() {
   }
 
   // ── Active gameplay subsystems  ROM $C29F GameUpdate2 order ──────────────
+  soundTick();                    // ROM $EC23 SoundEngine per-frame
+  tickBGM();                      // ROM $C18A re-trigger BGM channels
   tickTimers();                   // shield/freeze/spawn timers
   moveEntities();                 // ROM $DC9F EntityMovement
   moveBullets();                  // ROM $E7A9 BulletMoveCollision
