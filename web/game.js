@@ -307,7 +307,9 @@ let brickBits;      // GH×GW 4-bit brick sub-tile masks  ROM $D745 SubTileBitma
 let entities;       // 8 entity objects (slots 0-7)
 let bullets;        // 10 bullet slots (0-7 primary per entity; 8-9 player double-shot)
 let playerRespawnTimer = 0;
-let hudTankWiggleIdx = 0;   // ROM $C7F8 HUDTankAnimation: 0–3 oscillation index, advance each frame
+let goScrollY;       // ROM $0106: Y position of in-field "GAME OVER" sprites (240=off-screen)
+let goScrollTimer;   // ROM $0108: countdown (17→0, decrements every 16 frames; 0=inactive)
+let goScrollFrame;   // frame counter for 16-frame decrement interval
 let killCounts;             // [4] per-type enemy kills this stage  ROM $C625 ClearKillTallies
 let tallyState;             // tally animation state during 'clear' phase
 
@@ -383,6 +385,9 @@ function initLevel(idx) {
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
   activeEnemyCount  = 0;
   playerRespawnTimer = 0;
+  goScrollY     = 240;  // off-screen
+  goScrollTimer = 0;    // inactive
+  goScrollFrame = 0;
   killCounts = [0, 0, 0, 0];   // ROM $C625 ClearKillTallies: four counters reset each stage
   tallyState = null;
 
@@ -848,8 +853,12 @@ function killEntity(e) {
     // ROM $DEBA: DEC $51 P1Lives
     p1Lives--;
     if (p1Lives < 0) {
-      gamePhase  = 'gameover';
-      phaseTimer = 240;   // ROM $C53E DrawGameOverScreen timer
+      // ROM $C62F CheckGameOver → $C63E: start in-field "GAME OVER" scroll
+      if (goScrollTimer === 0) {
+        goScrollY     = 240;  // ROM $0106 = $F0 (off-screen bottom)
+        goScrollTimer = 17;   // ROM $0108 = $11
+        goScrollFrame = 0;
+      }
     } else {
       playerRespawnTimer = 120;  // ~2 s delay before respawn
     }
@@ -990,7 +999,6 @@ function checkStageClear() {
 // ROM $C402 GameFrame  $C29F GameUpdate2 — 18-subsystem sequence
 function update() {
   frameCount++;
-  hudTankWiggleIdx = (hudTankWiggleIdx + 1) & 3;  // ROM $C7F8: advance 0→1→2→3→0 every frame
 
   if (gamePhase === 'start') {
     phaseTimer--;
@@ -1040,10 +1048,29 @@ function update() {
   handleEnemyFire();              // ROM $E216 EnemyFireCheck
   checkPowerUpCollision();        // ROM $EB17 PowerUpCollision
 
-  if (!eagleAlive && eagleExpTimer === 0) {
-    gamePhase  = 'gameover';      // ROM $C1A0 StageEndHandler eagle-destruction (after $68→0)
-    phaseTimer = 240;
+  // ROM $C62F CheckGameOver: eagle destroyed ($68→0) → start in-field scroll
+  if (!eagleAlive && eagleExpTimer === 0 && goScrollTimer === 0 && gamePhase === 'play') {
+    goScrollY     = 240;  // ROM $0106 = $F0
+    goScrollTimer = 17;   // ROM $0108 = $11
+    goScrollFrame = 0;
   }
+
+  // ROM $C7F8 GameOverTextAnimation: scroll in-field "GAME OVER" sprites upward
+  // $0108 decrements every 16 frames; while ≥10 ($0A), velocity (direction UP) applied each frame
+  if (goScrollTimer > 0) {
+    goScrollFrame++;
+    if ((goScrollFrame & 0x0F) === 0) {   // every 16 frames
+      goScrollTimer--;
+      if (goScrollTimer === 0) {
+        gamePhase  = 'gameover';           // ROM $C53E DrawGameOverScreen follows
+        phaseTimer = 240;
+      }
+    }
+    if (goScrollTimer >= 10) {
+      goScrollY--;                         // scroll up 1px/frame (ROM $D2CA[0] = $FF = -1)
+    }
+  }
+
   checkStageClear();              // ROM $DEC9 EnemyKillsPool → 0
 }
 
@@ -1655,32 +1682,22 @@ function render() {
   drawPowerUp();
   drawTreesOverlay();  // re-draw tree tiles over entities/bullets (z-order fix)
 
-  // ROM $C7CD DrawHUDTanks: PPUCTRL $B0 = 8×16 sprite mode. 4 OAM entries (tile bit0=1 → PT1/BG bank):
-  //   OAM $79 at X=104 → top=chr[$78], bottom=chr[$79]   (Tank1 left column)
-  //   OAM $7B at X=112 → top=chr[$7A], bottom=chr[$7B]   (Tank1 right column)
-  //   OAM $7D at X=120 → top=chr[$7C], bottom=chr[$7D]   (Tank2 left column)
-  //   OAM $7F at X=128 → top=chr[$7E], bottom=chr[$7F]   (Tank2 right column)
-  // All OAM Y=104 → screen top=105. Two 16×16 tanks: Tank1@(104,105), Tank2@(120,105).
-  // Attribute $03 = palette SP3 = index 7. Visible while $0108≥$0A.
-  if (chrOff && (gamePhase === 'play' || gamePhase === 'start')) {
-    // ROM $C7F8 HUDTankAnimation: wiggle offsets cycle via $0107 (0-3) every frame while $0108≥$0A
-    // HUDTankWiggleX ($D2C6) = {0,−1,0,+1}; HUDTankWiggleY ($D2CA) = {−1,0,+1,0}
-    const WX = [0, -1, 0, 1];
-    const WY = [-1, 0, 1, 0];
-    const wx = WX[hudTankWiggleIdx];
-    const wy = WY[hudTankWiggleIdx];
-    const py = 105 + wy;
-    const t1x = 104 + wx, t2x = 120 + wx;
-    // Tank 1 (OAM sprites $79 + $7B)
-    drawCHRTile(0x78, 7, t1x,     py,   true);
-    drawCHRTile(0x7A, 7, t1x + 8, py,   true);
-    drawCHRTile(0x79, 7, t1x,     py+8, true);
-    drawCHRTile(0x7B, 7, t1x + 8, py+8, true);
-    // Tank 2 (OAM sprites $7D + $7F)
-    drawCHRTile(0x7C, 7, t2x,     py,   true);
-    drawCHRTile(0x7E, 7, t2x + 8, py,   true);
-    drawCHRTile(0x7D, 7, t2x,     py+8, true);
-    drawCHRTile(0x7F, 7, t2x + 8, py+8, true);
+  // ROM $C7CD DrawGameOverText: in-field "GAME OVER" sprites scrolling upward
+  // OAM 8×16 sprites $79/$7B = "GAME" (16×16), $7D/$7F = "OVER" (16×16), side by side = 32×16
+  // tile bit0=1 → PT1/BG bank; tiles $78-$7F from BG bank. Palette SP3 = index 7.
+  // Drawn while goScrollTimer > 0 (ROM $0108 > 0).
+  if (chrOff && goScrollTimer > 0 && goScrollY < 240) {
+    const goX = 112;  // ROM $0105 = $70 (playfield center X)
+    // "GAME" 16×16: OAM sprite $79 at (goX-8), sprite $7B at (goX)
+    drawCHRTile(0x78, 7, goX - 8,  goScrollY - 8,  true);  // TL
+    drawCHRTile(0x7A, 7, goX,      goScrollY - 8,  true);  // TR
+    drawCHRTile(0x79, 7, goX - 8,  goScrollY,      true);  // BL
+    drawCHRTile(0x7B, 7, goX,      goScrollY,      true);  // BR
+    // "OVER" 16×16: OAM sprite $7D at (goX+8), sprite $7F at (goX+16)
+    drawCHRTile(0x7C, 7, goX + 8,  goScrollY - 8,  true);  // TL
+    drawCHRTile(0x7E, 7, goX + 16, goScrollY - 8,  true);  // TR
+    drawCHRTile(0x7D, 7, goX + 8,  goScrollY,      true);  // BL
+    drawCHRTile(0x7F, 7, goX + 16, goScrollY,      true);  // BR
   }
 
   drawHUD();
