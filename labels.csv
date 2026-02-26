@@ -86,7 +86,8 @@
 1,E4DD,SetStateLo
 1,E4E8,SetSpeedPtr
 1,E50E,DecodeDirection
-1,E529,DirDeltaTable
+1,E529,DirDeltaY
+1,E52D,DirDeltaX
 1,E531,EnemySpawnX
 1,E534,EnemySpawnY
 1,E537,PlayerSpawnX
