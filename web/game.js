@@ -1988,38 +1988,41 @@ function drawTitleScreen() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // ROM $CFAA PreGameDraw: "BATTLE" at (26,46), "CITY" at (60,86) via DrawSpriteString ($D14F/$D156)
+  // ROM $CFAA PreGameDraw: score strip at nametable row 3 (y=24)
+  // HI label at col 11 (x=88), HI score at col 14 (x=112)
+  drawNesText('HI-' + hiScore.toString().padStart(6, ' '), 88, 24, 3);
+
+  // ROM $CFAA: "BATTLE" at (26,46), "CITY" at (60,86) via DrawSpriteString ($D14F/$D156)
   // Each char 32×32 magnified NES pixels
   drawBigNesText('BATTLE', 26, 46, 3);
   drawBigNesText('CITY', 60, 86, 3);
 
-  // ROM copyright line (small text, BG3 palette)
-  drawNesText('NAMCO 1985', 80, 126, 3);
-
-  // ROM HUD top score strip: "HI" + hi-score at nametable col 11
-  drawNesText('HI-' + hiScore.toString().padStart(6, ' '), 80, 134, 3);
-
-  // ROM mode selection: "1 PLAYER" / "2 PLAYERS" with cursor
-  drawNesText('1 PLAYER', 88, 142, 3);
-  drawNesText('2 PLAYERS', 88, 158, 3);
-  // ROM cursor: tank icon at selected option
+  // Web-only mode selection (ROM VS System uses coins; Famicom has menu at ~rows 17/19)
+  drawNesText('1 PLAYER', 88, 136, 3);
+  drawNesText('2 PLAYERS', 88, 152, 3);
+  // Cursor: tank icon at selected option
   if (chrOff) {
-    const cy = titleSelect === 0 ? 142 : 158;
+    const cy = titleSelect === 0 ? 136 : 152;
     drawCHRTile(256 + 0x00, 4, 72, cy, true);     // TL
     drawCHRTile(256 + 0x02, 4, 80, cy, true);     // TR
     drawCHRTile(256 + 0x01, 4, 72, cy + 8, true); // BL
     drawCHRTile(256 + 0x03, 4, 80, cy + 8, true); // BR
   } else {
-    drawNesText('>', 72, titleSelect === 0 ? 142 : 158, 3);
+    drawNesText('>', 72, titleSelect === 0 ? 136 : 152, 3);
   }
 
-  // ROM $C69A BlinkTitleSprite blink — show controls hint
+  // ROM $C69A BlinkTitleSprite blink at row 18 area
   if (titleFrame & 0x20) {
-    drawNesText('PRESS START', 76, 178, 3);
+    drawNesText('PRESS START', 72, 168, 3);
   }
 
-  // Controls hint
-  drawNesText('P1:ARROWS+SPACE P2:WASD+E', 20, 210, 0);
+  // ROM $D1E7 copyright at nametable col 5, row 25 → (40,200); '@'=CHR tile $40=©
+  drawNesText('@ 1980 1985 NAMCO LTD', 40, 200, 3);
+  // ROM $D1FE "ALL RIGHTS RESERVED" at col 7, row 27 → (56,216)
+  drawNesText('ALL RIGHTS RESERVED', 56, 216, 3);
+
+  // Controls hint (web-only)
+  drawNesText('P1:ARROWS+SPACE P2:WASD+E', 16, 228, 0);
 }
 
 // ─── Boot  ────────────────────────────────────────────────────────────────────
