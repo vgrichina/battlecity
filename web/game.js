@@ -1738,7 +1738,7 @@ function drawHUD() {
     const col = i % 2, row = Math.floor(i / 2);
     if (i < total) {
       if (chrOff) {
-        drawCHRTile(0x6A, 3, hx + 16 + col * 8, hy + 8 + row * 8, true);
+        drawCHRTile(0x6A, 0, hx + 16 + col * 8, hy + 8 + row * 8, true);
       } else {
         fillRect(hx + 16 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
         fillRect(hx + 17 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
@@ -1746,16 +1746,16 @@ function drawHUD() {
       }
     } else if (chrOff) {
       // ROM $C7AE DrawHUDKillIconB: erased slots show tile $11 (blank/steel)
-      drawCHRTile(0x11, 3, hx + 16 + col * 8, hy + 8 + row * 8, true);
+      drawCHRTile(0x11, 0, hx + 16 + col * 8, hy + 8 + row * 8, true);
     }
   }
 
   // P1 lives  ROM $C72D: "1P" at col 29 row 17; $C6C5: icon $14 at col 29 row 18, digit at col 30
   const p1y = 18 * 8;  // nametable row 18 = pixel 144
   if (chrOff) {
-    drawNesText('1P', hx + 16, 17 * 8, 3);          // ROM col 29, row 17
-    drawCHRTile(0x14, 3, hx + 16, p1y, true);        // ROM col 29, row 18
-    drawNesText(String(p1Lives + 1), hx + 24, p1y, 3); // ROM col 30, row 18
+    drawNesText('1P', hx + 16, 17 * 8, 0);          // ROM col 29, row 17
+    drawCHRTile(0x14, 0, hx + 16, p1y, true);        // ROM col 29, row 18
+    drawNesText(String(p1Lives + 1), hx + 24, p1y, 0); // ROM col 30, row 18
   } else {
     text('P1', hx + 16, p1y - 8, C.P1, 6);
     fillRect(hx + 16, p1y, 8, 6, C.P1);
@@ -1766,9 +1766,9 @@ function drawHUD() {
   if (numPlayers === 2) {
     const p2y = 21 * 8;  // nametable row 21 = pixel 168
     if (chrOff) {
-      drawNesText('2P', hx + 16, 20 * 8, 3);          // ROM col 29, row 20
-      drawCHRTile(0x14, 3, hx + 16, p2y, true);        // ROM col 29, row 21
-      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 24, p2y, 3); // ROM col 30, row 21
+      drawNesText('2P', hx + 16, 20 * 8, 0);          // ROM col 29, row 20
+      drawCHRTile(0x14, 0, hx + 16, p2y, true);        // ROM col 29, row 21
+      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 24, p2y, 0); // ROM col 30, row 21
     } else {
       text('P2', hx + 16, p2y - 8, C.P2, 6);
       fillRect(hx + 16, p2y, 8, 6, C.P2);
@@ -1782,34 +1782,34 @@ function drawHUD() {
   const fc30 = 30 * 8; // col 30 = pixel 240
   if (chrOff) {
     // Flag icon: 2×2 tiles at rows 23–24, cols 29–30  ROM $D225/$D228
-    drawCHRTile(0x6C, 3, fc29, sty,     true);  // top-left
-    drawCHRTile(0xFC, 3, fc30, sty,     true);  // top-right
-    drawCHRTile(0x6D, 3, fc29, sty + 8, true);  // bottom-left
-    drawCHRTile(0xFD, 3, fc30, sty + 8, true);  // bottom-right
+    drawCHRTile(0x6C, 0, fc29, sty,     true);  // top-left
+    drawCHRTile(0xFC, 0, fc30, sty,     true);  // top-right
+    drawCHRTile(0x6D, 0, fc29, sty + 8, true);  // bottom-left
+    drawCHRTile(0xFD, 0, fc30, sty + 8, true);  // bottom-right
     const sn = String(stageIdx + 1).padStart(2);
-    drawNesText(sn, fc29, sty + 16, 3);  // ROM row 25
+    drawNesText(sn, fc29, sty + 16, 0);  // ROM row 25
   } else {
     text('S' + (stageIdx + 1), hx + 16, sty + 8, C.HUD_TEXT, 6);
   }
 
   // Freeze indicator  ROM $0100 EnemyFreezeTimer
   if (freezeTimer > 0) {
-    drawNesText('FREEZE', hx, sty + 20, 3);
+    drawNesText('FREEZE', hx, sty + 20, 0);
   }
 
   // --- Top score strip (ROM nametable row 1, web-only during gameplay) ---
   // ROM: scores at row 3 cols 2–28 only on stage-start; web shows persistently at row 1
   const sy = 8;  // row 1 (pixel 8), inside top border area
   // P1 score: col 2 = pixel 16
-  drawNesText('1P', 2 * 8, sy, 3);
-  drawNesText(p1Score.toString().padStart(6, ' '), 4 * 8, sy, 3);
+  drawNesText('1P', 2 * 8, sy, 0);
+  drawNesText(p1Score.toString().padStart(6, ' '), 4 * 8, sy, 0);
   // HI-score: col 11 = pixel 88
-  drawNesText('HI', 11 * 8, sy, 3);
-  drawNesText(hiScore.toString().padStart(6, ' '), 14 * 8, sy, 3);
+  drawNesText('HI', 11 * 8, sy, 0);
+  drawNesText(hiScore.toString().padStart(6, ' '), 14 * 8, sy, 0);
   // P2 score (2P only): col 21 = pixel 168
   if (numPlayers === 2) {
-    drawNesText('2P', 21 * 8, sy, 3);
-    drawNesText(p2Score.toString().padStart(6, ' '), 23 * 8, sy, 3);
+    drawNesText('2P', 21 * 8, sy, 0);
+    drawNesText(p2Score.toString().padStart(6, ' '), 23 * 8, sy, 0);
   }
 }
 
