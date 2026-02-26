@@ -1715,11 +1715,21 @@ function drawTreesOverlay() {
 
 // ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawHUDTanks  $D8F7 DrawRowTiles
 function drawHUD() {
-  // --- Right sidebar (nametable cols 27–31, pixel X 216–255) ---
+  // --- Right sidebar (nametable cols 28–31, pixel X 224–255) ---
+  // ROM: ClearNametableSlot ($98EB) fills with tile $FC; HUD area attribute = $00 (palette 0/BG0).
+  // HUD elements drawn over $FC background via PPUQueueTiles ($D6D3).
   const hx = 27 * 8;                 // pixel X = 216 (nametable col 27)
   const hy = FY;                     // pixel Y = 16  (row 2)
 
-  fillRect(hx, hy, 40, GH * META + 8, C.HUD_BG);
+  // Clear HUD area (cols 28–31 only; col 27 is rightmost playfield column)
+  if (chrOff) {
+    // Draw tile $FC background with palette 0 (BG0) — matches ROM attribute table
+    for (let r = 2; r < 28; r++)
+      for (let c = 28; c < 32; c++)
+        drawCHRTile(0xFC, 0, c * 8, r * 8);
+  } else {
+    fillRect(28 * 8, hy, 32, GH * META + 8, C.HUD_BG);
+  }
 
   // Enemy count  ROM $C7BD DrawAllHUDKillIcons: rows 3–12, cols 29–30
   // ROM: BG tile $6A = small enemy tank icon; $11 = blank (erased on spawn)
