@@ -51,9 +51,9 @@
 1,DE9E,StateCountdown
 1,DEBA,PlayerKilled
 1,DEC9,EnemyKilled
-1,DECC,SpawnP2
-1,DEE8,SpawnP1
-1,DEFA,SpawnReset
+1,DECC,PlayerDeathScrollCheck
+1,DEE8,P2DeathScrollLeft
+1,DEFA,SetDeathScrollParams
 1,DF09,StateIncSlot
 1,DF18,StateIncFire
 1,DF81,DrawMovingSprite
@@ -245,6 +245,7 @@
 1,CF96,GameOverScoreScreen
 1,C42C,GameOverExit
 1,C62F,CheckGameOver
+1,C63E,SetCenterDeathScroll
 1,C18A,GameLoopTop
 1,C1A0,StageEndHandler
 0,99D2,ControllerDoubleRead

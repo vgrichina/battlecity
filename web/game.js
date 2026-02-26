@@ -343,7 +343,9 @@ let brickBits;      // GH×GW 4-bit brick sub-tile masks  ROM $D745 SubTileBitma
 let entities;       // 8 entity objects (slots 0-7)
 let bullets;        // 10 bullet slots (0-7 primary per entity; 8-9 player double-shot)
 let playerRespawnTimer = [0, 0];  // per-player respawn timers
+let goScrollX;       // ROM $0105: X position of in-field "GAME OVER" sprites
 let goScrollY;       // ROM $0106: Y position of in-field "GAME OVER" sprites (240=off-screen)
+let goScrollDir;     // ROM $0107: direction index (0=up,1=left,2=down,3=right) into wiggle tables
 let goScrollTimer;   // ROM $0108: countdown (17→0, decrements every 16 frames; 0=inactive)
 let goScrollFrame;   // frame counter for 16-frame decrement interval
 let killCounts;             // [4] per-type enemy kills this stage  ROM $C625 ClearKillTallies
@@ -426,8 +428,10 @@ function initLevel(idx) {
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
   activeEnemyCount  = 0;
   playerRespawnTimer = [0, 0];
-  goScrollY     = 240;  // off-screen
-  goScrollTimer = 0;    // inactive
+  goScrollX     = 0x70;  // ROM $0105 = $70 (center X = 112)
+  goScrollY     = 240;   // off-screen
+  goScrollDir   = 0;     // ROM $0107 = 0 (up)
+  goScrollTimer = 0;     // inactive
   goScrollFrame = 0;
   killCounts = [0, 0, 0, 0];   // ROM $C625 ClearKillTallies: four counters reset each stage
   tallyState = null;
@@ -921,13 +925,39 @@ function bulletBulletCancel() {
   }
 }
 
-// ROM $C62F CheckGameOver: start in-field scroll if all players are dead (no lives)
+// ROM $C62F/$C63E CheckGameOver: start in-field "GAME OVER" scroll
+// Center-up when both players dead; called from main gameplay loop
 function checkGameOverScroll() {
-  // In 2P, only trigger gameover scroll when BOTH players are out of lives
+  // In 2P, only trigger center scroll when BOTH players are out of lives
   if (numPlayers === 2 && (p1Lives >= 0 || p2Lives >= 0)) return;
   if (goScrollTimer === 0) {
-    goScrollY     = 240;  // ROM $0106 = $F0 (off-screen bottom)
-    goScrollTimer = 17;   // ROM $0108 = $11
+    goScrollX     = 0x70;  // ROM $0105 = $70 (center X = 112)
+    goScrollY     = 0xF0;  // ROM $0106 = $F0 (off-screen bottom)
+    goScrollDir   = 0;     // ROM $0107 = 0 (up)
+    goScrollTimer = 0x11;  // ROM $0108 = $11 (17)
+    goScrollFrame = 0;     // ROM $0B = 0
+  }
+}
+
+// ROM $DECC: Single-player death in 2P mode — scroll from dead player's side
+// P1 dies (playerIdx=0): scroll from X=$20 moving right toward P2
+// P2 dies (playerIdx=1): scroll from X=$C0 moving left toward P1
+function startPlayerDeathScroll(playerIdx) {
+  if (goScrollTimer > 0) return;  // already scrolling
+  if (!eagleAlive) return;        // ROM $DECC: only when eagle intact ($68=$80)
+  if (playerIdx === 0 && p2Lives >= 0) {
+    // P1 out of lives, P2 still alive → scroll from left moving right
+    goScrollDir   = 3;     // ROM $0107 = 3 (right)
+    goScrollX     = 0x20;  // ROM $0105 = $20 (X = 32)
+    goScrollY     = 0xD8;  // ROM $0106 = $D8 (Y = 216)
+    goScrollTimer = 0x0D;  // ROM $0108 = $0D (13)
+    goScrollFrame = 0;
+  } else if (playerIdx === 1 && p1Lives >= 0) {
+    // P2 out of lives, P1 still alive → scroll from right moving left
+    goScrollDir   = 1;     // ROM $0107 = 1 (left)
+    goScrollX     = 0xC0;  // ROM $0105 = $C0 (X = 192)
+    goScrollY     = 0xD8;  // ROM $0106 = $D8 (Y = 216)
+    goScrollTimer = 0x0D;  // ROM $0108 = $0D (13)
     goScrollFrame = 0;
   }
 }
@@ -945,6 +975,7 @@ function killEntity(e) {
     if (slot === 0) {
       p1Lives--;
       if (p1Lives < 0) {
+        if (numPlayers === 2) startPlayerDeathScroll(0);  // ROM $DECC: P1 dead in 2P
         checkGameOverScroll();
       } else {
         playerRespawnTimer[0] = 120;
@@ -952,6 +983,7 @@ function killEntity(e) {
     } else {
       p2Lives--;
       if (p2Lives < 0) {
+        if (numPlayers === 2) startPlayerDeathScroll(1);  // ROM $DECC: P2 dead in 2P
         checkGameOverScroll();
       } else {
         playerRespawnTimer[1] = 120;
@@ -1206,29 +1238,39 @@ function update() {
 
   // ROM $C62F CheckGameOver: eagle destroyed ($68→0) → start in-field scroll
   if (!eagleAlive && eagleExpTimer === 0 && goScrollTimer === 0 && gamePhase === 'play') {
-    goScrollY     = 240;  // ROM $0106 = $F0
-    goScrollTimer = 17;   // ROM $0108 = $11
+    goScrollX     = 0x70;  // ROM $0105 = $70 (center)
+    goScrollY     = 0xF0;  // ROM $0106 = $F0
+    goScrollDir   = 0;     // ROM $0107 = 0 (up)
+    goScrollTimer = 0x11;  // ROM $0108 = $11
     goScrollFrame = 0;
   }
 
-  // ROM $C7F8 GameOverTextAnimation: scroll in-field "GAME OVER" sprites upward
-  // $0108 decrements every 16 frames; while ≥10 ($0A), velocity (direction UP) applied each frame
+  // ROM $C7F8 HUDTankAnimation: 4-direction wiggle scroll for "GAME OVER" sprites
+  // $0108 decrements every 16 frames; while ≥$0A, direction delta applied each frame
+  // WiggleX $D2C6: {0,-1,0,+1}  WiggleY $D2CA: {-1,0,+1,0}
   if (goScrollTimer > 0) {
     goScrollFrame++;
     if ((goScrollFrame & 0x0F) === 0) {   // every 16 frames
       goScrollTimer--;
       if (goScrollTimer === 0) {
-        gamePhase  = 'gameover';           // ROM $C53E DrawGameOverScreen follows
-        phaseTimer = 240;
-        sfxGameOver();  // stop BGM on game over
-        // ROM $D9F0 CompareAndUpdateHiScore: compare P1/P2 scores vs hiScore
-        newHiScorePlayer = 0;
-        if (p1Score > hiScore) { hiScore = p1Score; newHiScorePlayer = 1; }
-        if (numPlayers === 2 && p2Score > hiScore) { hiScore = p2Score; newHiScorePlayer = 2; }
+        goScrollY = 0xF0;                   // ROM: hide sprite off-screen
+        // Transition to gameover only if all players dead or eagle destroyed
+        const allDead = p1Lives < 0 && (numPlayers === 1 || p2Lives < 0);
+        if (allDead || !eagleAlive) {
+          gamePhase  = 'gameover';
+          phaseTimer = 240;
+          sfxGameOver();
+          newHiScorePlayer = 0;
+          if (p1Score > hiScore) { hiScore = p1Score; newHiScorePlayer = 1; }
+          if (numPlayers === 2 && p2Score > hiScore) { hiScore = p2Score; newHiScorePlayer = 2; }
+        }
       }
     }
     if (goScrollTimer >= 10) {
-      goScrollY--;                         // scroll up 1px/frame (ROM $D2CA[0] = $FF = -1)
+      const WIGGLE_X = [0, -1, 0, 1];   // ROM $D2C6 HUDTankWiggleX
+      const WIGGLE_Y = [-1, 0, 1, 0];   // ROM $D2CA HUDTankWiggleY
+      goScrollX += WIGGLE_X[goScrollDir];
+      goScrollY += WIGGLE_Y[goScrollDir];
     }
   }
 
@@ -1857,18 +1899,18 @@ function render() {
   drawPowerUp();
   drawTreesOverlay();  // re-draw tree tiles over entities/bullets (z-order fix)
 
-  // ROM $C7CD DrawGameOverText: in-field "GAME OVER" sprites scrolling upward
-  // OAM 8×16 sprites $79/$7B = "GAME" (16×16), $7D/$7F = "OVER" (16×16), side by side = 32×16
-  // tile bit0=1 → PT1/BG bank; tiles $78-$7F from BG bank. Palette SP3 = index 7.
-  // Drawn while goScrollTimer > 0 (ROM $0108 > 0).
-  if (chrOff && goScrollTimer > 0 && goScrollY < 240) {
-    const goX = 112;  // ROM $0105 = $70 (playfield center X)
-    // "GAME" 16×16: OAM sprite $79 at (goX-8), sprite $7B at (goX)
+  // ROM $C7CD DrawHUDTanks / DrawGameOverText: in-field "GAME OVER" sprites
+  // 4 OAM 8×16 sprites from BG bank: $79/$7B = left 16×16, $7D/$7F = right 16×16
+  // DrawTank places at (X-8,Y-8) and (X,Y-8); second call at (X+8,Y-8) and (X+16,Y-8)
+  // Palette SP3 = palIdx 7. Drawn while goScrollTimer > 0 (ROM $0108 > 0).
+  if (chrOff && goScrollTimer > 0 && goScrollY < 0xF0) {
+    const goX = goScrollX;  // ROM $0105 (variable X position)
+    // "GAME" 16×16: DrawTank($79) at (goX, goScrollY) → sprites at (goX-8, goScrollY-8)
     drawCHRTile(0x78, 7, goX - 8,  goScrollY - 8,  true);  // TL
     drawCHRTile(0x7A, 7, goX,      goScrollY - 8,  true);  // TR
     drawCHRTile(0x79, 7, goX - 8,  goScrollY,      true);  // BL
     drawCHRTile(0x7B, 7, goX,      goScrollY,      true);  // BR
-    // "OVER" 16×16: OAM sprite $7D at (goX+8), sprite $7F at (goX+16)
+    // "OVER" 16×16: DrawTank($7D) at (goX+16, goScrollY) → sprites at (goX+8, goScrollY-8)
     drawCHRTile(0x7C, 7, goX + 8,  goScrollY - 8,  true);  // TL
     drawCHRTile(0x7E, 7, goX + 16, goScrollY - 8,  true);  // TR
     drawCHRTile(0x7D, 7, goX + 8,  goScrollY,      true);  // BL
