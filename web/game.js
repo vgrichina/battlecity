@@ -1468,12 +1468,18 @@ function drawEagleBase() {
         fillRect(ex - 8, ey - 8, 16, 16, phase === 1 ? '#ff8800' : phase === 2 ? '#ffcc00' : '#ff4400');
       }
     } else {
-      // Phase 4 = intact, phase 5 = damaged (shown as BG metatile)
-      const tiles = (phase === 4) ? [0xC8,0xCA,0xC9,0xCB] : [0xCC,0xCE,0xCD,0xCF];
+      // Phase 4 = intact ($D0-$DF), phase 5 = damaged ($E0-$EF): ROM $E3E2/$E3EA → EagleDrawFull ($E3F2)
+      // 8 OAM 8×16 entries = 4×4 grid of 8×8 tiles = 32×32px, palette SP3 (palIdx 7)
+      // Tile layout: 4 DrawSprite16 calls at (ex±8, ey±8) centers, each 16×16
+      const tBase = (phase === 4) ? 0xD0 : 0xE0;
       if (chrOff) {
-        drawMetatile(tiles, 0, ex - 8, ey - 8);
+        for (let col = 0; col < 4; col++)
+          for (let row = 0; row < 4; row++) {
+            const tile = tBase + col * 2 + (row & 1) + ((row >> 1) * 8);
+            drawCHRTile(tile, 7, ex - 16 + col * 8, ey - 16 + row * 8, true);
+          }
       } else {
-        fillRect(ex - 8, ey - 8, 16, 16, phase === 4 ? C.EAGLE_OK : C.EAGLE_DEAD);
+        fillRect(ex - 16, ey - 16, 32, 32, phase === 4 ? C.EAGLE_OK : C.EAGLE_DEAD);
       }
     }
   } else {
