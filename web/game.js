@@ -679,10 +679,13 @@ function moveEntities() {
       if (!onIce) {
         // Off ice: normal input — stop if no key, allow direction change
         if (d === -1) continue;
-        // Direction change: snap to 8-px grid  ROM $DC23  (+4)&$F8
+        // Direction change: snap to 8-px grid only for perpendicular turns
+        // ROM $DC77-$DC93: same dir → skip; 180° (EOR #$02) → skip; else snap
         if (d !== e.dir) {
-          e.x = (e.x + 4) & 0xF8;
-          e.y = (e.y + 4) & 0xF8;
+          if (d !== (e.dir ^ 2)) {  // perpendicular turn → snap
+            e.x = (e.x + 4) & 0xF8;
+            e.y = (e.y + 4) & 0xF8;
+          }
           e.dir = d;
         }
       }
@@ -781,8 +784,8 @@ function tryFire(e) {
   }
   // Bullet spawn position: from entity center toward direction  ROM $E140
   // e.x/e.y are center coords (ROM convention)
-  b.x      = e.x + DX[e.dir] * 9;
-  b.y      = e.y + DY[e.dir] * 9;
+  b.x      = e.x + DX[e.dir] * 8;  // ROM $E156: ASL×3 = ×8
+  b.y      = e.y + DY[e.dir] * 8;
   b.dir    = e.dir;
   b.active       = true;
   b.explodeTimer = 0;
