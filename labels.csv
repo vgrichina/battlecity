@@ -281,7 +281,15 @@
 1,CA79,TallyDrawRowSprite
 1,CAAD,TallyOpenCurtain
 1,CACF,TallyCloseCurtain
+1,CCF3,TallyFinalHold
+1,CF3C,TallyDrawSprite16
 1,D137,DelayXFrames
+1,D271,Str_ArrowLeft
+1,D273,Str_ArrowRight
+1,D275,Str_TOTAL
+1,D27B,Str_Separator7
+1,D283,Str_BONUS
+1,D21E,Str_PTS
 1,DA62,SetScoreWeight
 1,DA31,ScoreAdd
 # Session 13: game-over sequence

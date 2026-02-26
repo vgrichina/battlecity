@@ -1120,12 +1120,12 @@ function checkStageClear() {
   if (gamePhase !== 'play') return;
   if (enemiesLeft === 0 && activeEnemyCount === 0) {
     gamePhase  = 'clear';
-    phaseTimer = 60;    // initial pause before tally drain begins  ROM $CAF1 StageClearTallyScreen
+    phaseTimer = 25;    // ROM $CAF4: LDX #$19 = 25 frames initial pause
     sfxStageClear();  // ROM stage-clear melody (stops BGM, plays slots 21-23)
     tallyState = {
       countsLeft: [...killCounts],  // counts down to 0 as score is tallied
       row:        0,                // current row being drained (0-3)
-      frameTimer: 4,                // frames per kill decrement  ROM ~4 frames/kill
+      frameTimer: 7,                // ROM $CBF5: LDX #$07 = 7 frames per kill tick
       done:       false,            // all rows drained flag
     };
   }
@@ -1169,16 +1169,16 @@ function update() {
       while (ts.row < 4 && killCounts[ts.row] === 0) ts.row++;
       if (ts.row >= 4) {
         ts.done = true;
-        phaseTimer = 180;  // hold ~3 s  ROM TallyHold
+        phaseTimer = 100;  // ROM $CCF3: LDX #$64 = 100 frames final hold
       } else {
         ts.frameTimer--;
         if (ts.frameTimer <= 0) {
           ts.countsLeft[ts.row] = Math.max(0, ts.countsLeft[ts.row] - 1);
-          ts.frameTimer = 4;
+          ts.frameTimer = 7;  // ROM $CBF5: LDX #$07 = 7 frames per kill tick
         }
         if (ts.countsLeft[ts.row] === 0) {
           ts.row++;
-          ts.frameTimer = 12;  // inter-row pause
+          ts.frameTimer = 18;  // ROM $CC09: LDX #$12 = 18 frames inter-row pause
         }
       }
     } else {
@@ -1824,69 +1824,99 @@ function drawGameOver() {
 }
 
 // ROM $CAF1 StageClearTallyScreen → TallyScreenInit ($CD04)
-// Shows 4 rows (one per enemy type), drains per-type kill count with score animation.
-// Enemy tiles: type-N facing up (dir=0, animBit=0): spriteBase = 0x80+N*0x20; palIdx=6 (SP2)
+// Full-screen layout matching ROM nametable positions (col×8, row×8):
+//   Row 3: "HI-SCORE" (col 8) + value (col ~18)
+//   Row 5: "STAGE" (col 12) + number (col 14)
+//   Row 7: "I-PLAYER" (col 3)     Row 9: P1 score (col 5)
+//   Rows 12/15/18/21: per-type rows — score (col 1), "PTS" (col 8),
+//     arrow $5B (col 14), enemy sprite (col 15), kill count (col ~13)
+//   Row 22: separator (7× tile $5C at col 12)
+//   Row 23: "TOTAL" (col 6) + total count (col ~13)
 function drawStageClear() {
-  // Tally panel: 192×100 centered at x=32..224, y=68..168
-  const px = 32, py = 68, pw = 192, ph = 100;
-  fillRect(px, py, pw, ph, '#000000');
+  // ROM uses full 256×240 screen, black background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Title — CHR tile text, BG3 palette (white)
-  const title = 'STAGE  CLEAR!';
-  drawNesText(title, px + (pw - title.length * 8) / 2, py + 4, 3);
+  const PTS = [100, 200, 300, 400];
+
+  // Row 3 (y=24): HI-SCORE label + value  ROM $CD2D: (col 8, row 3)
+  drawNesText('HI-SCORE', 64, 24, 3);
+  drawNesText(hiScore.toString().padStart(6, ' '), 144, 24, 3);
+
+  // Row 5 (y=40): STAGE + number  ROM $CD48: (col 12, row 5)
+  drawNesText('STAGE', 96, 40, 3);
+  drawNesText((stageIdx + 1).toString().padStart(2, ' '), 144, 40, 3);
+
+  // Row 7 (y=56): player label  ROM $CD6B: (col 3, row 7)
+  // ROM uses tile $5E (special I glyph) but web uses "I" as approximation
+  drawNesText('I-PLAYER', 24, 56, 3);
+
+  // Row 9 (y=72): P1 accumulated score  ROM $CD7A: (col 5, row 9)
+  drawNesText(p1Score.toString().padStart(6, ' '), 40, 72, 3);
 
   if (!tallyState) return;
   const ts = tallyState;
-  const PTS = [100, 200, 300, 400];
-  const TYPE_NAMES = ['BASIC', 'FAST ', 'POWER', 'ARMOR'];
 
   for (let row = 0; row < 4; row++) {
-    const ry = py + 20 + row * 20;
+    // ROM type rows at nametable rows 12, 15, 18, 21 (y = row*3+12)*8
+    const ry = (row * 3 + 12) * 8;  // y = 96, 120, 144, 168
     const total = killCounts[row];
 
     // How many have been tallied so far for this row
     let tallied;
     if (row < ts.row) {
-      tallied = total;              // fully drained row
+      tallied = total;
     } else if (row === ts.row) {
-      tallied = total - ts.countsLeft[row];  // currently animating
+      tallied = total - ts.countsLeft[row];
     } else {
-      tallied = 0;                  // not yet started
+      tallied = 0;
     }
 
-    // Enemy type icon (16×16 sprite, facing up)
-    const sprBase = 0x80 + row * 0x20;
-    const T = 256 + sprBase;  // sprite bank tile, dir=0 animBit=0
-    if (chrOff) {
-      drawCHRTile(T,   6, px + 2,  ry,     true);  // TL
-      drawCHRTile(T+2, 6, px + 10, ry,     true);  // TR
-      drawCHRTile(T+1, 6, px + 2,  ry + 8, true);  // BL
-      drawCHRTile(T+3, 6, px + 10, ry + 8, true);  // BR
-    } else {
-      fillRect(px + 2, ry, 16, 16, ['#aaaaaa','#ffaa44','#ff4444','#444444'][row]);
-    }
-
-    // Type label — CHR tile text
-    if (tallied > 0 || row <= ts.row) {
-      drawNesText(TYPE_NAMES[row], px + 22, ry + 4, 3);
-    }
-
-    // Kill count × pts = score  (only show if row has been reached)
-    if (row <= ts.row || (ts.done && total > 0)) {
+    // Per-type score + "PTS" label  ROM $CB87: (col 1, row N), $CE20: (col 8, row N)
+    if (row <= ts.row) {
       const rowScore = tallied * PTS[row];
-      const killStr = tallied + 'X' + PTS[row];
-      drawNesText(killStr, px + pw - 50, ry + 4, 3);
-      drawNesText(rowScore.toString().padStart(5), px + pw - 42, ry + 4, 3);
+      drawNesText(rowScore.toString().padStart(5, ' '), 8, ry, 3);
+      drawNesText('PTS', 64, ry, 3);
+    }
+
+    // Kill count  ROM $CBA2: (col 8+skip, row N) → ends at col ~13 before arrow
+    if (row <= ts.row) {
+      drawNesText(tallied.toString().padStart(2, ' '), 96, ry, 3);
+    }
+
+    // Arrow tile $5B at col 14 (x=112)  ROM $CD86: (col 14, rows 12/15/18/21)
+    if (chrOff) {
+      drawCHRTile(0x5B, 3, 112, ry, false);
+    } else {
+      drawNesText('<', 112, ry, 3);
+    }
+
+    // Enemy type icon (16×16 sprite, facing up)  ROM $CEC4/$CF3C
+    // Positioned at pixel (121, ry-4) to center vertically  ROM: (X=$81=129-8=121, Y varies)
+    const sprBase = 0x80 + row * 0x20;
+    const T = 256 + sprBase;
+    if (chrOff) {
+      drawCHRTile(T,   6, 121, ry - 4, true);  // TL
+      drawCHRTile(T+2, 6, 129, ry - 4, true);  // TR
+      drawCHRTile(T+1, 6, 121, ry + 4, true);  // BL
+      drawCHRTile(T+3, 6, 129, ry + 4, true);  // BR
+    } else {
+      fillRect(121, ry - 4, 16, 16, ['#aaaaaa','#ffaa44','#ff4444','#444444'][row]);
     }
   }
 
-  // Total line (shown when all rows done)
+  // Row 22 (y=176): separator line  ROM $CEA2: 7× tile $5C at (col 12, row 22)
+  if (chrOff) {
+    for (let i = 0; i < 7; i++) drawCHRTile(0x5C, 3, 96 + i * 8, 176, false);
+  } else {
+    drawNesText('-------', 96, 176, 3);
+  }
+
+  // Row 23 (y=184): TOTAL + count  ROM $CEB4: (col 6, row 23), $CC16: (col 8, row 23)
+  drawNesText('TOTAL', 48, 184, 3);
   if (ts.done) {
-    const totalScore = killCounts.reduce((s, n, i) => s + n * PTS[i], 0);
-    const ly = py + ph - 8;
-    fillRect(px + 2, ly - 8, pw - 4, 1, '#666666');
-    drawNesText('TOTAL', px + 4, ly - 7, 3);
-    drawNesText(totalScore.toString().padStart(6), px + pw - 50, ly - 7, 3);
+    const totalKills = killCounts.reduce((s, n) => s + n, 0);
+    drawNesText(totalKills.toString().padStart(2, ' '), 96, 184, 3);
   }
 }
 
@@ -1896,6 +1926,8 @@ function render() {
   // ROM $C65C AttractWait: title screen is a separate full-screen render
   if (gamePhase === 'title')   { drawTitleScreen();   return; }
   if (gamePhase === 'victory') { drawVictoryScreen(); return; }
+  // ROM $CAF1 StageClearTallyScreen: full-screen tally (not an overlay)
+  if (gamePhase === 'clear')   { drawStageClear();    return; }
 
   ctx.fillStyle = C.BG;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1932,7 +1964,6 @@ function render() {
 
   if (gamePhase === 'start')    drawStageBanner();
   if (gamePhase === 'gameover') drawGameOver();
-  if (gamePhase === 'clear')    drawStageClear();
 
   // Controls reminder (web-only, CHR tile text)
   drawNesText('ARROWS:MOVE  SPACE:FIRE', 36, 228, 0);
