@@ -1785,14 +1785,14 @@ function drawHUD() {
   const sy = 8;  // row 1 (pixel 8), inside top border area
   // P1 score: col 2 = pixel 16
   drawNesText('1P', 2 * 8, sy, 3);
-  drawNesText(p1Score.toString().padStart(6, '0'), 4 * 8, sy, 3);
+  drawNesText(p1Score.toString().padStart(6, ' '), 4 * 8, sy, 3);
   // HI-score: col 11 = pixel 88
   drawNesText('HI', 11 * 8, sy, 3);
-  drawNesText(hiScore.toString().padStart(6, '0'), 14 * 8, sy, 3);
+  drawNesText(hiScore.toString().padStart(6, ' '), 14 * 8, sy, 3);
   // P2 score (2P only): col 21 = pixel 168
   if (numPlayers === 2) {
     drawNesText('2P', 21 * 8, sy, 3);
-    drawNesText(p2Score.toString().padStart(6, '0'), 23 * 8, sy, 3);
+    drawNesText(p2Score.toString().padStart(6, ' '), 23 * 8, sy, 3);
   }
 }
 
@@ -1817,7 +1817,7 @@ function drawGameOver() {
     // ROM $C527: JSR RNG; AND #$3F; JSR QueuePaletteWrite — random NES color each frame
     const flashPal = Math.floor(Math.random() * 8);  // random palette each frame
     drawNesText('HISCORE', 88, 148, flashPal);
-    drawNesText(hiScore.toString().padStart(6, '0'), 88, 158, flashPal);
+    drawNesText(hiScore.toString().padStart(6, ' '), 88, 158, flashPal);
   }
   // Retry hint (web-only; ROM returns to attract loop via $C0A6)
   drawNesText('PRESS START', 76, 172, 3);
@@ -1997,7 +1997,7 @@ function drawTitleScreen() {
   drawNesText('NAMCO 1985', 80, 126, 3);
 
   // ROM HUD top score strip: "HI" + hi-score at nametable col 11
-  drawNesText('HI-' + hiScore.toString().padStart(6, '0'), 80, 134, 3);
+  drawNesText('HI-' + hiScore.toString().padStart(6, ' '), 80, 134, 3);
 
   // ROM mode selection: "1 PLAYER" / "2 PLAYERS" with cursor
   drawNesText('1 PLAYER', 88, 142, 3);
