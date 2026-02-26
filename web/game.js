@@ -1717,14 +1717,19 @@ function drawHUD() {
   // Enemy count  ROM $C7BD DrawAllHUDKillIcons: rows 3–12, cols 29–30
   // ROM: BG tile $6A = small enemy tank icon; $11 = blank (erased on spawn)
   const total = enemiesLeft + activeEnemyCount;
-  for (let i = 0; i < Math.min(total, 20); i++) {
+  for (let i = 0; i < 20; i++) {
     const col = i % 2, row = Math.floor(i / 2);
-    if (chrOff) {
-      drawCHRTile(0x6A, 3, hx + 16 + col * 8, hy + 8 + row * 8, true);
-    } else {
-      fillRect(hx + 16 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
-      fillRect(hx + 17 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
-      fillRect(hx + 21 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+    if (i < total) {
+      if (chrOff) {
+        drawCHRTile(0x6A, 3, hx + 16 + col * 8, hy + 8 + row * 8, true);
+      } else {
+        fillRect(hx + 16 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
+        fillRect(hx + 17 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+        fillRect(hx + 21 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      }
+    } else if (chrOff) {
+      // ROM $C7AE DrawHUDKillIconB: erased slots show tile $11 (blank/steel)
+      drawCHRTile(0x11, 3, hx + 16 + col * 8, hy + 8 + row * 8, true);
     }
   }
 
