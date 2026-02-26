@@ -1702,11 +1702,11 @@ function drawTreesOverlay() {
 
 // ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawHUDTanks  $D8F7 DrawRowTiles
 function drawHUD() {
-  // --- Right sidebar (nametable cols 28–31) ---
-  const hx = FX + GW * META + 6;    // pixel X = 230 (col 28.75)
+  // --- Right sidebar (nametable cols 27–31, pixel X 216–255) ---
+  const hx = 27 * 8;                 // pixel X = 216 (nametable col 27)
   const hy = FY;                     // pixel Y = 16  (row 2)
 
-  fillRect(hx, hy, 36, GH * META + 8, C.HUD_BG);
+  fillRect(hx, hy, 40, GH * META + 8, C.HUD_BG);
 
   // Enemy count  ROM $C7BD DrawAllHUDKillIcons: rows 3–12, cols 29–30
   // ROM: BG tile $6A = small enemy tank icon; $11 = blank (erased on spawn)
@@ -1714,37 +1714,37 @@ function drawHUD() {
   for (let i = 0; i < Math.min(total, 20); i++) {
     const col = i % 2, row = Math.floor(i / 2);
     if (chrOff) {
-      drawCHRTile(0x6A, 3, hx + 2 + col * 8, hy + 8 + row * 8, true);
+      drawCHRTile(0x6A, 3, hx + 16 + col * 8, hy + 8 + row * 8, true);
     } else {
-      fillRect(hx + 2 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
-      fillRect(hx + 3 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
-      fillRect(hx + 7 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 16 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
+      fillRect(hx + 17 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 21 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
     }
   }
 
-  // P1 lives  ROM row 18 (pixel 144): tank icon ($14) + digit at cols 29–30
+  // P1 lives  ROM $C72D: "1P" at col 29 row 17; $C6C5: icon $14 at col 29 row 18, digit at col 30
   const p1y = 18 * 8;  // nametable row 18 = pixel 144
   if (chrOff) {
-    drawNesText('1P', hx + 4, p1y - 10, 3);
-    drawCHRTile(0x14, 3, hx + 4, p1y, true);
-    drawNesText(String(p1Lives + 1), hx + 12, p1y, 3);
+    drawNesText('1P', hx + 16, 17 * 8, 3);          // ROM col 29, row 17
+    drawCHRTile(0x14, 3, hx + 16, p1y, true);        // ROM col 29, row 18
+    drawNesText(String(p1Lives + 1), hx + 24, p1y, 3); // ROM col 30, row 18
   } else {
-    text('P1', hx + 3, p1y - 6, C.P1, 6);
-    fillRect(hx + 3, p1y, 8, 6, C.P1);
-    text(String(p1Lives + 1), hx + 13, p1y + 6, C.HUD_TEXT, 6);
+    text('P1', hx + 16, p1y - 8, C.P1, 6);
+    fillRect(hx + 16, p1y, 8, 6, C.P1);
+    text(String(p1Lives + 1), hx + 24, p1y + 6, C.HUD_TEXT, 6);
   }
 
-  // P2 lives  ROM row 21 (pixel 168): tank icon ($14) + digit (2P only)
+  // P2 lives  ROM $C746: "2P" at col 29 row 20; $C6C5: icon $14 at col 29 row 21, digit at col 30
   if (numPlayers === 2) {
     const p2y = 21 * 8;  // nametable row 21 = pixel 168
     if (chrOff) {
-      drawNesText('2P', hx + 4, p2y - 10, 3);
-      drawCHRTile(0x14, 3, hx + 4, p2y, true);
-      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 12, p2y, 3);
+      drawNesText('2P', hx + 16, 20 * 8, 3);          // ROM col 29, row 20
+      drawCHRTile(0x14, 3, hx + 16, p2y, true);        // ROM col 29, row 21
+      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 24, p2y, 3); // ROM col 30, row 21
     } else {
-      text('P2', hx + 3, p2y - 6, C.P2, 6);
-      fillRect(hx + 3, p2y, 8, 6, C.P2);
-      text(String(Math.max(0, p2Lives + 1)), hx + 13, p2y + 6, C.HUD_TEXT, 6);
+      text('P2', hx + 16, p2y - 8, C.P2, 6);
+      fillRect(hx + 16, p2y, 8, 6, C.P2);
+      text(String(Math.max(0, p2Lives + 1)), hx + 24, p2y + 6, C.HUD_TEXT, 6);
     }
   }
 
@@ -1761,7 +1761,7 @@ function drawHUD() {
     const sn = String(stageIdx + 1).padStart(2);
     drawNesText(sn, fc29, sty + 16, 3);  // ROM row 25
   } else {
-    text('S' + (stageIdx + 1), hx + 3, sty + 8, C.HUD_TEXT, 6);
+    text('S' + (stageIdx + 1), hx + 16, sty + 8, C.HUD_TEXT, 6);
   }
 
   // Freeze indicator  ROM $0100 EnemyFreezeTimer

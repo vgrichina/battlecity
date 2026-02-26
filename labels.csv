@@ -36,6 +36,8 @@
 1,C2D5,GameUpdate2_end
 1,C2D9,PaletteFlash
 1,C6C5,StartGame
+1,C72D,DrawSidebar1PLabel
+1,C746,DrawSidebar2PLabel
 1,D96D,NMI_Scroll
 1,D68A,NMI_Sub2
 1,EC23,SoundEngine
