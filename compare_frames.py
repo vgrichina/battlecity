@@ -77,6 +77,7 @@ TILE_CHR = {
     10: [0x12, 0x12, 0x12, 0x12],  # WATER
     11: [0x22, 0x22, 0x22, 0x22],  # TREES
     12: [0x21, 0x21, 0x21, 0x21],  # ICE
+    13: [0x00, 0x00, 0x00, 0x00],  # EMPTY — ROM writes tile $00 (overrides $FC nametable fill)
 }
 TILE_PAL = {
     0:0, 1:0, 2:0, 3:0, 4:0,
@@ -183,7 +184,7 @@ def build_enhanced_nametable(stage_num, rom):
     off = LEVEL_OFF + STAGE_SIZE * (stage_num - 1)
     grid = decode_stage(rom[off:off + STAGE_SIZE])
 
-    nt = bytearray(NT_TILES)
+    nt = bytearray([0xFC] * NT_TILES)  # ROM ClearNametableSlot ($98EB) fills with tile $FC
     attr = bytearray(ATTR_BYTES)
 
     # Write level tiles
@@ -308,24 +309,25 @@ def render_gamejs(stage_grid, chr_bg):
     C_FIELD = (0, 0, 0)
     canvas.fill_rect(FX, FY, MAP_COLS * 16, MAP_ROWS * 16 + 8, C_FIELD)
 
-    # game.js drawBorderTiles(): tile $00 with BG0 palette at all border positions
+    # ROM ClearNametableSlot ($98EB) fills nametable with tile $FC.
+    # Bank 1 tile $FC = decorative gray→brown diagonal ramp (BG0 palette).
     border_pal = ALL_PAL[0]  # BG0
     # Top 2 rows (rows 0–1, all 32 cols)
     for r in range(2):
         for c in range(32):
-            canvas.draw_tile(chr_pt1[0x00], border_pal, c * 8, r * 8, transparent=False)
+            canvas.draw_tile(chr_pt1[0xFC], border_pal, c * 8, r * 8, transparent=False)
     # Bottom 2 rows (rows 28–29, all 32 cols)
     for r in range(28, 30):
         for c in range(32):
-            canvas.draw_tile(chr_pt1[0x00], border_pal, c * 8, r * 8, transparent=False)
+            canvas.draw_tile(chr_pt1[0xFC], border_pal, c * 8, r * 8, transparent=False)
     # Left 2 cols (rows 2–27, cols 0–1)
     for r in range(2, 28):
         for c in range(2):
-            canvas.draw_tile(chr_pt1[0x00], border_pal, c * 8, r * 8, transparent=False)
+            canvas.draw_tile(chr_pt1[0xFC], border_pal, c * 8, r * 8, transparent=False)
     # Right 4 cols (rows 2–27, cols 28–31)
     for r in range(2, 28):
         for c in range(28, 32):
-            canvas.draw_tile(chr_pt1[0x00], border_pal, c * 8, r * 8, transparent=False)
+            canvas.draw_tile(chr_pt1[0xFC], border_pal, c * 8, r * 8, transparent=False)
 
     # game.js drawTile(): each metatile
     for row in range(MAP_ROWS):

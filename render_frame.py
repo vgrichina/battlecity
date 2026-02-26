@@ -257,6 +257,7 @@ TILE_CHR = {
     10: [0x12, 0x12, 0x12, 0x12],  # WATER
     11: [0x22, 0x22, 0x22, 0x22],  # TREES
     12: [0x21, 0x21, 0x21, 0x21],  # ICE
+    13: [0x00, 0x00, 0x00, 0x00],  # EMPTY — ROM writes tile $00 (overrides $FC nametable fill)
 }
 # Tile type → BG palette index (0–3)
 # Source: ROM TileAttrTable ($DB69)
@@ -296,7 +297,7 @@ def build_nametable_from_stage(stage_num, rom):
     off  = LEVEL_OFF + STAGE_SIZE * (stage_num - 1)
     grid = decode_stage(rom[off : off + STAGE_SIZE])
 
-    nt   = bytearray(NT_TILES)    # 960 tile indices, default 0x00 (black)
+    nt   = bytearray([0xFC] * NT_TILES)  # ROM ClearNametableSlot ($98EB) fills with tile $FC
     attr = bytearray(ATTR_BYTES)  # 64 attribute bytes
 
     for mr in range(MAP_ROWS):
