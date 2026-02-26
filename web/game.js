@@ -1809,8 +1809,8 @@ function drawGameOver() {
   drawBigNesText('OVER', 64, 116, 3);
   // ROM $D9F0 CompareAndUpdateHiScore → NewHiScoreDisplay ($C4E9)
   if (newHiScorePlayer > 0) {
-    // ROM: random palette flash via QueuePaletteWrite; approximate with cycling palIdx
-    const flashPal = (frameCount >> 2) & 7;  // cycle all 8 palette slots
+    // ROM $C527: JSR RNG; AND #$3F; JSR QueuePaletteWrite — random NES color each frame
+    const flashPal = Math.floor(Math.random() * 8);  // random palette each frame
     drawNesText('HISCORE', 88, 148, flashPal);
     drawNesText(hiScore.toString().padStart(6, '0'), 88, 158, flashPal);
   }
