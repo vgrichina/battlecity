@@ -135,7 +135,7 @@
 0,98E0,HideAllSprites: LDA #$F8 / LDY #$00 / STA $0200,Y / DEY / BNE — fills all 256 bytes of OAM shadow ($0200-$02FF) with $F8 to move all 64 sprites off screen
 0,98BE,ClearNametablesInit: clear $0300+$0301; loop X=1→3: JSR DisableRendering($98DA) + JSR ClearNametableSlot($98EB) for nametables $20/$24/$28
 0,98DA,DisableRendering: LDA #$00 / STA $2001 / RTS — turns off both BG and sprite rendering
-0,98EB,ClearNametableSlot: reset PPU latch; clear $10 bit2 → WritePPUCtrl; compute nametable base $1C+(4*$01)→$02; write 1024 bytes of $FC (blank tile) + 64 bytes $00 (attributes) via $2006/$2007
+0,98EB,ClearNametableSlot: reset PPU latch; clear $10 bit2 → WritePPUCtrl; compute nametable base $1C+(4*$01)→$02; write 1024 bytes of $FC (patterned in bank 1, blank in bank 3) + 64 bytes $00 (attributes) via $2006/$2007
 0,97B1,ResetScrollToZero: LDA $2002 (reset latch); write #$00 twice to $2005 → scroll(0,0); returns A=0 (caller uses to zero ZP $12/$6B/$13/$6C/$FC)
 0,97BC,WritePPUCtrlScroll12: STA $2000 from $10 OR $68; LDA $2002; write $12 then $13 to $2005 (X/Y scroll from ZP)
 0,97D1,WritePPUCtrlScroll6B: STA $2000 from $10 OR $69; LDA $2002; write $6B then $6C to $2005 (X/Y scroll from ZP)
@@ -164,6 +164,12 @@
 1,E0BF,DrawShootSprite: in-flight bullet visible sprite; A=|($A0,X&$0F)-7|*2 AND#$FC + $A1→$53; ALWAYS ODD→PT1(BG bank $A010); tiles $A1-$AD
 1,E1BF,BulletExplode tile setup: $53=$B1 → ODD→PT1(BG bank); dir*2 added by $DAF3; tiles $B0-$B7
 1,E302,PowerUpFlashDraw: $53=$3B → ODD→PT1(BG bank); tiles $3A-$3D at collect position
-1,E30D,PowerUpActiveDraw: $53=$88*4+$81 → ODD→PT1(BG bank); type 0-5 → tiles $80-$97 FROM BG BANK (not sprite bank!); game.js BUG: uses sprite bank instead
+1,E30D,PowerUpActiveDraw: $53=$88*4+$81 → ODD→PT1(BG bank); type 0-5 → tiles $80-$97 FROM BG BANK (not sprite bank!)
 1,DFC6,DrawSpawnSprite tile: $53=(($A8,X>>3)&$FC)-$10+$B9; ALWAYS ODD→PT1(BG bank); tiles $A9-$B9
 1,E3F2,EagleDrawFull: tiles $D1/$D5/$D9/$DD (+$69 for damaged); ALL ODD→PT1(BG bank); tiles $D0-$EF from BG bank
+# Session: reset handler & stage select
+1,D57B,SetAllPaletteBlack: WaitVBlank + set 3 palette indices (7, 11, 15) to $0F (black) via QueuePaletteWrite
+1,D595,SetUIPrimaryPalette: WaitVBlank + set palette indices 7, 11, 15 to primary UI colors from PaletteData
+1,C8B6,DrawStageSelectHUD: Draw "STAGE" text and stage number at (14, 12); enqueues tiles to PPU write buffer
+1,CA44,FlushAttributeBuffer: copies 64-byte attribute table from RAM $07C0 to PPU via enqueued writes
+*,85,SelectedStage: Zero-indexed stage number (0-34) selected by player; used to load map and formations

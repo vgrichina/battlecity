@@ -419,3 +419,9 @@
 1,E302,PowerUpFlashDraw
 1,E30D,PowerUpActiveDraw
 1,DAF3,BulletExplosionDraw
+# Session: reset handler & stage select
+1,D57B,SetAllPaletteBlack
+1,D595,SetUIPrimaryPalette
+1,C8B6,DrawStageSelectHUD
+1,CA44,FlushAttributeBuffer
+*,85,SelectedStage

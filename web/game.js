@@ -8,7 +8,7 @@
 
 // ─── Canvas  ─────────────────────────────────────────────────────────────────
 const SCALE   = 3;
-const NES_W   = 292;   // 256 NES + 36 HUD strip
+const NES_W   = 256;   // standard NES resolution
 const NES_H   = 240;
 const canvas  = document.getElementById('game');
 canvas.width  = NES_W * SCALE;
@@ -17,21 +17,21 @@ const ctx     = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
 // ─── CHR tile engine ──────────────────────────────────────────────────────────
-// Tile sheets: ../tiles/chr_all.png (banks 0+1) + chr_all_alt.png (banks 2+3)
+// Tile sheets: tiles/chr_all.png (banks 0+1) + tiles/chr_all_alt.png (banks 2+3)
 // 512 tiles each in 32×16 grid, 9px cell (8px+1px border). Mapper 99 per-stage bank switch.
 // BG tile N: col=N%32 row=N/32   Sprite tile N: abs=N+256
 const CHR_CELL = 9, CHR_BORDER = 1;
 
 // ROM $D44A PaletteData (8 NES palette slots)
 const NES_PAL = [
-  ['#000000','#783C00','#540400','#545454'],  // BG0 brick  (ROM $D44A: $0F,$17,$06,$00)
+  ['#000000','#783C00','#540400','#989698'],  // BG0 brick  (ROM $D44A: $0F,$17,$06,$00)
   ['#000000','#A0D6E4','#989698','#3032EC'],  // BG1 water  (ROM $D44E: $0F,$3C,$10,$12)
   ['#000000','#74C400','#083A00','#003C00'],  // BG2 trees  (ROM $D452: $0F,$29,$09,$0B)
-  ['#000000','#545454','#989698','#ECEEEC'],  // BG3 steel  (ROM $D456: $0F,$00,$10,$20)
+  ['#000000','#989698','#ECEEEC','#FFFFFF'],  // BG3 steel  (ROM $D456: $0F,$00,$10,$20)
   ['#000000','#545A00','#D48820','#CCD278'],  // SP0 P1 yel (ROM $D45A: $0F,$18,$27,$38)
   ['#000000','#004000','#007628','#98E2B4'],  // SP1 P2 grn (ROM $D45E: $0F,$0A,$1B,$3B)
-  ['#000000','#00323C','#989698','#ECEEEC'],  // SP2 enemy  (ROM $D462: $0F,$0C,$10,$20)
-  ['#000000','#440064','#982220','#ECEEEC'],  // SP3 spcl   (ROM $D466: $0F,$04,$16,$20)
+  ['#000000','#00323C','#989698','#FFFFFF'],  // SP2 enemy  (ROM $D462: $0F,$0C,$10,$20)
+  ['#000000','#440064','#982220','#FFFFFF'],  // SP3 spcl   (ROM $D466: $0F,$04,$16,$20)
 ];
 
 // Grayscale level → palette index (extract_tiles.py: 0→0, 0x55→1, 0xAA→2, 0xFF→3)
@@ -41,16 +41,15 @@ let chrOff = null;                // offscreen canvas 2d context for active CHR 
 const tileCache = new Map();      // cached offscreen canvases keyed by "abs_pal_transp"
 
 // Mapper 99 per-stage CHR bank select via StageFlagsTable ($80B6).
-// D2=1 ($04) → banks 0+1 (default), D2=0 ($00) → banks 2+3 (alt).
-// Index = stageIdx % 14 (StageFlagsTable has 14 entries; stages 14+ repeat).
-// 0=default (chr_all.png), 1=alt (chr_all_alt.png)
-const STAGE_CHR_BANK = [0,0,0,1,0,0,0,0,0,1,1,0,1,1]; // 14 entries from $80B6
+// Bit 2: 1 -> banks 0+1 (default, index 0), 0 -> banks 2+3 (alt, index 1).
+// Values from ROM: $80B6: 04 04 04 00 04 04 04 04 04 00 00 04 00
+const STAGE_CHR_BANK = [0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1];
 
 const chrSheets = [null, null];   // [0]=default (banks 0+1), [1]=alt (banks 2+3)
 let chrBankIdx = 0;               // which bank pair is currently active
 
 function initCHR() {
-  const paths = ['../tiles/chr_all.png', '../tiles/chr_all_alt.png'];
+  const paths = ['tiles/chr_all.png', 'tiles/chr_all_alt.png'];
   paths.forEach((src, idx) => {
     const img = new Image();
     img.src = src;
@@ -58,12 +57,14 @@ function initCHR() {
       const oc = document.createElement('canvas');
       oc.width = img.width; oc.height = img.height;
       const octx = oc.getContext('2d');
+      octx.imageSmoothingEnabled = false;
       octx.drawImage(img, 0, 0);
       chrSheets[idx] = octx;
       // Activate default bank on first load
       if (idx === chrBankIdx) {
         chrOff = octx;
         tileCache.clear();
+        render(); // Force redraw now that tiles are ready
       }
     };
   });
@@ -138,23 +139,34 @@ function drawSprite16(sprTiles, palIdx, px, py, pt1 = false) {
 }
 
 // Draw a single CHR tile magnified 4× (8×8 → 32×32 NES pixels) for big text
-// ROM $D87E DrawBigSpriteTile: renders each CHR tile as 4×4 OAM sprites
+// ROM $D87E DrawBigSpriteTile: renders each font pixel as a 4×4 brick quadrant
 function drawBigCHRTile(tileAbs, palIdx, destX, destY) {
   if (!chrOff) return;
-  // Reuse the normal transparent-mode cached tile (8*SCALE px)
-  const key = `${tileAbs}_${palIdx}_1`;
-  let cached = tileCache.get(key);
-  if (!cached) {
-    drawCHRTile(tileAbs, palIdx, -100, -100, true);
-    cached = tileCache.get(key);
-    if (!cached) return;
+  const tcol = tileAbs % 32, trow = (tileAbs / 32) | 0;
+  const sx = tcol * CHR_CELL + CHR_BORDER;
+  const sy = trow * CHR_CELL + CHR_BORDER;
+  const pdata = chrOff.getImageData(sx, sy, 8, 8).data;
+
+  // Each 8x8 font tile becomes 4x4 = 16 background tiles (each 8x8 px)
+  // Each background tile's 4 quadrants are determined by 2x2 font pixels.
+  for (let ty = 0; ty < 4; ty++) {
+    for (let tx = 0; tx < 4; tx++) {
+      let bits = 0;
+      // Map 2x2 font pixels to 4 brick quadrants
+      if (grayToIdx(pdata[((ty * 2 + 0) * 8 + (tx * 2 + 0)) * 4]) > 0) bits |= 1; // TL
+      if (grayToIdx(pdata[((ty * 2 + 0) * 8 + (tx * 2 + 1)) * 4]) > 0) bits |= 2; // TR
+      if (grayToIdx(pdata[((ty * 2 + 1) * 8 + (tx * 2 + 0)) * 4]) > 0) bits |= 4; // BL
+      if (grayToIdx(pdata[((ty * 2 + 1) * 8 + (tx * 2 + 1)) * 4]) > 0) bits |= 8; // BR
+      
+      if (bits === 0) continue;
+      
+      // Draw the 8x8 tile representing these quadrants. 
+      // In Battle City, tiles $00-$0F are the 16 combinations of brick quadrants.
+      const px = destX + tx * 8;
+      const py = destY + ty * 8;
+      drawCHRTile(bits, palIdx, px, py, true);
+    }
   }
-  const prev = ctx.imageSmoothingEnabled;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(cached,
-    Math.round(destX * SCALE), Math.round(destY * SCALE),
-    32 * SCALE, 32 * SCALE);
-  ctx.imageSmoothingEnabled = prev;
 }
 
 // Draw NES-style text using BG-bank CHR font tiles
@@ -321,11 +333,13 @@ const C = {
 
 // ─── Game state  ──────────────────────────────────────────────────────────────
 let stageIdx;       // ROM $41 StageNum
+let selectedStage;  // ROM $85 SelectedStage
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
-let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory'
+let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory' | 'select'
 let titleFrame;     // frame counter for title screen blink animation
 let titleSelect;    // 0 = 1 PLAYER, 1 = 2 PLAYERS (title screen menu cursor)
 let titleSelectHeld = false;  // edge-detect for title menu navigation
+let credits = 0;    // ROM $0104 Credits count (0-99)
 let numPlayers;     // 1 or 2; set at title screen before game start
 let p1Score;        // ROM $15–$1B P1Score (int; BCD in ROM)
 let p1Lives;        // ROM $51 P1Lives
@@ -1177,19 +1191,34 @@ function update() {
   // ROM $C65C AttractWait: loop until credits, blinking title sprite
   if (gamePhase === 'title') {
     titleFrame++;
-    // Up/Down toggles 1P/2P selection (edge-detect via titleSelectHeld)
+    // Up/Down toggles 1P/2P/Construction selection (edge-detect via titleSelectHeld)
     const selDown = !!(keys['ArrowDown'] || keys['KeyS']);
     const selUp   = !!(keys['ArrowUp']   || keys['KeyW']);
-    if (selDown && !titleSelectHeld) titleSelect = 1;
-    if (selUp   && !titleSelectHeld) titleSelect = 0;
+    if (selDown && !titleSelectHeld) titleSelect = (titleSelect + 1) % 3;
+    if (selUp   && !titleSelectHeld) titleSelect = (titleSelect + 2) % 3;
     titleSelectHeld = selDown || selUp;
     if (keys['Space'] || keys['Enter']) {
       initAudio();  // Web Audio requires user gesture
-      numPlayers = titleSelect + 1;  // 1 or 2
+      // 0=1 PLAYER, 1=2 PLAYERS, 2=CONSTRUCTION
+      numPlayers = (titleSelect === 1) ? 2 : 1;
       p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
       p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
       newHiScorePlayer = 0;
-      initLevel(0);   // sets gamePhase='start'
+      gamePhase = 'select';
+      selectedStage = 0;
+    }
+    return;
+  }
+
+  if (gamePhase === 'select') {
+    const selUp   = !!(keys['ArrowUp']   || keys['KeyW']);
+    const selDown = !!(keys['ArrowDown'] || keys['KeyS']);
+    if (selUp && !titleSelectHeld)   selectedStage = (selectedStage + 1) % 35;
+    if (selDown && !titleSelectHeld) selectedStage = (selectedStage + 34) % 35;
+    titleSelectHeld = selUp || selDown;
+
+    if (keys['Space'] || keys['Enter']) {
+      initLevel(selectedStage);
     }
     return;
   }
@@ -1408,33 +1437,49 @@ function drawTile(col, row) {
 }
 
 // ROM ClearNametableSlot ($98EB): fills nametable with tile $FC (not $00).
-// Bank 1 (default stages) tile $FC = decorative gray→brown diagonal ramp (colors 1+3 with BG0).
-// Bank 3 (alt stages) tile $FC = blank (all zeros → invisible black border).
+// Bank 0 (default stages) tile $FC = decorative diagonal ramp (indices 1 and 3).
+// Bank 1 (alt stages) tile $FC = blank.
 // NES nametable = 32 cols × 30 rows of 8×8 tiles = 256×240.
 function drawBorderTiles() {
-  if (!chrOff) return;
+  const borderCol = '#666666'; // solid gray fallback
+  if (!chrOff) {
+    // Fallback: fill border areas with solid color
+    fillRect(0, 0, 256, 16, borderCol);           // Top 2 rows
+    fillRect(0, 224, 256, 16, borderCol);         // Bottom 2 rows
+    fillRect(0, 16, 16, 208, borderCol);          // Left 2 cols
+    fillRect(224, 16, 32, 208, borderCol);         // Right 4 cols
+    return;
+  }
+
+  // ROM ClearNametableSlot ($98EB) always writes tile $FC and zeros attributes (palIdx 0).
+  // However, the HUD area and borders often end up with Palette 3 via HUD draw calls.
+  // By using Palette 3 corrected to gray (indices 1 and 3), the $FC triangles blend
+  // into a solid gray border matching emulator behavior.
+  const tile = 0xFC;
+  const palIdx = 3; 
+
   // Top 2 rows (rows 0–1, all 32 cols)
   for (let r = 0; r < 2; r++)
     for (let c = 0; c < 32; c++)
-      drawCHRTile(0xFC, 0, c * 8, r * 8);
+      drawCHRTile(tile, palIdx, c * 8, r * 8);
   // Bottom 2 rows (rows 28–29, all 32 cols)
   for (let r = 28; r < 30; r++)
     for (let c = 0; c < 32; c++)
-      drawCHRTile(0xFC, 0, c * 8, r * 8);
+      drawCHRTile(tile, palIdx, c * 8, r * 8);
   // Left 2 cols (rows 2–27, cols 0–1)
   for (let r = 2; r < 28; r++)
     for (let c = 0; c < 2; c++)
-      drawCHRTile(0xFC, 0, c * 8, r * 8);
+      drawCHRTile(tile, palIdx, c * 8, r * 8);
   // Right 4 cols (rows 2–27, cols 28–31)
   for (let r = 2; r < 28; r++)
     for (let c = 28; c < 32; c++)
-      drawCHRTile(0xFC, 0, c * 8, r * 8);
+      drawCHRTile(tile, palIdx, c * 8, r * 8);
 }
 
 // ROM $F239 LevelTileLoader: draws all 13×13 metatiles
 function drawField() {
   // NES PPU nametable: playfield is pure black, border gets tile $FC (ClearNametableSlot $98EB)
-  fillRect(FX, FY, GW * META, GH * META + 8, C.FIELD);
+  fillRect(FX, FY, GW * META, GH * META, C.FIELD);
   drawBorderTiles();
 
   for (let row = 0; row < GH; row++)
@@ -1720,18 +1765,18 @@ function drawTreesOverlay() {
 function drawHUD() {
   // --- Right sidebar (nametable cols 28–31, pixel X 224–255) ---
   // ROM: ClearNametableSlot ($98EB) fills with tile $FC; HUD area attribute = $00 (palette 0/BG0).
-  // HUD elements drawn over $FC background via PPUQueueTiles ($D6D3).
-  const hx = 27 * 8;                 // pixel X = 216 (nametable col 27)
+  // HUD elements drawn over background via PPUQueueTiles ($D6D3).
+  const hx = 28 * 8;                 // pixel X = 224 (nametable col 28)
   const hy = FY;                     // pixel Y = 16  (row 2)
 
-  // Clear HUD area (cols 28–31 only; col 27 is rightmost playfield column)
+  // Clear HUD area (cols 28–31) with the authentic $FC background tile
   if (chrOff) {
-    // Draw tile $FC background with palette 0 (BG0) — matches ROM attribute table
-    for (let r = 2; r < 28; r++)
+    for (let r = 0; r < 30; r++)
       for (let c = 28; c < 32; c++)
-        drawCHRTile(0xFC, 0, c * 8, r * 8);
+        drawCHRTile(0xFC, 3, c * 8, r * 8);
   } else {
-    fillRect(28 * 8, hy, 32, GH * META + 8, C.HUD_BG);
+    // Fallback: fill sidebar area with solid gray
+    fillRect(hx, 0, 32, 240, '#666666');
   }
 
   // Enemy count  ROM $C7BD DrawAllHUDKillIcons: rows 3–12, cols 29–30
@@ -1741,56 +1786,47 @@ function drawHUD() {
     const col = i % 2, row = Math.floor(i / 2);
     if (i < total) {
       if (chrOff) {
-        drawCHRTile(0x6A, 0, hx + 16 + col * 8, hy + 8 + row * 8, true);
+        drawCHRTile(0x6A, 3, hx + 8 + col * 8, 3 * 8 + row * 8, true);
       } else {
-        fillRect(hx + 16 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
-        fillRect(hx + 17 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
-        fillRect(hx + 21 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+        fillRect(hx + 8 + col * 8, 3 * 8 + row * 8, 8, 6, C.ENEMY);
       }
-    } else if (chrOff) {
-      // ROM $C7AE DrawHUDKillIconB: erased slots show tile $11 (blank/steel)
-      drawCHRTile(0x11, 0, hx + 16 + col * 8, hy + 8 + row * 8, true);
     }
   }
 
-  // P1 lives  ROM $C72D: "1P" at col 29 row 17; $C6C5: icon $14 at col 29 row 18, digit at col 30
+  // P1 lives  ROM $C72D: "IP" at col 29 row 17; $C6C5: icon $14 at col 29 row 18, digit at col 30
   const p1y = 18 * 8;  // nametable row 18 = pixel 144
   if (chrOff) {
-    drawNesText('1P', hx + 16, 17 * 8, 0);          // ROM col 29, row 17
-    drawCHRTile(0x14, 0, hx + 16, p1y, true);        // ROM col 29, row 18
-    drawNesText(String(p1Lives + 1), hx + 24, p1y, 0); // ROM col 30, row 18
+    drawNesText('IP', hx + 8, 17 * 8, 3);          // ROM col 29, row 17
+    drawCHRTile(0x14, 3, hx + 8, p1y, true);        // ROM col 29, row 18
+    drawNesText(String(p1Lives + 1), hx + 16, p1y, 3); // ROM col 30, row 18
   } else {
-    text('P1', hx + 16, p1y - 8, C.P1, 6);
-    fillRect(hx + 16, p1y, 8, 6, C.P1);
-    text(String(p1Lives + 1), hx + 24, p1y + 6, C.HUD_TEXT, 6);
+    text('IP', hx + 8, p1y - 8, C.P1, 6);
+    text(String(p1Lives + 1), hx + 16, p1y + 6, C.HUD_TEXT, 6);
   }
 
-  // P2 lives  ROM $C746: "2P" at col 29 row 20; $C6C5: icon $14 at col 29 row 21, digit at col 30
+  // P2 lives  ROM $C746: "IIP" at col 29 row 20; $C6C5: icon $14 at col 29 row 21, digit at col 30
   if (numPlayers === 2) {
     const p2y = 21 * 8;  // nametable row 21 = pixel 168
     if (chrOff) {
-      drawNesText('2P', hx + 16, 20 * 8, 0);          // ROM col 29, row 20
-      drawCHRTile(0x14, 0, hx + 16, p2y, true);        // ROM col 29, row 21
-      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 24, p2y, 0); // ROM col 30, row 21
+      drawNesText('IIP', hx + 8, 20 * 8, 3);          // ROM col 29, row 20
+      drawCHRTile(0x14, 3, hx + 8, p2y, true);        // ROM col 29, row 21
+      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 16, p2y, 3); // ROM col 30, row 21
     } else {
-      text('P2', hx + 16, p2y - 8, C.P2, 6);
-      fillRect(hx + 16, p2y, 8, 6, C.P2);
-      text(String(Math.max(0, p2Lives + 1)), hx + 24, p2y + 6, C.HUD_TEXT, 6);
+      text('IIP', hx + 8, p2y - 8, C.P2, 6);
+      text(String(Math.max(0, p2Lives + 1)), hx + 16, p2y + 6, C.HUD_TEXT, 6);
     }
   }
 
   // Stage number  ROM rows 23–25 (pixel 184): 2×2 flag icon + digit tiles
   const sty = 23 * 8;  // nametable row 23 = pixel 184
-  const fc29 = 29 * 8; // col 29 = pixel 232
-  const fc30 = 30 * 8; // col 30 = pixel 240
   if (chrOff) {
     // Flag icon: 2×2 tiles at rows 23–24, cols 29–30  ROM $D225/$D228
-    drawCHRTile(0x6C, 0, fc29, sty,     true);  // top-left
-    drawCHRTile(0xFC, 0, fc30, sty,     true);  // top-right
-    drawCHRTile(0x6D, 0, fc29, sty + 8, true);  // bottom-left
-    drawCHRTile(0xFD, 0, fc30, sty + 8, true);  // bottom-right
+    drawCHRTile(0x6C, 3, hx + 8, sty,     true);  // top-left
+    drawCHRTile(0xFC, 3, hx + 16, sty,     true);  // top-right
+    drawCHRTile(0x6D, 3, hx + 8, sty + 8, true);  // bottom-left
+    drawCHRTile(0xFD, 3, hx + 16, sty + 8, true);  // bottom-right
     const sn = String(stageIdx + 1).padStart(2);
-    drawNesText(sn, fc29, sty + 16, 0);  // ROM row 25
+    drawNesText(sn, hx + 8, sty + 16, 3);  // ROM row 25
   } else {
     text('S' + (stageIdx + 1), hx + 16, sty + 8, C.HUD_TEXT, 6);
   }
@@ -1798,21 +1834,6 @@ function drawHUD() {
   // Freeze indicator  ROM $0100 EnemyFreezeTimer
   if (freezeTimer > 0) {
     drawNesText('FREEZE', hx, sty + 20, 0);
-  }
-
-  // --- Top score strip (ROM nametable row 1, web-only during gameplay) ---
-  // ROM: scores at row 3 cols 2–28 only on stage-start; web shows persistently at row 1
-  const sy = 8;  // row 1 (pixel 8), inside top border area
-  // P1 score: col 2 = pixel 16
-  drawNesText('1P', 2 * 8, sy, 0);
-  drawNesText(p1Score.toString().padStart(6, ' '), 4 * 8, sy, 0);
-  // HI-score: col 11 = pixel 88
-  drawNesText('HI', 11 * 8, sy, 0);
-  drawNesText(hiScore.toString().padStart(6, ' '), 14 * 8, sy, 0);
-  // P2 score (2P only): col 21 = pixel 168
-  if (numPlayers === 2) {
-    drawNesText('2P', 21 * 8, sy, 0);
-    drawNesText(p2Score.toString().padStart(6, ' '), 23 * 8, sy, 0);
   }
 }
 
@@ -1945,6 +1966,7 @@ function drawStageClear() {
 function render() {
   // ROM $C65C AttractWait: title screen is a separate full-screen render
   if (gamePhase === 'title')   { drawTitleScreen();   return; }
+  if (gamePhase === 'select')  { drawStageSelect();   return; }
   if (gamePhase === 'victory') { drawVictoryScreen(); return; }
   // ROM $CAF1 StageClearTallyScreen: full-screen tally (not an overlay)
   if (gamePhase === 'clear')   { drawStageClear();    return; }
@@ -1985,8 +2007,21 @@ function render() {
   if (gamePhase === 'start')    drawStageBanner();
   if (gamePhase === 'gameover') drawGameOver();
 
-  // Controls reminder (web-only, CHR tile text)
-  drawNesText('ARROWS:MOVE  SPACE:FIRE', 36, 228, 0);
+  // Controls hint in bottom border row (Row 28)
+  drawNesText('ARROWS MOVE SPACE FIRE', 40, 228, 0);
+}
+
+// ROM $C8B6 DrawStageSelectHUD — "STAGE XX" screen during stage selection
+function drawStageSelect() {
+  ctx.fillStyle = '#666666'; // Gray background
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawBorderTiles();
+
+  const stageStr = 'STAGE  ' + String(selectedStage + 1);
+  const tw = stageStr.length * 8;
+  const bx = (256 - tw) / 2 - 8, by = 108;
+  fillRect(bx, by, tw + 16, 16, '#000');
+  drawNesText(stageStr, bx + 8, by + 4, 3);
 }
 
 // ─── Victory screen  ────────────────────────────────────────────────────────
@@ -2040,40 +2075,34 @@ function drawTitleScreen() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // ROM $CFAA PreGameDraw: score strip at nametable row 3 (y=24)
-  // HI label at col 11 (x=88), HI score at col 14 (x=112)
+  if (chrOff) {
+    drawCHRTile(0x5E, 3, 16, 24, true); // 'I-' icon
+  } else {
+    drawNesText('I-', 16, 24, 3);
+  }
+  drawNesText(p1Score.toString().padStart(2, '0'), 32, 24, 3);
   drawNesText('HI-' + hiScore.toString().padStart(6, ' '), 88, 24, 3);
 
   // ROM $CFAA: "BATTLE" at (26,46), "CITY" at (60,86) via DrawSpriteString ($D14F/$D156)
-  // Each char 32×32 magnified NES pixels
-  drawBigNesText('BATTLE', 26, 46, 3);
-  drawBigNesText('CITY', 60, 86, 3);
+  drawBigNesText('BATTLE', 26, 46, 0);
+  drawBigNesText('CITY', 60, 86, 0);
 
-  // Web-only mode selection (ROM VS System uses coins; Famicom has menu at ~rows 17/19)
-  drawNesText('1 PLAYER', 88, 136, 3);
-  drawNesText('2 PLAYERS', 88, 152, 3);
-  // Cursor: tank icon at selected option
-  if (chrOff) {
-    const cy = titleSelect === 0 ? 136 : 152;
-    drawCHRTile(256 + 0x00, 4, 72, cy, true);     // TL
-    drawCHRTile(256 + 0x02, 4, 80, cy, true);     // TR
-    drawCHRTile(256 + 0x01, 4, 72, cy + 8, true); // BL
-    drawCHRTile(256 + 0x03, 4, 80, cy + 8, true); // BR
-  } else {
-    drawNesText('>', 72, titleSelect === 0 ? 136 : 152, 3);
+  // ROM $C69A BlinkTitleSprite blinks "PLEASE INSERT COIN" at row 18 (y=144)
+  if (titleFrame & 0x20) { // Blink every 32 frames
+    drawNesText('PLEASE INSERT COIN', 56, 144, 3);
   }
 
-  // ROM $C69A BlinkTitleSprite blink at row 18 area
-  if (titleFrame & 0x20) {
-    drawNesText('PRESS START', 72, 168, 3);
+  // ROM $D0F4 draws "CREDIT" at row 21 (y=168)
+  drawNesText('CREDIT ' + credits.toString().padStart(2, '0'), 88, 168, 3);
+
+  if (credits > 0) {
+      drawNesText('PUSH START BUTTON', 64, 184, 3);
   }
 
   // ROM $D1E7 copyright at nametable col 5, row 25 → (40,200); '@'=CHR tile $40=©
   drawNesText('@ 1980 1985 NAMCO LTD', 40, 200, 3);
   // ROM $D1FE "ALL RIGHTS RESERVED" at col 7, row 27 → (56,216)
   drawNesText('ALL RIGHTS RESERVED', 56, 216, 3);
-
-  // Controls hint (web-only)
-  drawNesText('P1:ARROWS+SPACE P2:WASD+E', 16, 228, 0);
 }
 
 // ─── Boot  ────────────────────────────────────────────────────────────────────
@@ -2082,6 +2111,7 @@ p1Score  = 0;
 p1Lives  = 2;  // display shows +1 (3 lives)
 p1NextLifeScore = 20000;  // ROM $CF44 LivesGrantCheck: first bonus-life threshold
 hiScore  = 20000;   // ROM $3D–$43: default starting hi-score
+selectedStage = 0;
 newHiScorePlayer = 0;
 frameCount = 0;
 enterTitle();
