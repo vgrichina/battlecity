@@ -126,11 +126,11 @@ function drawMetatile(chrTiles, palIdx, px, py) {
   drawCHRTile(chrTiles[3], palIdx, px+8, py+8);
 }
 
-// Draw 2×2 sprite (16×16px): sprTiles = [TL, TR, BL, BR] sprite bank tile indices (0–255)
+// Draw 2×2 sprite (16×16px): sprTiles = [TL, TR, BL, BR] tile indices (0–255)
 // pt1=false (default) → sprite bank: PNG index = 256+T
-// pt1=true  → BG/PT1 bank (eagle, spawn, bullet-expl): PNG index = T & 0xFE
+// pt1=true  → BG/PT1 bank (power-ups, eagle, spawn, bullet-expl): PNG index = T directly
 function drawSprite16(sprTiles, palIdx, px, py, pt1 = false) {
-  const ti = pt1 ? (t => t & 0xFE) : (t => 256 + t);
+  const ti = pt1 ? (t => t) : (t => 256 + t);
   drawCHRTile(ti(sprTiles[0]), palIdx, px,   py,   true);
   drawCHRTile(ti(sprTiles[1]), palIdx, px+8, py,   true);
   drawCHRTile(ti(sprTiles[2]), palIdx, px,   py+8, true);
@@ -304,7 +304,7 @@ const C = {
   SPAWN_B:   '#ffff00',
   SPAWN_C:   '#ff8800',
   SPAWN_D:   '#ff4400',
-  HUD_BG:    '#282828',
+  HUD_BG:    '#000000',
   HUD_TEXT:  '#e8e8e8',
   SCORE_COL: '#f8e800',
   GAMEOVER:  '#f80000',
@@ -1660,70 +1660,86 @@ function drawTreesOverlay() {
 
 // ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawHUDTanks  $D8F7 DrawRowTiles
 function drawHUD() {
-  const hx = FX + GW * META + 6;
-  const hy = FY;
+  // --- Right sidebar (nametable cols 28–31) ---
+  const hx = FX + GW * META + 6;    // pixel X = 230 (col 28.75)
+  const hy = FY;                     // pixel Y = 16  (row 2)
 
   fillRect(hx, hy, 36, GH * META + 8, C.HUD_BG);
 
-  // Enemy count  ROM $C7BD DrawAllHUDKillIcons: 10 pairs of tank icons (2 columns)
+  // Enemy count  ROM $C7BD DrawAllHUDKillIcons: rows 3–12, cols 29–30
   // ROM: BG tile $6A = small enemy tank icon; $11 = blank (erased on spawn)
   const total = enemiesLeft + activeEnemyCount;
   for (let i = 0; i < Math.min(total, 20); i++) {
     const col = i % 2, row = Math.floor(i / 2);
     if (chrOff) {
-      drawCHRTile(0x6A, 3, hx + 2 + col * 8, hy + 2 + row * 8, true);
+      drawCHRTile(0x6A, 3, hx + 2 + col * 8, hy + 8 + row * 8, true);
     } else {
-      fillRect(hx + 2 + col * 8, hy + 2 + row * 8, 8, 6, C.ENEMY);
-      fillRect(hx + 3 + col * 8, hy + 3 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
-      fillRect(hx + 7 + col * 8, hy + 3 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 2 + col * 8, hy + 8 + row * 8, 8, 6, C.ENEMY);
+      fillRect(hx + 3 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
+      fillRect(hx + 7 + col * 8, hy + 9 + row * 8, 2, 4, shadeColor(C.ENEMY, -40));
     }
   }
 
-  // Stage number  ROM $41 StageNum — flag icon ($6B) + digit tiles
+  // P1 lives  ROM row 18 (pixel 144): tank icon ($14) + digit at cols 29–30
+  const p1y = 18 * 8;  // nametable row 18 = pixel 144
   if (chrOff) {
-    drawCHRTile(0x6B, 3, hx + 4, hy + 90, true);  // flag icon
-    const sn = String(stageIdx + 1).padStart(2);
-    drawNesText(sn, hx + 4, hy + 98, 3);
+    drawNesText('1P', hx + 4, p1y - 10, 3);
+    drawCHRTile(0x14, 3, hx + 4, p1y, true);
+    drawNesText(String(p1Lives + 1), hx + 12, p1y, 3);
   } else {
-    text('S' + (stageIdx + 1), hx + 3, hy + 108, C.HUD_TEXT, 6);
+    text('P1', hx + 3, p1y - 6, C.P1, 6);
+    fillRect(hx + 3, p1y, 8, 6, C.P1);
+    text(String(p1Lives + 1), hx + 13, p1y + 6, C.HUD_TEXT, 6);
   }
 
-  // P1 lives  ROM $51 P1Lives; "IP" label + tank icon ($14) + digit
-  if (chrOff) {
-    drawNesText('IP', hx + 4, hy + 114, 3);
-    drawCHRTile(0x14, 3, hx + 4, hy + 122, true);
-    drawNesText(String(p1Lives + 1), hx + 12, hy + 122, 3);
-  } else {
-    text('P1', hx + 3, hy + 124, C.P1, 6);
-    fillRect(hx + 3, hy + 127, 8, 6, C.P1);
-    text(String(p1Lives + 1), hx + 13, hy + 133, C.HUD_TEXT, 6);
-  }
-
-  // Score  ROM $15-$1B P1Score (BCD in ROM; plain int here)
-  drawNesText(p1Score.toString().padStart(6, '0'), hx, hy + 138, 3);
-
-  // Hi-score  ROM $3D-$43 HiScore; "HI" label ($48,$49,$6B at nametable col 11)
-  drawNesText('HI', hx + 4, hy + 148, 3);
-  drawNesText(hiScore.toString().padStart(6, '0'), hx, hy + 156, 3);
-
-  // P2 lives + score  ROM $52 P2Lives, $1C-$22 P2Score
+  // P2 lives  ROM row 21 (pixel 168): tank icon ($14) + digit (2P only)
   if (numPlayers === 2) {
+    const p2y = 21 * 8;  // nametable row 21 = pixel 168
     if (chrOff) {
-      drawNesText('IIP', hx, hy + 168, 3);
-      drawCHRTile(0x14, 3, hx + 4, hy + 176, true);
-      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 12, hy + 176, 3);
+      drawNesText('2P', hx + 4, p2y - 10, 3);
+      drawCHRTile(0x14, 3, hx + 4, p2y, true);
+      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 12, p2y, 3);
     } else {
-      text('P2', hx + 3, hy + 174, C.P2, 6);
-      fillRect(hx + 3, hy + 178, 8, 6, C.P2);
-      text(String(Math.max(0, p2Lives + 1)), hx + 13, hy + 184, C.HUD_TEXT, 6);
+      text('P2', hx + 3, p2y - 6, C.P2, 6);
+      fillRect(hx + 3, p2y, 8, 6, C.P2);
+      text(String(Math.max(0, p2Lives + 1)), hx + 13, p2y + 6, C.HUD_TEXT, 6);
     }
-    drawNesText(p2Score.toString().padStart(6, '0'), hx, hy + 188, 3);
+  }
+
+  // Stage number  ROM rows 23–25 (pixel 184): 2×2 flag icon + digit tiles
+  const sty = 23 * 8;  // nametable row 23 = pixel 184
+  const fc29 = 29 * 8; // col 29 = pixel 232
+  const fc30 = 30 * 8; // col 30 = pixel 240
+  if (chrOff) {
+    // Flag icon: 2×2 tiles at rows 23–24, cols 29–30  ROM $D225/$D228
+    drawCHRTile(0x6C, 3, fc29, sty,     true);  // top-left
+    drawCHRTile(0xFC, 3, fc30, sty,     true);  // top-right
+    drawCHRTile(0x6D, 3, fc29, sty + 8, true);  // bottom-left
+    drawCHRTile(0xFD, 3, fc30, sty + 8, true);  // bottom-right
+    const sn = String(stageIdx + 1).padStart(2);
+    drawNesText(sn, fc29, sty + 16, 3);  // ROM row 25
+  } else {
+    text('S' + (stageIdx + 1), hx + 3, sty + 8, C.HUD_TEXT, 6);
   }
 
   // Freeze indicator  ROM $0100 EnemyFreezeTimer
   if (freezeTimer > 0) {
-    const fy = numPlayers === 2 ? hy + 200 : hy + 168;
-    drawNesText('FREEZE', hx, fy, 3);
+    drawNesText('FREEZE', hx, sty + 20, 3);
+  }
+
+  // --- Top score strip (ROM nametable row 1, web-only during gameplay) ---
+  // ROM: scores at row 3 cols 2–28 only on stage-start; web shows persistently at row 1
+  const sy = 8;  // row 1 (pixel 8), inside top border area
+  // P1 score: col 2 = pixel 16
+  drawNesText('1P', 2 * 8, sy, 3);
+  drawNesText(p1Score.toString().padStart(6, '0'), 4 * 8, sy, 3);
+  // HI-score: col 11 = pixel 88
+  drawNesText('HI', 11 * 8, sy, 3);
+  drawNesText(hiScore.toString().padStart(6, '0'), 14 * 8, sy, 3);
+  // P2 score (2P only): col 21 = pixel 168
+  if (numPlayers === 2) {
+    drawNesText('2P', 21 * 8, sy, 3);
+    drawNesText(p2Score.toString().padStart(6, '0'), 23 * 8, sy, 3);
   }
 }
 
