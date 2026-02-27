@@ -172,4 +172,6 @@
 1,D595,SetUIPrimaryPalette: WaitVBlank + set palette indices 7, 11, 15 to primary UI colors from PaletteData
 1,C8B6,DrawStageSelectHUD: Draw "STAGE" text and stage number at (14, 12); enqueues tiles to PPU write buffer
 1,CA44,FlushAttributeBuffer: copies 64-byte attribute table from RAM $07C0 to PPU via enqueued writes
+*,46,PlayerCount: Number of active players (1 or 2); checked for 2P score bonus and UI layout
+*,6D,DemoActive: Set to 1 during attract mode demo at $C399; cleared to 0 during normal play at $C392
 *,85,SelectedStage: Zero-indexed stage number (0-34) selected by player; used to load map and formations

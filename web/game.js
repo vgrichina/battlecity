@@ -22,16 +22,33 @@ ctx.imageSmoothingEnabled = false;
 // BG tile N: col=N%32 row=N/32   Sprite tile N: abs=N+256
 const CHR_CELL = 9, CHR_BORDER = 1;
 
-// ROM $D44A PaletteData (8 NES palette slots)
+// ROM $D475 PaletteColorTable: 4 variants × 64 NES color indices
+const PALETTE_COLOR_TABLE = [9, 31, 45, 53, 12, 11, 43, 18, 14, 5, 51, 58, 37, 26, 26, 26, 29, 57, 23, 44, 39, 7, 2, 55, 62, 49, 58, 38, 4, 40, 40, 40, 28, 16, 3, 1, 30, 61, 46, 10, 13, 19, 35, 25, 36, 47, 47, 47, 8, 33, 21, 34, 42, 0, 17, 54, 60, 52, 63, 25, 20, 48, 48, 48, 63, 53, 39, 9, 32, 61, 18, 58, 29, 43, 62, 15, 52, 0, 0, 0, 19, 36, 44, 9, 40, 54, 8, 51, 2, 55, 15, 20, 6, 30, 30, 30, 12, 17, 23, 11, 25, 5, 34, 1, 46, 57, 50, 27, 57, 45, 45, 45, 47, 7, 28, 35, 11, 60, 33, 46, 10, 3, 4, 27, 14, 56, 56, 56, 24, 8, 27, 25, 41, 18, 29, 52, 11, 7, 56, 4, 63, 9, 9, 9, 3, 44, 19, 60, 0, 12, 28, 22, 21, 20, 4, 23, 17, 26, 26, 26, 39, 42, 16, 32, 43, 1, 38, 37, 54, 40, 53, 61, 48, 46, 46, 46, 39, 6, 58, 51, 30, 31, 10, 35, 59, 50, 2, 61, 15, 57, 57, 57, 38, 6, 35, 1, 28, 32, 22, 34, 50, 43, 33, 27, 40, 4, 4, 4, 8, 42, 18, 36, 37, 39, 51, 7, 0, 14, 14, 25, 2, 20, 20, 20, 49, 31, 26, 58, 47, 16, 23, 57, 3, 60, 10, 53, 62, 29, 29, 29, 54, 59, 61, 48, 19, 5, 12, 13, 45, 15, 30, 53, 55, 56, 56, 56];
+
+const NES_MASTER_HEX = ['#545454', '#001e74', '#081090', '#300088', '#440064', '#5c0030', '#540400', '#3c1800', '#202a00', '#083a00', '#004000', '#003c00', '#00323c', '#000000', '#000000', '#000000', '#989698', '#084cc4', '#3032ec', '#5c1ee4', '#8814b0', '#a01464', '#982220', '#783c00', '#545a00', '#287200', '#087c00', '#007628', '#006678', '#000000', '#000000', '#000000', '#eceeec', '#4c9aec', '#787cec', '#b062ec', '#e454ec', '#ec58b4', '#ec6a64', '#d48820', '#a0aa00', '#74c400', '#4cd020', '#38cc6c', '#38b4cc', '#3c3c3c', '#000000', '#000000', '#eceeec', '#a8ccec', '#bcbcec', '#d4b2ec', '#ecaeec', '#ecaed4', '#ecb4b0', '#e4c490', '#ccd278', '#b4de78', '#a8e290', '#98e2b4', '#a0d6e4', '#a0a2a0', '#000000', '#000000'];
+
+const ROM_PALETTE_DATA = [
+  [0x0F, 0x17, 0x06, 0x00],  // BG0 brick
+  [0x0F, 0x3C, 0x10, 0x12],  // BG1 water
+  [0x0F, 0x29, 0x09, 0x0B],  // BG2 trees
+  [0x0F, 0x00, 0x10, 0x20],  // BG3 steel
+  [0x0F, 0x18, 0x27, 0x38],  // SP0 P1 yel
+  [0x0F, 0x0A, 0x1B, 0x3B],  // SP1 P2 grn
+  [0x0F, 0x0C, 0x10, 0x20],  // SP2 enemy
+  [0x0F, 0x04, 0x16, 0x20],  // SP3 spcl
+];
+
+// Active palette (hex strings), updated via updateActivePalette()
+let dipSwitch = 0;  // ROM $4E (derived from $4017 bit 6/7)
 const NES_PAL = [
-  ['#000000','#783C00','#540400','#989698'],  // BG0 brick  (ROM $D44A: $0F,$17,$06,$00)
-  ['#000000','#A0D6E4','#989698','#3032EC'],  // BG1 water  (ROM $D44E: $0F,$3C,$10,$12)
-  ['#000000','#74C400','#083A00','#003C00'],  // BG2 trees  (ROM $D452: $0F,$29,$09,$0B)
-  ['#000000','#989698','#ECEEEC','#FFFFFF'],  // BG3 steel  (ROM $D456: $0F,$00,$10,$20)
-  ['#000000','#545A00','#D48820','#CCD278'],  // SP0 P1 yel (ROM $D45A: $0F,$18,$27,$38)
-  ['#000000','#004000','#007628','#98E2B4'],  // SP1 P2 grn (ROM $D45E: $0F,$0A,$1B,$3B)
-  ['#000000','#00323C','#989698','#FFFFFF'],  // SP2 enemy  (ROM $D462: $0F,$0C,$10,$20)
-  ['#000000','#440064','#982220','#FFFFFF'],  // SP3 spcl   (ROM $D466: $0F,$04,$16,$20)
+  ['#000000','#000000','#000000','#000000'],
+  ['#000000','#000000','#000000','#000000'],
+  ['#000000','#000000','#000000','#000000'],
+  ['#000000','#000000','#000000','#000000'],
+  ['#000000','#000000','#000000','#000000'],
+  ['#000000','#000000','#000000','#000000'],
+  ['#000000','#000000','#000000','#000000'],
+  ['#000000','#000000','#000000','#000000'],
 ];
 
 // Grayscale level → palette index (extract_tiles.py: 0→0, 0x55→1, 0xAA→2, 0xFF→3)
@@ -39,6 +56,18 @@ function grayToIdx(r) { return r < 0x2B ? 0 : r < 0x7F ? 1 : r < 0xD5 ? 2 : 3; }
 
 let chrOff = null;                // offscreen canvas 2d context for active CHR sheet
 const tileCache = new Map();      // cached offscreen canvases keyed by "abs_pal_transp"
+
+function updateActivePalette() {
+  for (let si = 0; si < 8; si++) {
+    for (let i = 0; i < 4; i++) {
+      const baseColor = ROM_PALETTE_DATA[si][i];
+      // Standard NES mapping (ignoring VS. PPU remap table for now as it needs hardware-specific RGB palettes)
+      NES_PAL[si][i] = NES_MASTER_HEX[baseColor & 0x3F];
+    }
+  }
+  tileCache.clear();
+}
+updateActivePalette(); // initial sync
 
 // Mapper 99 per-stage CHR bank select via StageFlagsTable ($80B6).
 // Bit 2: 1 -> banks 0+1 (default, index 0), 0 -> banks 2+3 (alt, index 1).
@@ -339,6 +368,8 @@ let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'vict
 let titleFrame;     // frame counter for title screen blink animation
 let titleSelect;    // 0 = 1 PLAYER, 1 = 2 PLAYERS (title screen menu cursor)
 let titleSelectHeld = false;  // edge-detect for title menu navigation
+let titleTimer = 0; // ROM $0A counts to 8 before Demo Mode
+let demoMode = false; // ROM $6D DemoActive
 let credits = 0;    // ROM $0104 Credits count (0-99)
 let numPlayers;     // 1 or 2; set at title screen before game start
 let p1Score;        // ROM $15–$1B P1Score (int; BCD in ROM)
@@ -489,7 +520,13 @@ function initLevel(idx) {
   setEagleWall(false);
 
   // Init entity slots  ROM $E4D0 ClearEntitySlots
-  entities = Array.from({ length: 8 }, (_, i) => makeEntity(i));
+  entities = Array.from({ length: 8 }, (_, i) => {
+    const e = makeEntity(i);
+    e.demoDir = 0;
+    e.demoTimer = 0;
+    e.demoFire = false;
+    return e;
+  });
 
   // Init bullet slots  ROM $E4C6 ClearBulletSlots
   bullets  = Array.from({ length: 10 }, (_, i) => makeBullet(i));
@@ -603,6 +640,7 @@ const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyM') toggleSound();  // M = mute/unmute
+  if (e.code === 'KeyP') { dipSwitch = (dipSwitch + 1) & 3; updateActivePalette(); } // P = cycle palette variant
   e.preventDefault();
 });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
@@ -610,6 +648,7 @@ window.addEventListener('keyup',   e => { keys[e.code] = false; });
 // Returns direction (0-3) or -1 if no d-pad held
 // P1: Arrows (+ WASD in 1P mode); P2: WASD
 function p1Dir() {
+  if (demoMode && entities[0]) return entities[0].demoDir !== undefined ? entities[0].demoDir : -1;
   if (keys['ArrowUp'])    return 0;
   if (keys['ArrowLeft'])  return 1;
   if (keys['ArrowDown'])  return 2;
@@ -623,6 +662,7 @@ function p1Dir() {
   return -1;
 }
 function p2Dir() {
+  if (demoMode && entities[1]) return entities[1].demoDir !== undefined ? entities[1].demoDir : -1;
   if (keys['KeyW']) return 0;
   if (keys['KeyA']) return 1;
   if (keys['KeyS']) return 2;
@@ -671,6 +711,57 @@ function canMove(e, d) {
   return true;
 }
 
+// ROM $E543 DirToStateTable: 2 sets of 9-way direction lookups
+// Set 0: Prefer-Y (vertical dominant), Set 1: Prefer-X (horizontal dominant)
+// Index: (signY+1)*3 + (signX+1)
+const DIR_TARGET_TABLE = [
+  0, 0, 0, 1, 0, 3, 2, 2, 2, // Set 0: UP, UP, UP, LEFT, UP, RIGHT, DOWN, DOWN, DOWN
+  1, 0, 3, 1, 0, 3, 1, 2, 3  // Set 1: LEFT, UP, RIGHT, LEFT, UP, RIGHT, LEFT, DOWN, RIGHT
+];
+
+// ROM $DE56 CalcDirToTarget: calculates direction toward target with axis preference
+function calcDirToTarget(e, tx, ty) {
+  const dx = tx - e.x, dy = ty - e.y;
+  const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+  const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+  const tableIdx = (sy + 1) * 3 + (sx + 1);
+  
+  // 50% chance to use Set 1 (prefer-X) for enemies
+  const setOffset = (Math.random() < 0.5) ? 9 : 0;
+  return DIR_TARGET_TABLE[tableIdx + setOffset];
+}
+
+// ROM $DF26 SpeedCtrlMove: AI goal selector based on level progress (difficulty tiers)
+function speedCtrlMove(e) {
+  const frameHi = (frameCount >> 6) & 0xFF; // ROM $0A
+  const sdm = Math.max(50, 190 - stageIdx * 4); // approximation of ZP $84
+  
+  if ((sdm >> 2) >= frameHi) {
+    // Phase 1 (Slow): Target HQ
+    e.dir = calcDirToTarget(e, EAGLE.x, EAGLE.y);
+  } else if ((sdm >> 3) >= frameHi) {
+    // Phase 2 (Medium): Random direction
+    e.dir = Math.floor(Math.random() * 4);
+  } else {
+    // Phase 3 (Fast): Target nearest player
+    let target = entities[0];
+    if (numPlayers === 2 && (!entities[0].alive || Math.random() < 0.5)) target = entities[1];
+    if (target && target.alive) e.dir = calcDirToTarget(e, target.x, target.y);
+    else e.dir = Math.floor(Math.random() * 4);
+  }
+}
+
+// ROM $DDFC RandomDirChange: forced turn logic (25% L, 25% R, 50% SpeedCtrl)
+function randomDirChange(e) {
+  const r = Math.random();
+  if (r < 0.5) {
+    speedCtrlMove(e);
+  } else {
+    if (Math.random() < 0.5) e.dir = (e.dir + 1) & 3; // Right
+    else                     e.dir = (e.dir + 3) & 3; // Left
+  }
+}
+
 // ─── Entity movement  ─────────────────────────────────────────────────────────
 // ROM $DC23 PlayerInputUpdate  $E06A MoveTank  $DD30 MoveGridSnap
 function moveEntities() {
@@ -717,24 +808,28 @@ function moveEntities() {
       // ROM $DC9F: Fast type ($A0, EntityType&$F0==$A0) always processes; others alternate
       if (e.type !== 1 && ((i ^ frameCount) & 1)) continue;
 
-      // AI: change direction when blocked or timer expires (suppressed on ice)
-      // ROM $DDFC RandomDirChange  $DE48 DirTowardHQ
-      e.aiTimer--;
-      const blocked = !canMove(e, e.dir);
-      if (!onIce && (blocked || e.aiTimer <= 0)) {
-        // 50% navigate toward eagle, 50% random  ROM $DF26 SpeedCtrlMove
-        if (Math.random() < 0.5) {
-          e.dir = dirToward(e.x, e.y, EAGLE.x, EAGLE.y);
-        } else {
-          // ROM $DDFC: 25% turn right, 25% turn left, 50% random
-          const r = Math.random();
-          if (r < 0.33)      e.dir = (e.dir + 1) & 3;
-          else if (r < 0.66) e.dir = (e.dir + 3) & 3;
-          else               e.dir = Math.floor(Math.random() * 4);
+      // AI: logic from ROM $DD30 MoveGridSnap and $DDFC RandomDirChange
+      if (!onIce) {
+        // 1. If grid-aligned (8px), small chance to re-evaluate goal (SpeedCtrlMove)
+        if ((e.x & 7) === 0 && (e.y & 7) === 0) {
+          if ((Math.random() * 16 | 0) === 0) {
+            speedCtrlMove(e);
+          }
         }
-        e.aiTimer = 20 + Math.floor(Math.random() * 80);
+
+        // 2. If blocked, force a direction change (RandomDirChange)
+        if (!canMove(e, e.dir)) {
+          randomDirChange(e);
+          // If still blocked after change, logic at $DD30 sets a pause timer (simulated via aiTimer)
+          if (!canMove(e, e.dir)) {
+            e.aiTimer = 8; // pause for 8 frames
+          }
+        }
       }
-      if (canMove(e, e.dir)) {
+
+      if (e.aiTimer > 0) {
+        e.aiTimer--;
+      } else if (canMove(e, e.dir)) {
         const px = e.x, py = e.y;
         e.x += DX[e.dir];   // enemies 1 px/step vs player 2 px/step
         e.y += DY[e.dir];
@@ -744,20 +839,13 @@ function moveEntities() {
   }
 }
 
-// ROM $DE56 CalcDirToTarget: sign(targetX-entityX)×dx + sign(targetY-entityY)×dy
-function dirToward(ex, ey, tx, ty) {
-  const adx = Math.abs(tx - ex), ady = Math.abs(ty - ey);
-  if (adx > ady) return tx > ex ? 3 : 1;  // horizontal dominant
-  return ty > ey ? 2 : 0;                  // vertical dominant
-}
-
 // ─── Firing  ──────────────────────────────────────────────────────────────────
 // ROM $E140 FireBullet  $E1D6 PlayerFireCheck  $E216 EnemyFireCheck
 let fireHeld = [false, false];  // per-player fire-held state
 
 function handlePlayerFire() {
   // P1 fire: Space / X / J (+ E in 1P mode)
-  const p1press = !!(keys['Space'] || keys['KeyX'] || keys['KeyJ'] || (numPlayers === 1 && keys['KeyE']));
+  const p1press = demoMode ? (entities[0] && entities[0].demoFire) : !!(keys['Space'] || keys['KeyX'] || keys['KeyJ'] || (numPlayers === 1 && keys['KeyE']));
   if (p1press && !fireHeld[0]) {
     const e = entities[0];
     if (e.alive && e.spawnAnim === 0) tryFire(e);
@@ -766,7 +854,7 @@ function handlePlayerFire() {
 
   // P2 fire: E / Q  (only in 2P mode)
   if (numPlayers === 2) {
-    const p2press = !!(keys['KeyE'] || keys['KeyQ']);
+    const p2press = demoMode ? (entities[1] && entities[1].demoFire) : !!(keys['KeyE'] || keys['KeyQ']);
     if (p2press && !fireHeld[1]) {
       const e = entities[1];
       if (e.alive && e.spawnAnim === 0) tryFire(e);
@@ -971,6 +1059,7 @@ function bulletBulletCancel() {
 // ROM $C62F/$C63E CheckGameOver: start in-field "GAME OVER" scroll
 // Center-up when both players dead; called from main gameplay loop
 function checkGameOverScroll() {
+  if (demoMode) { enterTitle(); return; }
   // In 2P, only trigger center scroll when BOTH players are out of lives
   if (numPlayers === 2 && (p1Lives >= 0 || p2Lives >= 0)) return;
   if (goScrollTimer === 0) {
@@ -1183,20 +1272,48 @@ function checkStageClear() {
   }
 }
 
+// Simulated AI inputs for demo mode
+function tickDemoAI() {
+  for (let i = 0; i < 2; i++) {
+    const e = entities[i];
+    if (!e || !e.alive || e.spawnAnim > 0) continue;
+    
+    // Pick a random direction every 64 frames or if blocked (exact same logic as enemies)
+    if (e.demoTimer === undefined) e.demoTimer = 0;
+    if ((e.x & 7) === 0 && (e.y & 7) === 0 && (Math.random() * 16 | 0) === 0) {
+      speedCtrlMove(e);
+    }
+    if (!canMove(e, e.dir)) {
+      randomDirChange(e);
+    }
+    
+    // Fire occasionally
+    e.demoFire = (Math.random() * 20 | 0) === 0;
+  }
+}
+
 // ─── Main update  ─────────────────────────────────────────────────────────────
 // ROM $C402 GameFrame  $C29F GameUpdate2 — 18-subsystem sequence
 function update() {
   frameCount++;
 
+  if (demoMode && gamePhase === 'play') tickDemoAI();
+
   // ROM $C65C AttractWait: loop until credits, blinking title sprite
   if (gamePhase === 'title') {
     titleFrame++;
+    titleTimer++;
+    
     // Up/Down toggles 1P/2P/Construction selection (edge-detect via titleSelectHeld)
     const selDown = !!(keys['ArrowDown'] || keys['KeyS']);
     const selUp   = !!(keys['ArrowUp']   || keys['KeyW']);
     if (selDown && !titleSelectHeld) titleSelect = (titleSelect + 1) % 3;
     if (selUp   && !titleSelectHeld) titleSelect = (titleSelect + 2) % 3;
     titleSelectHeld = selDown || selUp;
+    
+    // Reset timer on any meaningful input
+    if (selDown || selUp) titleTimer = 0;
+
     if (keys['Space'] || keys['Enter']) {
       initAudio();  // Web Audio requires user gesture
       // 0=1 PLAYER, 1=2 PLAYERS, 2=CONSTRUCTION
@@ -1206,6 +1323,12 @@ function update() {
       newHiScorePlayer = 0;
       gamePhase = 'select';
       selectedStage = 0;
+    } else if (titleTimer > 600) { // 10 seconds of inactivity -> Demo Mode
+      demoMode = true;
+      numPlayers = 2; // Demo is 2 players
+      p1Score = 0; p1Lives = 2;
+      p2Score = 0; p2Lives = 2;
+      initLevel(34); // Stage 35
     }
     return;
   }
@@ -1305,6 +1428,7 @@ function update() {
 
   // ROM $C62F CheckGameOver: eagle destroyed ($68→0) → start in-field scroll
   if (!eagleAlive && eagleExpTimer === 0 && goScrollTimer === 0 && gamePhase === 'play') {
+    if (demoMode) { enterTitle(); return; }
     goScrollX     = 0x70;  // ROM $0105 = $70 (center)
     goScrollY     = 0xF0;  // ROM $0106 = $F0
     goScrollDir   = 0;     // ROM $0107 = 0 (up)
@@ -2068,6 +2192,8 @@ function enterTitle() {
   gamePhase   = 'title';
   titleFrame  = 0;
   titleSelect = 0;  // default: 1 PLAYER
+  titleTimer  = 0;
+  demoMode    = false;
 }
 
 function drawTitleScreen() {

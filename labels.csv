@@ -424,4 +424,6 @@
 1,D595,SetUIPrimaryPalette
 1,C8B6,DrawStageSelectHUD
 1,CA44,FlushAttributeBuffer
+*,46,PlayerCount
+*,6D,DemoActive
 *,85,SelectedStage
