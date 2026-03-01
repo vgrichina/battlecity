@@ -368,8 +368,6 @@ let curtainTarget = ''; // 'select' or 'play'
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
 let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory' | 'select' | 'curtain'
 let titleFrame;     // frame counter for title screen blink animation
-let titleSelect;    // 0 = 1 PLAYER, 1 = 2 PLAYERS (title screen menu cursor)
-let titleSelectHeld = false;  // edge-detect for title menu navigation
 let titleTimer = 0; // ROM $0A counts to 8 before Demo Mode
 let demoMode = false; // ROM $6D DemoActive
 let credits = 0;    // ROM $0104 Credits count (0-99)
@@ -643,6 +641,7 @@ window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyM') toggleSound();  // M = mute/unmute
   if (e.code === 'KeyP') { dipSwitch = (dipSwitch + 1) & 3; updateActivePalette(); } // P = cycle palette variant
+  if (e.code === 'KeyC') { credits = Math.min(99, credits + 1); playSound(SND.COIN); } // C = insert coin
   e.preventDefault();
 });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
@@ -1308,20 +1307,18 @@ function update() {
     titleFrame++;
     titleTimer++;
     
-    // Up/Down toggles 1P/2P/Construction selection (edge-detect via titleSelectHeld)
-    const selDown = !!(keys['ArrowDown'] || keys['KeyS']);
-    const selUp   = !!(keys['ArrowUp']   || keys['KeyW']);
-    if (selDown && !titleSelectHeld) titleSelect = (titleSelect + 1) % 3;
-    if (selUp   && !titleSelectHeld) titleSelect = (titleSelect + 2) % 3;
-    titleSelectHeld = selDown || selUp;
-    
     // Reset timer on any meaningful input
-    if (selDown || selUp) titleTimer = 0;
+    if (keys['KeyC'] || keys['Digit1'] || keys['Key1'] || keys['Digit2'] || keys['Key2'] || keys['Space'] || keys['Enter']) titleTimer = 0;
 
-    if (keys['Space'] || keys['Enter']) {
+    // Start handling
+    let requestedPlayers = 0;
+    if (keys['Digit1'] || keys['Key1'] || keys['Space'] || keys['Enter']) requestedPlayers = 1;
+    if (keys['Digit2'] || keys['Key2']) requestedPlayers = 2;
+
+    if (requestedPlayers > 0 && credits >= requestedPlayers) {
       initAudio();  // Web Audio requires user gesture
-      // 0=1 PLAYER, 1=2 PLAYERS, 2=CONSTRUCTION
-      numPlayers = (titleSelect === 1) ? 2 : 1;
+      credits -= requestedPlayers;
+      numPlayers = requestedPlayers;
       p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
       p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
       newHiScorePlayer = 0;
@@ -2254,7 +2251,6 @@ function enterTitle() {
   stopAllSounds();  // silence everything on return to title
   gamePhase   = 'title';
   titleFrame  = 0;
-  titleSelect = 0;  // default: 1 PLAYER
   titleTimer  = 0;
   demoMode    = false;
   curtainRow  = -1;
@@ -2277,17 +2273,18 @@ function drawTitleScreen() {
   drawBigNesText('BATTLE', 26, 46, 0);
   drawBigNesText('CITY', 60, 86, 0);
 
-  // ROM $C69A BlinkTitleSprite blinks "PLEASE INSERT COIN" at row 18 (y=144)
+  // ROM $C69A BlinkTitleSprite alternates $D1A7 "PLEASE INSERT COIN" / $D1BA (18 spaces)
+  // or "PUSH START BUTTON" if credits > 0
   if (titleFrame & 0x20) { // Blink every 32 frames
-    drawNesText('PLEASE INSERT COIN', 56, 144, 3);
+    if (credits === 0) {
+      drawNesText('PLEASE INSERT COIN', 56, 144, 3);
+    } else {
+      drawNesText('PUSH START BUTTON', 64, 144, 3);
+    }
   }
 
   // ROM $D0F4 draws "CREDIT" at row 21 (y=168)
   drawNesText('CREDIT ' + credits.toString().padStart(2, '0'), 88, 168, 3);
-
-  if (credits > 0) {
-      drawNesText('PUSH START BUTTON', 64, 184, 3);
-  }
 
   // ROM $D1E7 copyright at nametable col 5, row 25 → (40,200); '@'=CHR tile $40=©
   drawNesText('@ 1980 1985 NAMCO LTD', 40, 200, 3);
