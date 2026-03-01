@@ -11,6 +11,9 @@ const NES_CPU_CLOCK = 1789773;  // NTSC CPU clock Hz
 // ROM $EE8B pitch table: 12 notes A1-G#2 (11-bit timer periods)
 const NES_PITCH = [2034,1920,1812,1710,1603,1524,1438,1358,1282,1210,1142,1078];
 
+// ROM $400E noise periods (NTSC)
+const NES_NOISE_PERIODS = [4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068];
+
 // Convert NES timer period to frequency
 // Pulse/noise: freq = CPU / (16 * (period + 1))
 // Triangle:    freq = CPU / (32 * (period + 1))
@@ -136,6 +139,35 @@ const channels = [null, null, null, null];
 // Noise buffer for noise channel
 let noiseBuffer = null;
 
+// ─── NES APU Waveform Generation ────────────────────────────────
+
+const dutyWaves = [null, null, null, null];
+
+function initWaves() {
+  // Duty cycles: 0=12.5%, 1=25%, 2=50%, 3=25% negated
+  const duties = [0.125, 0.25, 0.5, 0.75];
+  for (let d = 0; d < 4; d++) {
+    const n = 64;
+    const real = new Float32Array(n);
+    const imag = new Float32Array(n);
+    for (let i = 1; i < n; i++) {
+      real[i] = (2 / (i * Math.PI)) * Math.sin(i * Math.PI * duties[d]);
+    }
+    dutyWaves[d] = audioCtx.createPeriodicWave(real, imag);
+  }
+
+  // Create 15-bit LFSR long-mode noise buffer
+  const len = 32767;
+  noiseBuffer = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  let shiftReg = 1;
+  for (let i = 0; i < len; i++) {
+    const feedback = (shiftReg & 1) ^ ((shiftReg >> 1) & 1);
+    shiftReg = (shiftReg >> 1) | (feedback << 14);
+    data[i] = (shiftReg & 1) ? -1 : 1;
+  }
+}
+
 function initAudio() {
   if (audioInited) return;
   audioInited = true;
@@ -147,23 +179,18 @@ function initAudio() {
     return;
   }
 
+  initWaves();
+
   masterGain = audioCtx.createGain();
   masterGain.gain.value = 0.15;  // NES-appropriate volume
   masterGain.connect(audioCtx.destination);
-
-  // Create noise buffer (white noise, 1 second)
-  const sr = audioCtx.sampleRate;
-  noiseBuffer = audioCtx.createBuffer(1, sr, sr);
-  const data = noiseBuffer.getChannelData(0);
-  // NES noise uses LFSR but white noise is close enough
-  for (let i = 0; i < sr; i++) data[i] = Math.random() * 2 - 1;
 
   // Initialize 4 channels
   for (let i = 0; i < 4; i++) {
     channels[i] = {
       osc: null,
       gain: null,
-      type: i < 2 ? 'square' : i === 2 ? 'triangle' : 'noise',
+      type: i < 2 ? 'pulse' : i === 2 ? 'triangle' : 'noise',
       active: false,
     };
     createChannelNodes(i);
@@ -183,9 +210,9 @@ function createChannelNodes(chIdx) {
   ch.gain.connect(masterGain);
 
   if (chIdx < 2) {
-    // Pulse wave (square approximation)
+    // Pulse wave
     ch.osc = audioCtx.createOscillator();
-    ch.osc.type = 'square';
+    ch.osc.setPeriodicWave(dutyWaves[2]); // Default 50%
     ch.osc.frequency.value = 440;
     ch.osc.connect(ch.gain);
     ch.osc.start();
@@ -270,19 +297,26 @@ function stopAllSounds() {
 }
 
 // ─── Channel helpers ────────────────────────────────────────────
-function setChannelFreq(chIdx, freq) {
+function setChannelFreq(chIdx, freqOrPeriod) {
   if (!channels[chIdx] || !channels[chIdx].active) return;
   const ch = channels[chIdx];
   if (chIdx < 3 && ch.osc) {
     // Clamp to audible range
-    freq = Math.max(20, Math.min(freq, 20000));
+    const freq = Math.max(20, Math.min(freqOrPeriod, 20000));
     ch.osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
   }
   // Noise channel: vary playback rate for pitch approximation
   if (chIdx === 3 && ch.osc) {
-    const rate = Math.max(0.1, Math.min(freq / 440, 4));
+    const period = NES_NOISE_PERIODS[freqOrPeriod & 0x0F];
+    const freq = NES_CPU_CLOCK / period;
+    const rate = freq / audioCtx.sampleRate;
     ch.osc.playbackRate.setValueAtTime(rate, audioCtx.currentTime);
   }
+}
+
+function setChannelDuty(chIdx, dutyIdx) {
+  if (chIdx >= 2 || !channels[chIdx] || !channels[chIdx].osc) return;
+  channels[chIdx].osc.setPeriodicWave(dutyWaves[dutyIdx & 3]);
 }
 
 function setChannelVol(chIdx, vol4bit) {
@@ -333,9 +367,17 @@ function soundTick() {
 
       if (b <= 0x5F) {
         // NOTE: decode pitch and play
-        const isTri = (s.channel === 2);
-        s.freq = noteToFreq(b, isTri);
-        setChannelFreq(s.channel, s.freq);
+        if (s.channel < 2) {
+          setChannelDuty(s.channel, s.volByte >> 6);
+          s.freq = noteToFreq(b, false);
+          setChannelFreq(s.channel, s.freq);
+        } else if (s.channel === 2) {
+          s.freq = noteToFreq(b, true);
+          setChannelFreq(s.channel, s.freq);
+        } else {
+          // Noise: note byte contains period index in low nibble
+          setChannelFreq(3, b & 0x0F);
+        }
         setChannelVol(s.channel, s.vol);
         // Use saved duration if we have one
         if (s.durSaved > 0 && s.dur === 0) {
