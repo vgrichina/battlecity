@@ -373,6 +373,7 @@ let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'vict
 let titleFrame;     // frame counter for title screen blink animation
 let titleTimer = 0; // ROM $0A counts to 8 before Demo Mode
 let demoMode = false; // ROM $6D DemoActive
+let selectKeyHeld = false; // edge-detect for stage selection
 let credits = 0;    // ROM $0104 Credits count (0-99)
 let numPlayers;     // 1 or 2; set at title screen before game start
 let p1Score;        // ROM $15–$1B P1Score (int; BCD in ROM)
@@ -1402,9 +1403,9 @@ function update() {
   if (gamePhase === 'select') {
     const selUp   = !!(keys['ArrowUp']   || keys['KeyW']);
     const selDown = !!(keys['ArrowDown'] || keys['KeyS']);
-    if (selUp && !titleSelectHeld)   selectedStage = (selectedStage + 1) % 35;
-    if (selDown && !titleSelectHeld) selectedStage = (selectedStage + 34) % 35;
-    titleSelectHeld = selUp || selDown;
+    if (selUp && !selectKeyHeld)   selectedStage = (selectedStage + 1) % 35;
+    if (selDown && !selectKeyHeld) selectedStage = (selectedStage + 34) % 35;
+    selectKeyHeld = selUp || selDown;
 
     if (keys['Space'] || keys['Enter']) {
       initLevel(selectedStage);
@@ -2322,6 +2323,7 @@ function enterTitle() {
   titleFrame  = 0;
   titleTimer  = 0;
   demoMode    = false;
+  selectKeyHeld = false;
   curtainRow  = -1;
 }
 
