@@ -361,14 +361,15 @@ function soundTick() {
         break;
 
       } else if (b === 0xE9) {
-        // MODIFY VOL low-6
+        // MODIFY VOL high-2 ($E9 in ROM at $EDC6 keeps low 6 bits $3F and ORs new byte)
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
           s.volByte = (s.volByte & 0x3F) | p;
           s.vol = s.volByte & 0x0F;
+          setChannelVol(s.channel, s.vol);
         }
       } else if (b === 0xEA) {
-        // MODIFY VOL high-2
+        // MODIFY VOL low-6 ($EA in ROM at $EDD8 keeps high 2 bits $C0 and ORs new byte)
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
           s.volByte = (s.volByte & 0xC0) | p;
@@ -376,11 +377,12 @@ function soundTick() {
           setChannelVol(s.channel, s.vol);
         }
       } else if (b === 0xEB) {
-        // MODIFY VOL low-4
+        // MODIFY VOL high-4 ($EB in ROM at $EDEA keeps low 4 bits $0F and ORs new byte)
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
-          s.volByte = (s.volByte & 0xF0) | p;
+          s.volByte = (s.volByte & 0x0F) | p;
           s.vol = s.volByte & 0x0F;
+          setChannelVol(s.channel, s.vol);
         }
       } else if (b === 0xEC) {
         // SET SWEEP (ignored in web port)

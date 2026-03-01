@@ -363,8 +363,10 @@ const C = {
 // ─── Game state  ──────────────────────────────────────────────────────────────
 let stageIdx;       // ROM $41 StageNum
 let selectedStage;  // ROM $85 SelectedStage
+let curtainRow = -1; // 0..14, row of curtain currently closing/opening (top and bottom meet at center)
+let curtainTarget = ''; // 'select' or 'play'
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
-let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory' | 'select'
+let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory' | 'select' | 'curtain'
 let titleFrame;     // frame counter for title screen blink animation
 let titleSelect;    // 0 = 1 PLAYER, 1 = 2 PLAYERS (title screen menu cursor)
 let titleSelectHeld = false;  // edge-detect for title menu navigation
@@ -1297,6 +1299,8 @@ function tickDemoAI() {
 function update() {
   frameCount++;
 
+  tickPaletteFlash(); // ROM $C2D5/$C1E9
+
   if (demoMode && gamePhase === 'play') tickDemoAI();
 
   // ROM $C65C AttractWait: loop until credits, blinking title sprite
@@ -1321,7 +1325,9 @@ function update() {
       p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
       p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
       newHiScorePlayer = 0;
-      gamePhase = 'select';
+      gamePhase = 'curtain';
+      curtainTarget = 'select';
+      curtainRow = 0;
       selectedStage = 0;
     } else if (titleTimer > 600) { // 10 seconds of inactivity -> Demo Mode
       demoMode = true;
@@ -1329,6 +1335,22 @@ function update() {
       p1Score = 0; p1Lives = 2;
       p2Score = 0; p2Lives = 2;
       initLevel(34); // Stage 35
+    }
+    return;
+  }
+
+  if (gamePhase === 'curtain') {
+    if (frameCount % 3 === 0) { // approx matching ROM speed
+      if (curtainTarget === 'select') {
+        curtainRow++;
+        if (curtainRow === 15) { gamePhase = 'select'; }
+      } else {
+        curtainRow--;
+        if (curtainRow === -1) { 
+          gamePhase = 'start';
+          phaseTimer = 180;
+        }
+      }
     }
     return;
   }
@@ -1342,6 +1364,9 @@ function update() {
 
     if (keys['Space'] || keys['Enter']) {
       initLevel(selectedStage);
+      gamePhase = 'curtain';
+      curtainTarget = 'play';
+      curtainRow = 14;
     }
     return;
   }
@@ -2090,6 +2115,7 @@ function drawStageClear() {
 function render() {
   // ROM $C65C AttractWait: title screen is a separate full-screen render
   if (gamePhase === 'title')   { drawTitleScreen();   return; }
+  if (gamePhase === 'curtain') { drawCurtain();       return; }
   if (gamePhase === 'select')  { drawStageSelect();   return; }
   if (gamePhase === 'victory') { drawVictoryScreen(); return; }
   // ROM $CAF1 StageClearTallyScreen: full-screen tally (not an overlay)
@@ -2135,6 +2161,42 @@ function render() {
   drawNesText('ARROWS MOVE SPACE FIRE', 40, 228, 0);
 }
 
+// ROM $C2D9 PaletteFlash — 1Hz toggle between yellow/blue for BG1
+function tickPaletteFlash() {
+  const f = frameCount & 0x3F;
+  if (f === 0) {
+    NES_PAL[1][1] = NES_MASTER_HEX[0x37]; // yellow
+    NES_PAL[1][2] = NES_MASTER_HEX[0x12]; // blue
+    tileCache.clear();
+  } else if (f === 32) {
+    NES_PAL[1][1] = NES_MASTER_HEX[0x12]; // blue
+    NES_PAL[1][2] = NES_MASTER_HEX[0x37]; // yellow
+    tileCache.clear();
+  }
+}
+
+// ROM $CAAD TallyOpenCurtain  $CACF TallyCloseCurtain
+function drawCurtain() {
+  // Clear to the same gray as the curtain tiles for consistency
+  ctx.fillStyle = NES_PAL[0][3]; // BG0 Color 3 (Gray $00)
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  if (curtainTarget === 'play') {
+    // When opening to play, we draw the field first then cover it
+    drawField();
+    drawEagleBase();
+  }
+
+  const palIdx = 0; // BG0 (gray color 3)
+  const tile = 0x11; // steel
+  for (let r = 0; r <= curtainRow; r++) {
+    for (let c = 0; c < 32; c++) {
+      drawCHRTile(tile, palIdx, c * 8, r * 8, false);
+      drawCHRTile(tile, palIdx, c * 8, (29 - r) * 8, false);
+    }
+  }
+}
+
 // ROM $C8B6 DrawStageSelectHUD — "STAGE XX" screen during stage selection
 function drawStageSelect() {
   ctx.fillStyle = '#666666'; // Gray background
@@ -2145,7 +2207,8 @@ function drawStageSelect() {
   const tw = stageStr.length * 8;
   const bx = (256 - tw) / 2 - 8, by = 108;
   fillRect(bx, by, tw + 16, 16, '#000');
-  drawNesText(stageStr, bx + 8, by + 4, 3);
+  drawNesText('STAGE  ', bx + 8, by + 4, 3);
+  drawNesText(String(selectedStage + 1), bx + 8 + 7 * 8, by + 4, 1); // BG1 flashes
 }
 
 // ─── Victory screen  ────────────────────────────────────────────────────────
@@ -2194,6 +2257,7 @@ function enterTitle() {
   titleSelect = 0;  // default: 1 PLAYER
   titleTimer  = 0;
   demoMode    = false;
+  curtainRow  = -1;
 }
 
 function drawTitleScreen() {
