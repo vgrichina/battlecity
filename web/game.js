@@ -365,8 +365,11 @@ let stageIdx;       // ROM $41 StageNum
 let selectedStage;  // ROM $85 SelectedStage
 let curtainRow = -1; // 0..14, row of curtain currently closing/opening (top and bottom meet at center)
 let curtainTarget = ''; // 'select' or 'play'
+let editCursor = { x: 6, y: 12, tileType: 4 }; // GH=13, GW=13. 4=Brick
+let editKeyHeld = false;
+let customMap = null; // GW*GH array of arrays
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
-let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory' | 'select' | 'curtain'
+let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory' | 'select' | 'curtain' | 'edit'
 let titleFrame;     // frame counter for title screen blink animation
 let titleTimer = 0; // ROM $0A counts to 8 before Demo Mode
 let demoMode = false; // ROM $6D DemoActive
@@ -505,7 +508,9 @@ function initLevel(idx) {
   tallyState = null;
 
   // Copy level grid from ROM data  ROM $F27D LevelMapData
-  const raw = LEVEL_MAPS[stageIdx];
+  let raw = LEVEL_MAPS[stageIdx];
+  if (stageIdx === 0 && customMap) raw = customMap;
+  
   grid      = raw.map(r => [...r]);
 
   // Brick sub-tile bits  ROM $D745
@@ -642,6 +647,12 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyM') toggleSound();  // M = mute/unmute
   if (e.code === 'KeyP') { dipSwitch = (dipSwitch + 1) & 3; updateActivePalette(); } // P = cycle palette variant
   if (e.code === 'KeyC') { credits = Math.min(99, credits + 1); playSound(SND.COIN); } // C = insert coin
+  if (e.code === 'KeyE' && gamePhase === 'title') { 
+    gamePhase = 'edit'; 
+    initLevel(0); 
+    grid.forEach(r => r.fill(13)); 
+    brickBits.forEach(r => r.fill(0));
+  } // E = edit
   e.preventDefault();
 });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
@@ -1332,6 +1343,42 @@ function update() {
       p1Score = 0; p1Lives = 2;
       p2Score = 0; p2Lives = 2;
       initLevel(34); // Stage 35
+    }
+    return;
+  }
+
+  if (gamePhase === 'edit') {
+    // Move cursor (WASD or Arrows)
+    const up    = !!(keys['ArrowUp']    || keys['KeyW']);
+    const left  = !!(keys['ArrowLeft']  || keys['KeyA']);
+    const down  = !!(keys['ArrowDown']  || keys['KeyS']);
+    const right = !!(keys['ArrowRight'] || keys['KeyD']);
+    
+    if (frameCount % 8 === 0) { // Throttle movement
+      if (up)    editCursor.y = Math.max(0, editCursor.y - 1);
+      if (left)  editCursor.x = Math.max(0, editCursor.x - 1);
+      if (down)  editCursor.y = Math.min(GH - 1, editCursor.y + 1);
+      if (right) editCursor.x = Math.min(GW - 1, editCursor.x + 1);
+    }
+    
+    // Cycle tile type with 'T' (Brick -> Steel -> Water -> Trees -> Ice -> Empty)
+    if (keys['KeyT'] && !editKeyHeld) {
+      const types = [4, 9, 11, 10, 12, 13];
+      let idx = types.indexOf(editCursor.tileType);
+      editCursor.tileType = types[(idx + 1) % types.length];
+    }
+    editKeyHeld = keys['KeyT'];
+    
+    // Place tile with Space or F
+    if (keys['Space'] || keys['KeyF']) {
+      grid[editCursor.y][editCursor.x] = editCursor.tileType;
+      brickBits[editCursor.y][editCursor.x] = brickInitBits(editCursor.tileType);
+    }
+    
+    // Save and return with Enter or Escape
+    if (keys['Enter'] || keys['Escape']) {
+      customMap = grid.map(r => [...r]);
+      enterTitle();
     }
     return;
   }
@@ -2149,13 +2196,35 @@ function render() {
     drawCHRTile(0x7F, 7, goX + 16, goScrollY,      true);  // BR
   }
 
+  if (gamePhase === 'edit') {
+    // Draw cursor: white 16x16 frame blinking
+    if ((frameCount >> 3) & 1) {
+      const cx = FX + editCursor.x * META, cy = FY + editCursor.y * META;
+      fillRect(cx, cy, 16, 2, '#fff');
+      fillRect(cx, cy + 14, 16, 2, '#fff');
+      fillRect(cx, cy, 2, 16, '#fff');
+      fillRect(cx + 14, cy, 2, 16, '#fff');
+    }
+    // Also draw the tile type being placed
+    drawCHRTile(editCursor.tileType === 13 ? 0x00 : 
+                editCursor.tileType === 4 ? 0x10 : 
+                editCursor.tileType === 9 ? 0x11 :
+                editCursor.tileType === 11 ? 0x12 :
+                editCursor.tileType === 10 ? 0x13 : 0x14, // simple mapping for preview
+                0, 224, 200, true);
+  }
+
   drawHUD();
 
   if (gamePhase === 'start')    drawStageBanner();
   if (gamePhase === 'gameover') drawGameOver();
 
   // Controls hint in bottom border row (Row 28)
-  drawNesText('ARROWS MOVE SPACE FIRE', 40, 228, 0);
+  if (gamePhase === 'edit') {
+    drawNesText('ARROWS MOVE SPACE PLACE T CYCLE ENTER SAVE', 8, 228, 0);
+  } else {
+    drawNesText('ARROWS MOVE SPACE FIRE', 40, 228, 0);
+  }
 }
 
 // ROM $C2D9 PaletteFlash — 1Hz toggle between yellow/blue for BG1
@@ -2288,6 +2357,7 @@ function drawTitleScreen() {
 
   // ROM $D1E7 copyright at nametable col 5, row 25 → (40,200); '@'=CHR tile $40=©
   drawNesText('@ 1980 1985 NAMCO LTD', 40, 200, 3);
+  drawNesText('PRESS E FOR EDIT', 64, 232, 0);
   // ROM $D1FE "ALL RIGHTS RESERVED" at col 7, row 27 → (56,216)
   drawNesText('ALL RIGHTS RESERVED', 56, 216, 3);
 }
