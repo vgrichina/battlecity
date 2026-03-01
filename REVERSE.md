@@ -2512,7 +2512,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
   6. **Power-up spawn position = dead entity position**: ROM $EA63 picks random {48,96,144,192}px grid via RNGToCoord ($EAA7) with collision retry; web uses `e.x, e.y` directly.
   7. **Enemy type distribution**: web uses `Math.min(3, kills/5)` universal formula; ROM loads per-stage distributions from EnemyTypeTable ($E5A9) via stage-specific group counts ($8B–$8E in each level block).
   8. **Shovel timer 3.75× too long** (line ~715/749): web sets `20 * 60 = 1200` frames decremented every frame = 20s; ROM $EBA0 sets $45=20 decremented every 16 frames → 320 frames (5.3s).
-  9. **canMove() tile granularity**: web checks 4 corners at 16px metatile granularity; ROM probes 2 leading-edge points at 8px NES-tile granularity → partial brick variants (BRICK_TL/TR/BL/BR) may block/pass incorrectly.
+  9. **canMove() tile granularity**: web checks 4 corners at 16px metatile granularity; ROM probes 2 leading-edge points at 8px NES-tile granularity → partial brick variants (BRICK_R/TR/BL/BR) may block/pass incorrectly.
   10. **Entity position convention** (known): e.x/e.y = top-left; ROM = center. All tanks 8px right+down from ROM positions.
   11. **TANK_SZ=14** (known): ROM hitbox entity_X±8 = 16px wide; affects all collision boxes.
 
@@ -2922,7 +2922,7 @@ Level tiles and eagle still render incorrectly in the browser. Root causes ident
 - [x] **Generate reference comparison**: **Done (session 11).** Ran `render_frame.py --stage 1` and wrote `analyze_tiles.py` (no external dependencies — built-in PNG reader/writer) to render both ROM-accurate and game.js-equivalent BG layers at 1× NES resolution (256×240), then pixel-diff them. Output: `output_gfx/compare_rom.png`, `compare_gamejs.png`, `compare_diff.png`. Results:
   - **Palettes**: All 32 entries (8 slots × 4 colors) match perfectly between ROM NES_MASTER and game.js NES_PAL hex strings.
   - **CHR tile data**: All 7 important BG tiles ($00 mortar, $0F brick, $10 steel, $12 water, $20 steel_border, $21 ice, $22 trees) — ROM 2bpp decode == chr_all.png grayscale→palette-index decode. Tile $00 mortar pattern (23 non-zero pixels) matches.
-  - **Brick brickBits**: All 5 partial types (BRICK_TL through BRICK) — CHR-derived bitmask matches game.js initialization.
+  - **Brick brickBits**: All 5 partial types (BRICK_R through BRICK) — CHR-derived bitmask matches game.js initialization.
   - **Playfield tiles**: **0 pixel differences** — all non-empty tiles in the 13×13 grid are pixel-perfect.
   - **Total diffs**: 34,644 / 61,440 pixels (56.4%), all in non-tile areas:
     - `playfield_bg`: 24,576 px — empty tiles within playfield are (8,8,8) instead of (0,0,0)
@@ -3051,3 +3051,4 @@ Systematic comparison of `game.js` rendering against ROM nametable/OAM layout do
 - [x] **Implement Credits/Coin workflow**. **Done (session 56).** Implemented arcade-accurate "Insert Coin" logic ($C840). Added 'C' key to insert credits; title screen blinks "PLEASE INSERT COIN" (0 credits) or "PUSH START BUTTON" (>0 credits). Starting game requires credits (1 for 1P, 2 for 2P) and uses '1'/'2' keys (Space/Enter defaults to 1P).
 - [x] **Implement Palette Flash Effect ($C2D9)**. **Done (session 56).** Implemented 1Hz toggle between yellow ($37) and blue ($12) for BG1 color 1 and 2. This creates the flashing effect for the Stage Select number and other UI elements.
 - [x] **Implement Tally Screen "Curtain" Reveal**. **Done (session 56).** Implemented top-bottom curtain animation using gray steel tiles ($11) based on ROM routines $CAAD (Open) and $CACF (Close). Used for transitions between title, stage select, and gameplay.
+

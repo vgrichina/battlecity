@@ -270,9 +270,9 @@ const DY = [-1,  0,  1,  0];
 // ─── Tile type constants  ─────────────────────────────────────────────────────
 // ROM $DB79 CHR table  extract_level_maps.py
 const T = {
-  BRICK_TL:0, BRICK_TR:1, BRICK_BL:2, BRICK_BR:3,
+  BRICK_R:0, BRICK_B:1, BRICK_L:2, BRICK_T:3,
   BRICK:4,
-  STEEL_TL:5, STEEL_TR:6, STEEL_BL:7, STEEL_BR:8,
+  STEEL_R:5, STEEL_B:6, STEEL_L:7, STEEL_T:8,
   STEEL:9,
   WATER:10, TREES:11, ICE:12,
   EMPTY:13,
@@ -284,11 +284,11 @@ const TILE_PAL = [0,0,0,0,0, 3,3,3,3,3, 1,2,3];
 // ROM $DB79 TileCHRTable: tile type → [TL,TR,BL,BR] BG CHR tile indices
 // Brick types (0–4) are null — handled via brickBits in drawTile().
 const TILE_CHR = [
-  null, null, null, null, null,       // T.BRICK_TL=0 .. T.BRICK=4
-  [0x20,0x10,0x20,0x10],              // T.STEEL_TL=5  ROM $DB8D right-col partial
-  [0x20,0x20,0x10,0x10],              // T.STEEL_TR=6  ROM $DB91 bottom-row partial
-  [0x10,0x20,0x10,0x20],              // T.STEEL_BL=7  ROM $DB95 left-col partial
-  [0x10,0x10,0x20,0x20],              // T.STEEL_BR=8  ROM $DB99 top-row partial
+  null, null, null, null, null,       // T.BRICK_R=0 .. T.BRICK=4
+  [0x20,0x10,0x20,0x10],              // T.STEEL_R=5  ROM $DB8D right-col partial
+  [0x20,0x20,0x10,0x10],              // T.STEEL_B=6  ROM $DB91 bottom-row partial
+  [0x10,0x20,0x10,0x20],              // T.STEEL_L=7  ROM $DB95 left-col partial
+  [0x10,0x10,0x20,0x20],              // T.STEEL_T=8  ROM $DB99 top-row partial
   [0x10,0x10,0x10,0x10],              // T.STEEL=9     ROM $DB9D full solid
   [0x12,0x12,0x12,0x12],              // T.WATER=10
   [0x22,0x22,0x22,0x22],              // T.TREES=11
@@ -310,14 +310,14 @@ function passable(col, row) {
 }
 
 // ROM MoveGridSnap ($DD4B–$DDBC): probe a single 8×8 pixel point at 8px tile resolution
-// Checks sub-quadrant for partial brick tiles (BRICK_TL/TR/BL/BR)
+// Checks sub-quadrant for partial brick tiles (BRICK_R/B/L/T)
 function passable8(px, py) {
   const col = Math.floor((px - FX) / META);
   const row = Math.floor((py - FY) / META);
   if (col < 0 || col >= GW || row < 0 || row >= GH) return false;
   const t = grid[row][col];
   if (t === T.EMPTY || t === T.ICE || t === T.TREES) return true;
-  if (t <= T.BRICK) {  // BRICK_TL=0 .. BRICK=4: check 8px sub-quadrant
+  if (t <= T.BRICK) {  // BRICK_R=0 .. BRICK=4: check 8px sub-quadrant
     const qx = Math.floor(((px - FX) % META) / 8);
     const qy = Math.floor(((py - FY) % META) / 8);
     return !(brickBits[row][col] & (1 << (qy * 2 + qx)));
@@ -420,11 +420,11 @@ let victoryScrollX;         // ROM $4F: horizontal scroll offset (0→240 over 2
 //   Type 2 left-col   [0F,00,0F,00] → TL+BL = 0b0101
 //   Type 3 top-row    [0F,0F,00,00] → TL+TR = 0b0011
 function brickInitBits(t) {
-  if (t === T.BRICK_TL) return 0b1010;  // TR+BR (right col)
-  if (t === T.BRICK_TR) return 0b1100;  // BL+BR (bottom row)
-  if (t === T.BRICK_BL) return 0b0101;  // TL+BL (left col)
-  if (t === T.BRICK_BR) return 0b0011;  // TL+TR (top row)
-  if (t === T.BRICK)    return 0b1111;
+  if (t === T.BRICK_R) return 0b1010;  // TR+BR (right col)
+  if (t === T.BRICK_B) return 0b1100;  // BL+BR (bottom row)
+  if (t === T.BRICK_L) return 0b0101;  // TL+BL (left col)
+  if (t === T.BRICK_T) return 0b0011;  // TL+TR (top row)
+  if (t === T.BRICK)   return 0b1111;
   return 0;
 }
 
@@ -459,7 +459,7 @@ function makeBullet(slot) {
 
 // ROM $E1AF BulletExplode: 4-frame explosion sprite at bullet hit position
 function triggerBulletExplosion(b) {
-  b.explodeTimer = 4;
+  b.explodeTimer = 12;
   b.ex    = b.x - 5;   // ROM $DAF3: OAM X = bullet.x − 5
   b.ey    = b.y - 8;   // ROM $DABA DrawEntityTile: OAM Y = bullet.y − 8
   b.edir  = b.dir;
@@ -519,7 +519,7 @@ function initLevel(idx) {
   // Normalize partial-brick display types 0–3 → T.BRICK (4) in the grid;
   // brickBits already captures the correct 2-quadrant pattern above.
   grid.forEach((r, ri) => r.forEach((t, ci) => {
-    if (t >= T.BRICK_TL && t < T.BRICK) grid[ri][ci] = T.BRICK;
+    if (t >= T.BRICK_R && t < T.BRICK) grid[ri][ci] = T.BRICK;
   }));
 
   // ROM $C912 BrickWallInit: add Π-shaped brick wall around eagle to grid+brickBits
@@ -968,7 +968,7 @@ function bulletHitsTile(b) {
 
   // Steel: stop bullet  ROM $E838 steel check  $030D=1 if player bullet
   // Armor-piercing (starLevel >= $60): destroy steel  ROM $E83E TileDestroyIfNoEntity ($D77F)
-  if (t === T.STEEL || (t >= T.STEEL_TL && t <= T.STEEL_BR)) {
+  if (t === T.STEEL || (t >= T.STEEL_R && t <= T.STEEL_T)) {
     if (b.armor) grid[row][col] = T.EMPTY;
     if (b.owner < 2) sfxSteelHit();  // ROM $030D=1 player bullet hits steel
     return true;
@@ -978,7 +978,7 @@ function bulletHitsTile(b) {
   if (t === T.WATER) { if (b.owner < 2) sfxSteelHit(); return true; }  // ROM $030D=1
 
   // Brick: destroy quarter  ROM $D763 TileDestroyBrick  $D745 SubTileBitmask
-  if (t === T.BRICK || (t >= T.BRICK_TL && t <= T.BRICK_BR)) {
+  if (t === T.BRICK || (t >= T.BRICK_R && t <= T.BRICK_T)) {
     destroyBrick(row, col, b.x, b.y);
     if (b.owner < 2) sfxBrickHit();  // ROM $030C=1
     return true;
@@ -999,11 +999,12 @@ function destroyBrick(row, col, bx, by) {
   const bits = brickBits[row][col];
 
   // Update tile type to reflect remaining quarters  ROM $D763
+  // (Since only 5 types exist, we map bitmask to closest half-wall or empty)
   if      (bits === 0)      grid[row][col] = T.EMPTY;
-  else if (bits === 0b0001) grid[row][col] = T.BRICK_TL;
-  else if (bits === 0b0010) grid[row][col] = T.BRICK_TR;
-  else if (bits === 0b0100) grid[row][col] = T.BRICK_BL;
-  else if (bits === 0b1000) grid[row][col] = T.BRICK_BR;
+  else if ((bits & 0b1010) === bits) grid[row][col] = T.BRICK_R;
+  else if ((bits & 0b1100) === bits) grid[row][col] = T.BRICK_B;
+  else if ((bits & 0b0101) === bits) grid[row][col] = T.BRICK_L;
+  else if ((bits & 0b0011) === bits) grid[row][col] = T.BRICK_T;
   else                      grid[row][col] = T.BRICK;
 }
 
@@ -1112,7 +1113,7 @@ function startPlayerDeathScroll(playerIdx) {
 function killEntity(e) {
   if (!e.alive) return;
   e.alive = false;
-  e.deathTimer = 12;  // ROM $E073: 3-phase explosion × 4 frames each
+  e.deathTimer = 18;  // ROM $DEB1/$DEB6: 3 phases × 6 frames each = 18 total
 
   if (e.isPlayer) {
     // ROM $DEBA/$DEBC: DEC $51/$52 lives for P1/P2
@@ -1581,7 +1582,7 @@ function drawTile(col, row) {
   }
 
   // ── Fallback: colored-rect rendering ─────────────────────────────────────
-  if (t === T.BRICK || (t >= T.BRICK_TL && t <= T.BRICK_BR)) {
+  if (t === T.BRICK || (t >= T.BRICK_R && t <= T.BRICK_T)) {
     const bits = brickBits[row][col];
     const drawQ = (mask, ox, oy) => {
       if (!(bits & mask)) return;
@@ -1592,7 +1593,7 @@ function drawTile(col, row) {
     drawQ(1, 0, 0); drawQ(2, 8, 0); drawQ(4, 0, 8); drawQ(8, 8, 8);
     return;
   }
-  if (t === T.STEEL || (t >= T.STEEL_TL && t <= T.STEEL_BR)) {
+  if (t === T.STEEL || (t >= T.STEEL_R && t <= T.STEEL_T)) {
     fillRect(px, py, META, META, C.STEEL);
     fillRect(px + 1, py + 1, 6, 6, C.STEEL_HL);
     fillRect(px + 9, py + 9, 6, 6, C.STEEL_HL);
@@ -1752,15 +1753,15 @@ function drawEagleBase() {
 function drawEntity(e) {
   // ROM $E073 EntityKillDispatch: 3-phase explosion at entity center before slot cleared
   // Tiles $84–$8F (PT0 sprite bank), phase0=$84-$87, phase1=$88-$8B, phase2=$8C-$8F
-  // Each phase 4 frames; palette SP2 (palIdx 6); 16×16px 2×2 tile block
+  // Each phase 6 frames (ROM $DEB1/$DEB6 ORA #$06); palette SP0 (palIdx 4); 16×16px 2×2 tile block
   if (!e.alive && e.deathTimer > 0) {
-    const phase = Math.min(2, Math.floor((12 - e.deathTimer) / 4));
+    const phase = Math.min(2, Math.floor((18 - e.deathTimer) / 6));
     const Tbase = 256 + 0x84 + phase * 4;
     if (chrOff) {
-      drawCHRTile(Tbase,     6, e.x - 8, e.y - 8, true);  // top-left
-      drawCHRTile(Tbase + 2, 6, e.x,     e.y - 8, true);  // top-right
-      drawCHRTile(Tbase + 1, 6, e.x - 8, e.y,     true);  // bottom-left
-      drawCHRTile(Tbase + 3, 6, e.x,     e.y,     true);  // bottom-right
+      drawCHRTile(Tbase,     4, e.x - 8, e.y - 8, true);  // top-left
+      drawCHRTile(Tbase + 2, 4, e.x,     e.y - 8, true);  // top-right
+      drawCHRTile(Tbase + 1, 4, e.x - 8, e.y,     true);  // bottom-left
+      drawCHRTile(Tbase + 3, 4, e.x,     e.y,     true);  // bottom-right
     } else {
       const r = 4 + phase * 2;
       fillRect(e.x - r, e.y - r, r * 2, r * 2, '#ff8800');
@@ -1781,7 +1782,8 @@ function drawEntity(e) {
       // ROM DrawShootSprite ($E0BF): JSR DrawTank ($DB0A) → two 8×16 OAM entries = 16×16 sprite
       // Left col OAM_X = entity_x-8, right col OAM_X = entity_x, both OAM_Y = entity_y-8; palIdx 7 = SP3
       const sx = e.x - 8, sy = e.y - 8;
-      const tl = T & 0xFE, tr = (T + 2) & 0xFE;
+      // ODD tile index in 8x16 mode → PT1 (index 256+)
+      const tl = 256 + (T & 0xFE), tr = 256 + ((T + 2) & 0xFE);
       drawCHRTile(tl,     7, sx,     sy,     true);  // top-left
       drawCHRTile(tr,     7, sx + 8, sy,     true);  // top-right
       drawCHRTile(tl + 1, 7, sx,     sy + 8, true);  // bottom-left
@@ -1893,10 +1895,12 @@ function drawBullet(b) {
     // ROM $E1AF BulletExplode: 8×16 PT1 sprite (single OAM entry, PPUCTRL bit5=1)
     // Tile byte = $B1+dir×2 ($B1/$B3/$B5/$B7); top=$B0/$B2/$B4/$B6, bottom=$B1/$B3/$B5/$B7
     // All bottom-half tiles have real pixel data (confirmed: check_explosion_tiles.py)
+    // ODD tile index ($B1, etc) in 8x16 mode → PT1 (index 256+)
+    // Wait, ROM $E1AF BulletExplode: tile $B1 is ODD, so it comes from BG bank (PT0)
     const T = (0xB1 + b.edir * 2) & 0xFE;
     if (chrOff) {
-      drawCHRTile(T,     6, b.ex, b.ey,     true);
-      drawCHRTile(T + 1, 6, b.ex, b.ey + 8, true);
+      drawCHRTile(T,     7, b.ex, b.ey,     true); // palette SP3 (palIdx 7)
+      drawCHRTile(T + 1, 7, b.ex, b.ey + 8, true);
     } else {
       fillRect(b.ex, b.ey, 8, 16, C.BULLET);
     }
@@ -1914,7 +1918,9 @@ function drawPowerUp() {
   // ROM $E302-$E30A: while $62>0 (post-collect flash), draw tile $3B 8×16 OAM at collect pos
   // 8×16 odd-byte $3B → PT1 tiles: TL=$3A, BL=$3B (left col), TR=$3C, BR=$3D (right col)
   if (puFlashTimer > 0 && puFlashPos) {
-    drawSprite16([0x3A, 0x3C, 0x3B, 0x3D], 6, puFlashPos.x - 8, puFlashPos.y - 8, true);
+    // ROM tile $3B is ODD → BG bank (PT0)
+    const base = 0x3A;
+    drawSprite16([base, base + 2, base + 1, base + 3], 6, puFlashPos.x - 8, puFlashPos.y - 8, true);
     return;
   }
   if (!powerUp) return;
@@ -2185,7 +2191,7 @@ function render() {
   // Palette SP3 = palIdx 7. Drawn while goScrollTimer > 0 (ROM $0108 > 0).
   if (chrOff && goScrollTimer > 0 && goScrollY < 0xF0) {
     const goX = goScrollX;  // ROM $0105 (variable X position)
-    // "GAME" 16×16: DrawTank($79) at (goX, goScrollY) → sprites at (goX-8, goScrollY-8)
+    // ROM $C7CD DrawHUDTanks uses odd tile indices ($79, $7D) -> BG bank (PT0)
     drawCHRTile(0x78, 7, goX - 8,  goScrollY - 8,  true);  // TL
     drawCHRTile(0x7A, 7, goX,      goScrollY - 8,  true);  // TR
     drawCHRTile(0x79, 7, goX - 8,  goScrollY,      true);  // BL
@@ -2382,3 +2388,4 @@ initCHR();     // load both CHR tile sheets (chr_all.png + chr_all_alt.png); set
   render();
   requestAnimationFrame(loop);
 })();
+
