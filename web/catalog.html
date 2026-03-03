@@ -8,6 +8,7 @@
     .section { margin-bottom: 40px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
     .item { background: #2a2a2a; padding: 15px; border-radius: 4px; text-align: center; border: 1px solid #444; }
+    .item.wide { grid-column: span 2; }
     .item canvas { image-rendering: pixelated; background: #000; margin-bottom: 10px; border: 1px solid #111; }
     .label { font-size: 12px; color: #aaa; margin-top: 5px; }
     .controls { position: fixed; top: 20px; right: 20px; background: #333; padding: 15px; border-radius: 8px; border: 1px solid #f8e800; }
@@ -118,9 +119,10 @@
   // pt1 = true → sprite bank (+256 offset), false → BG bank (no offset)
   function drawMetasprite(ctx, tiles, palIdx, pt1 = false) {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    const cols = Math.round(ctx.canvas.width / (8 * SCALE));
     tiles.forEach((t, i) => {
       const abs = (pt1 ? 256 : 0) + t;
-      const ox = (i % 2) * 8 * SCALE, oy = Math.floor(i / 2) * 8 * SCALE;
+      const ox = (i % cols) * 8 * SCALE, oy = Math.floor(i / cols) * 8 * SCALE;
       drawCHRTile(ctx, abs, palIdx, ox, oy, true);
     });
   }
@@ -218,18 +220,22 @@
       { name: "BLANK SLOT ($11)",   pal: 0, tiles: [0x11],                     pt1: false, w:8, h:8 },
       { name: "LIFE TANK ($14)",    pal: 0, tiles: [0x14],                     pt1: false, w:8, h:8 },
       { name: "STAGE FLAG",         pal: 0, tiles: [0x6C,0xFC,0x6D,0xFD],     pt1: false },
-      // BCD digit tiles $60–$69; formula: digit_value + $60 = tile.
-      // ROM $D9A7 SkipLeadingZeros + 26 call sites (score, lives, stage#, hi-score).
-      { name: "DIGIT 0 ($60)",      pal: 0, tiles: [0x60], pt1: false, w:8, h:8 },
-      { name: "DIGIT 1 ($61)",      pal: 0, tiles: [0x61], pt1: false, w:8, h:8 },
-      { name: "DIGIT 2 ($62)",      pal: 0, tiles: [0x62], pt1: false, w:8, h:8 },
-      { name: "DIGIT 3 ($63)",      pal: 0, tiles: [0x63], pt1: false, w:8, h:8 },
-      { name: "DIGIT 4 ($64)",      pal: 0, tiles: [0x64], pt1: false, w:8, h:8 },
-      { name: "DIGIT 5 ($65)",      pal: 0, tiles: [0x65], pt1: false, w:8, h:8 },
-      { name: "DIGIT 6 ($66)",      pal: 0, tiles: [0x66], pt1: false, w:8, h:8 },
-      { name: "DIGIT 7 ($67)",      pal: 0, tiles: [0x67], pt1: false, w:8, h:8 },
-      { name: "DIGIT 8 ($68)",      pal: 0, tiles: [0x68], pt1: false, w:8, h:8 },
-      { name: "DIGIT 9 ($69)",      pal: 0, tiles: [0x69], pt1: false, w:8, h:8 },
+      // ASCII digit tiles $30–$39: drawNesText maps charCode directly to BG tile index.
+      // ROM $D6D3 PPUQueueTiles writes ASCII codes to nametable; $D8F7 DrawSpriteString is separate.
+      { name: "DIGIT 0 ($30)",      pal: 0, tiles: [0x30], pt1: false, w:8, h:8 },
+      { name: "DIGIT 1 ($31)",      pal: 0, tiles: [0x31], pt1: false, w:8, h:8 },
+      { name: "DIGIT 2 ($32)",      pal: 0, tiles: [0x32], pt1: false, w:8, h:8 },
+      { name: "DIGIT 3 ($33)",      pal: 0, tiles: [0x33], pt1: false, w:8, h:8 },
+      { name: "DIGIT 4 ($34)",      pal: 0, tiles: [0x34], pt1: false, w:8, h:8 },
+      { name: "DIGIT 5 ($35)",      pal: 0, tiles: [0x35], pt1: false, w:8, h:8 },
+      { name: "DIGIT 6 ($36)",      pal: 0, tiles: [0x36], pt1: false, w:8, h:8 },
+      { name: "DIGIT 7 ($37)",      pal: 0, tiles: [0x37], pt1: false, w:8, h:8 },
+      { name: "DIGIT 8 ($38)",      pal: 0, tiles: [0x38], pt1: false, w:8, h:8 },
+      { name: "DIGIT 9 ($39)",      pal: 0, tiles: [0x39], pt1: false, w:8, h:8 },
+      // BG tiles $60–$67 together spell "NAMCO" in thick block letters (8 tiles wide, 8px tall).
+      // ROM $D145 VictoryTileData: {$60..$68,$FF}; $68 is blank trailing space.
+      // Drawn at: victory screen (col 12, row 14) and stage-start pre-game (col 13, row 23).
+      { name: "NAMCO ($60–$67)", pal: 0, tiles: [0x60,0x61,0x62,0x63,0x64,0x65,0x66,0x67], pt1: false, w:64, h:8 },
       // Score header nametable tiles. ROM $D15B: P1 icon $5E/$6B at col 2–3 row 3;
       // $D167 HI label $48/$49 at col 11–12; $D15E P2 icon $5F at col 21 (2P only).
       { name: "P1 ICON ($5E)",      pal: 0, tiles: [0x5E], pt1: false, w:8, h:8 },
@@ -264,7 +270,7 @@
     const container = document.getElementById(id);
     list.forEach(item => {
       const div = document.createElement('div');
-      div.className = 'item';
+      div.className = (item.w || 16) > 16 ? 'item wide' : 'item';
 
       const canvas = document.createElement('canvas');
       canvas.width  = (item.w || 16) * SCALE;

@@ -1846,7 +1846,8 @@ These are written to the nametable via `DrawNametableTile ($D82B)` / `PPUQueueTi
 | `$5D` | `]` bracket | `$D273` (tally screen data array) | Used in end-of-level tally display |
 | `$5E` | P1 player icon (score header) | `$D15B` (score header string → PPUQueueTiles col 2–3 row 3) | Tile for Player 1 icon on stage-start score line |
 | `$5F` | P2 player icon (score header) | `$D15E` (score header string → PPUQueueTiles, 2P only) | Tile for Player 2 icon on stage-start score line |
-| `$60`–`$69` | BCD digits 0–9 | `$D9A7` (SkipLeadingZeros) → `PPUQueueTiles`; `$D839` (score/digit draw); 26 call sites | Formula: digit_value + `$60` = tile. Used for score, stage number, lives count, hi-score display |
+| `$30`–`$39` | ASCII digits 0–9 | `$D6D3` (PPUQueueTiles writes ASCII code = tile index); 26 call sites via `$D9A7` SkipLeadingZeros | ASCII '0'=$30 → BG tile $30; used for score, stage number, lives count, hi-score HUD display |
+| `$60`–`$67` | NAMCO logo tiles | `$D145` (VictoryTileData), `$D04C` (stage-start col 13 row 23), `$C44D` (victory screen col 12 row 14) | 8 tiles form "NAMCO" word as thick block-letter strip; tile $68 = blank trailing space |
 | `$6A` | Enemy kill-count icon | `$D222`–`$D223` (DrawAllHUDKillIcons: `[$6A,$6A,$FF]` per row, 10 rows) | Two tiles wide per HUD row (cols 29–30); one pair = one enemy slot; erased by DrawHUDKillIconB |
 | `$6B` | Blank spacer | `$D15C`, `$D15F`, `$D169` (HUD text spacers in score-header arrays) | Used as padding/separator in nametable text string arrays |
 | `$6C` | Stage flag icon TL | `$D225` (HUD stage-flag data: `[$6C,$FC,$FF]` at col 29–30 row 23) | Top-left tile of 2×2 stage-flag icon |
@@ -1926,7 +1927,7 @@ The HUD occupies the **right sidebar** (nametable cols 27–31, pixel X 216–25
 | 21 | Tile $14 (P2 icon) | 1–2 digit lives count | P2 only if $46=2 or $83≠0 |
 
 - **StartGame ($C6C5)**: runs every frame from GameUpdate2; draws player icon tile $14 at col 29 then lives−1 as BCD digits starting at col 25, advancing right per leading zero skipped. Result columns: 1-digit lives → col 30, row 18/21; 2-digit lives → col 29–30.
-- Digits are CHR tile indices: `digit + $60` (= 0+$60=$60, 1+$60=$61, …, 9+$60=$69) — BCD digit offset by $60 for alternate CHR bank page.
+- Digits are ASCII-indexed BG tile indices: digit value → ASCII char → tile index (0→'0'=$30, …, 9→'9'=$39). `PPUQueueTilesB` (which adds $60) is used for P2/alternate bank writes, mapping the same tile glyphs to the $90–$99 range.
 
 #### Stage Icons (nametable, right sidebar)
 
