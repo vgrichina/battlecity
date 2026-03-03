@@ -69,7 +69,7 @@
 1,DFE7,DrawSmallSprite
 1,DFFA,DrawExpandSprite
 1,E06A,MoveTank
-1,E0B7,EnemySpeedTable,data/table
+1,E0B7,EnemySpeedTable,data/table:1
 1,E0BF,DrawShootSprite
 1,E0E2,BulletUpdate
 1,E0F0,BulletDispatch
@@ -91,14 +91,14 @@
 1,E4DD,SetStateLo
 1,E4E8,SetSpeedPtr
 1,E50E,DecodeDirection
-1,E529,DirDeltaY,data/table
-1,E52D,DirDeltaX,data/table
-1,E531,EnemySpawnX,data/table
-1,E534,EnemySpawnY,data/table
-1,E537,PlayerSpawnX,data/table
-1,E539,PlayerSpawnY,data/table
-1,E53B,InitState,data/table
-1,E543,DirToStateTable,data/table
+1,E529,DirDeltaY,data/table:1
+1,E52D,DirDeltaX,data/table:1
+1,E531,EnemySpawnX,data/table:1
+1,E534,EnemySpawnY,data/table:1
+1,E537,PlayerSpawnX,data/table:1
+1,E539,PlayerSpawnY,data/table:1
+1,E53B,InitState,data/table:1
+1,E543,DirToStateTable,data/table:1
 1,E555,MovementDispatch
 1,E575,MoveUpdateDispatch
 1,E595,BulletDispatchTable,data/table
@@ -129,8 +129,8 @@
 1,C7BD,DrawAllHUDKillIcons
 1,C7CD,DrawGameOverBanner
 1,C7F8,GameOverBannerAnim
-1,EBEE,BulletDeltaX,data/table
-1,EBF2,BulletDeltaY,data/table
+1,EBEE,BulletDeltaX,data/table:1
+1,EBF2,BulletDeltaY,data/table:1
 # Session 3 additions
 1,DDFC,RandomDirChange
 1,DE22,ClampXMove
@@ -158,7 +158,7 @@
 0,91E8,Level3Init
 0,8B48,Level4Init
 0,874D,Level0Init
-1,E5A9,EnemyTypeTable,data/table
+1,E5A9,EnemyTypeTable,data/table:1
 0,803C,Stage3FormationTable,data/table
 0,804C,Stage4FormationTable,data/table
 0,805E,Stage5FormationTable,data/table
@@ -176,12 +176,12 @@
 0,8C00,EntitySlotFill4
 0,8DC4,EntitySpriteSetup
 0,8C52,StageSelectLUT,data/table
-0,82F4,SlotSprPtrLo,data/table
-0,82FA,SlotSprOffset,data/table
-0,8300,SlotSprPtrHi,data/table
-0,8306,SlotEntityType,data/table
-0,830C,SlotOAMBase,data/table
-0,8312,WaveCtrlInit,data/table
+0,82F4,SlotSprPtrLo,data/table:1
+0,82FA,SlotSprOffset,data/table:1
+0,8300,SlotSprPtrHi,data/table:1
+0,8306,SlotEntityType,data/table:1
+0,830C,SlotOAMBase,data/table:1
+0,8312,WaveCtrlInit,data/table:1
 0,8348,SlotDataPtrALo,data/table
 0,834E,SlotDataPtrAHi,data/table
 0,8354,SlotDataPtrBLo,data/table
@@ -199,7 +199,7 @@
 0,9811,SpriteTileDraw
 # Session 9 additions
 1,E386,EagleStateUpdate
-1,E3BA,EagleHandlerTable,data/table
+1,E3BA,EagleHandlerTable,data/table:2
 1,E3C6,EagleExplosion1
 1,E3CB,EagleExplosion2
 1,E3D0,EagleExplosion3
@@ -217,8 +217,8 @@
 0,96F1,FormationDataLoad
 # Session 10 additions
 1,C625,ClearKillTallies
-1,D2C6,HUDTankWiggleX,data/table
-1,D2CA,HUDTankWiggleY,data/table
+1,D2C6,HUDTankWiggleX,data/table:1
+1,D2CA,HUDTankWiggleY,data/table:1
 # Session 11 additions
 1,D071,StageStartDraw
 1,C25A,NewGameInit
@@ -226,8 +226,8 @@
 1,C8A7,TwoPlayerStart
 1,C8AC,OnePlayerStart
 1,D733,PixelToTile
-1,DB69,TileAttrTable,data/table
-1,DB79,TileCHRTable,data/table
+1,DB69,TileAttrTable,data/table:1
+1,DB79,TileCHRTable,data/table:4
 # Session 10: level tile loader, sound engine, title screen
 1,F200,LevelTileLoad
 1,F27D,LevelMapData,data
@@ -278,7 +278,7 @@
 1,D185,SprP2PlayerLabel,data/string
 1,D1E7,StrCopyright,data/string
 1,D1FE,StrAllRightsReserved,data/string
-1,D2C2,KillScoreTable,data/table
+1,D2C2,KillScoreTable,data/table:1
 # Stage-clear score tally screen
 1,CAF1,StageClearTallyScreen
 1,CD04,TallyScreenInit
@@ -371,8 +371,8 @@
 0,8129,Level3SoundInitTable,data/table
 0,AFA8,DivBy10
 # Session 14: SoundEngine sequence format fully decoded
-1,EE8B,NoteFreqTable,data/table
-1,ED8B,SoundCmdDispatchTable,data/table
+1,EE8B,NoteFreqTable,data/table:2
+1,ED8B,SoundCmdDispatchTable,data/table:2
 1,ECF4,SoundSeqInit
 1,ED2D,SoundSeqDecode
 1,EDAF,SoundCmdStop

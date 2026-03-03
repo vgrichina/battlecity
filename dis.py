@@ -202,11 +202,12 @@ def dump_data(rom, cpu_start, bank, n_lines, dtype, labels, comments):
     n_lines controls how many rows/entries to output.
 
     Formats by dtype:
-      data/string  — one FF-terminated tile string per line, decoded
-      data/ptr     — one 2-byte LE pointer per line, label-resolved
-      data/table   — 8 bytes per row, hex + decimal annotation
-      data/seq     — 8 bytes per row, raw hex (music/sound sequences)
-      data (etc.)  — 8 bytes per row, raw hex
+      data/string    — one FF-terminated tile string per line, decoded
+      data/ptr       — one 2-byte LE pointer per line, label-resolved
+      data/table:N   — N bytes per entry, one entry per line with [idx] annotation
+      data/table     — 8 bytes per row, raw hex (no entry width known)
+      data/seq       — 8 bytes per row, raw hex (music/sound sequences)
+      data (etc.)    — 8 bytes per row, raw hex
     """
     addr = cpu_start
 
@@ -231,7 +232,7 @@ def dump_data(rom, cpu_start, bank, n_lines, dtype, labels, comments):
             yield f'  ${row_addr:04X}  {hex_part:<36}  "{char_part}"{cmt_str}'
 
     elif dtype == 'data/ptr':
-        for _ in range(n_lines):
+        for idx in range(n_lines):
             file_off = rom.cpu_to_file_offset(addr, bank)
             if file_off is None or file_off + 1 >= len(rom.prg):
                 break
@@ -241,12 +242,39 @@ def dump_data(rom, cpu_start, bank, n_lines, dtype, labels, comments):
             tgt = resolve_name(labels, bank, ptr) or f'${ptr:04X}'
             cmt = comments.get((bank, addr)) or comments.get((None, addr))
             cmt_str = f'  ; {cmt}' if cmt else ''
-            yield f'  ${addr:04X}  {lo:02X} {hi:02X}  .ptr {tgt}{cmt_str}'
+            yield f'  ${addr:04X}  {lo:02X} {hi:02X}  [{idx:3d}] .ptr {tgt}{cmt_str}'
             addr += 2
+
+    elif dtype.startswith('data/table:'):
+        # Subtype: entry width in bytes, one entry per line with index
+        try:
+            entry_width = int(dtype.split(':')[1])
+        except (IndexError, ValueError):
+            entry_width = 1
+        for idx in range(n_lines):
+            file_off = rom.cpu_to_file_offset(addr, bank)
+            if file_off is None or file_off >= len(rom.prg):
+                break
+            row = rom.prg[file_off:file_off + entry_width]
+            if not row:
+                break
+            hex_part = ' '.join(f'{b:02X}' for b in row)
+            # Scalar annotation for 1- and 2-byte entries
+            if entry_width == 1:
+                scalar = f'= {row[0]:3d} / ${row[0]:02X}'
+            elif entry_width == 2:
+                val = row[0] | (row[1] << 8)
+                lbl_name = resolve_name(labels, bank, val)
+                scalar = lbl_name if lbl_name else f'= {val:5d} / ${val:04X}'
+            else:
+                scalar = ''
+            cmt = comments.get((bank, addr)) or comments.get((None, addr))
+            cmt_str = f'  ; {cmt}' if cmt else (f'  ; {scalar}' if scalar else '')
+            yield f'  ${addr:04X}  {hex_part:<{entry_width*3}}  [{idx:3d}]{cmt_str}'
+            addr += entry_width
 
     else:
         # Generic hex dump: 8 bytes per row
-        # data/table also shows decimal value for single-byte entries
         cols = 8
         for _ in range(n_lines):
             file_off = rom.cpu_to_file_offset(addr, bank)
