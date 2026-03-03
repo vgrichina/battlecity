@@ -395,6 +395,7 @@ let phaseTimer;     // stage-start / clear / gameover display timer
 let powerUp;        // { x, y, type } or null
 let puFlashTimer;   // ROM $62: 50-frame countdown after power-up collected; flash sprite shown
 let puFlashPos;     // { x, y } position where flash is drawn
+let grenadeFlash;   // ROM $EBBC: brief palette flash on grenade; counts down 0→8
 let grid;           // GH×GW array of tile types (mutable, brick quarters get cleared)
 let brickBits;      // GH×GW 4-bit brick sub-tile masks  ROM $D745 SubTileBitmask
 let entities;       // 8 entity objects (slots 0-7)
@@ -494,6 +495,7 @@ function initLevel(idx) {
   powerUp           = null;
   puFlashTimer      = 0;
   puFlashPos        = null;
+  grenadeFlash      = 0;
   spawnRot          = 0;     // ROM $6A SpawnRotIdx
   spawnDelay        = Math.max(50, 190 - stageIdx * 4); // ROM $84 SpawnDelayMax: 190 - stageNum*4, min 50
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
@@ -1211,10 +1213,11 @@ function applyPowerUp(e, type) {
     case 3:  // Star  ROM $EBAC: $0101,X += $20 (max $60)
       e.starLevel = Math.min(e.starLevel + 0x20, 0x60);
       break;
-    case 4:  // Grenade  ROM $EBBC: all 8 entities → state $73 (instant kill-all)
+    case 4:  // Grenade  ROM $EBBC: all 8 entities → state $73 (instant kill-all) + palette flash
       for (let i = 2; i <= 7; i++) {
         if (entities[i].alive) killEntity(entities[i]);
       }
+      grenadeFlash = 8;  // ~8 frames white flash over playfield
       break;
     case 5:  // Tank/1-Up  ROM $EBE3: INC $51/$52
       if (e.slot === 0) { p1Lives++; sfxLifeUp(0); } else { p2Lives++; sfxLifeUp(1); }
@@ -1251,6 +1254,7 @@ function tickTimers() {
     }
   }
   if (puFlashTimer > 0) puFlashTimer--;
+  if (grenadeFlash > 0) grenadeFlash--;
   for (const e of entities) {
     if (e.spawnAnim > 0)  e.spawnAnim--;
     if (e.blinkFrame > 0) e.blinkFrame--;
@@ -2265,6 +2269,16 @@ function render() {
     drawNesText('ARROWS MOVE SPACE PLACE T CYCLE ENTER SAVE', 8, 228, 0);
   } else {
     drawNesText('ARROWS MOVE SPACE FIRE', 40, 228, 0);
+  }
+
+  // ROM $EBBC grenade palette flash: NES flips all palette colours for ~8 frames.
+  // Approximated as a fading white overlay over the entire canvas.
+  if (grenadeFlash > 0) {
+    ctx.save();
+    ctx.globalAlpha = (grenadeFlash / 8) * 0.85;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
   }
 }
 
