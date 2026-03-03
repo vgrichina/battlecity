@@ -126,8 +126,8 @@
 1,C79F,DrawHUDKillIconA
 1,C7AE,DrawHUDKillIconB
 1,C7BD,DrawAllHUDKillIcons
-1,C7CD,DrawHUDTanks
-1,C7F8,HUDTankAnimation
+1,C7CD,DrawGameOverBanner
+1,C7F8,GameOverBannerAnim
 1,EBEE,BulletDeltaX
 1,EBF2,BulletDeltaY
 # Session 3 additions

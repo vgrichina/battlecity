@@ -1510,7 +1510,7 @@ function update() {
     goScrollFrame = 0;
   }
 
-  // ROM $C7F8 HUDTankAnimation: 4-direction wiggle scroll for "GAME OVER" sprites
+  // ROM $C7F8 GameOverBannerAnim: 4-direction wiggle scroll for "GAME OVER" sprites
   // $0108 decrements every 16 frames; while ≥$0A, direction delta applied each frame
   // WiggleX $D2C6: {0,-1,0,+1}  WiggleY $D2CA: {-1,0,+1,0}
   if (goScrollTimer > 0) {
@@ -2000,7 +2000,7 @@ function drawTreesOverlay() {
   }
 }
 
-// ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawHUDTanks  $D8F7 DrawRowTiles
+// ROM $C7BD DrawAllHUDKillIcons  $C7CD DrawGameOverBanner  $D8F7 DrawRowTiles
 function drawHUD() {
   // --- Right sidebar (nametable cols 28–31, pixel X 224–255) ---
   // ROM: ClearNametableSlot ($98EB) fills with tile $FC; HUD area attribute = $00 (palette 0/BG0).
@@ -2230,13 +2230,13 @@ function render() {
   drawPowerUp();
   drawTreesOverlay();  // re-draw tree tiles over entities/bullets (z-order fix)
 
-  // ROM $C7CD DrawHUDTanks / DrawGameOverText: in-field "GAME OVER" sprites
+  // ROM $C7CD DrawGameOverBanner: in-field "GAME OVER" sprites (PT1 tiles $78–$7F are letter art)
   // 4 OAM 8×16 sprites from BG bank: $79/$7B = left 16×16, $7D/$7F = right 16×16
   // DrawTank places at (X-8,Y-8) and (X,Y-8); second call at (X+8,Y-8) and (X+16,Y-8)
   // Palette SP3 = palIdx 7. Drawn while goScrollTimer > 0 (ROM $0108 > 0).
   if (chrOff && goScrollTimer > 0 && goScrollY < 0xF0) {
     const goX = goScrollX;  // ROM $0105 (variable X position)
-    // ROM $C7CD DrawHUDTanks uses odd tile indices ($79, $7D) -> BG bank (PT0)
+    // ROM $C7CD DrawGameOverBanner: odd tile bytes ($79,$7B,$7D,$7F) → PT1 letter-art tiles
     drawCHRTile(0x78, 7, goX - 8,  goScrollY - 8,  true);  // TL
     drawCHRTile(0x7A, 7, goX,      goScrollY - 8,  true);  // TR
     drawCHRTile(0x79, 7, goX - 8,  goScrollY,      true);  // BL

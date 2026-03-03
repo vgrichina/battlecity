@@ -218,11 +218,6 @@
       { name: "BLANK SLOT ($11)",   pal: 0, tiles: [0x11],                     pt1: false, w:8, h:8 },
       { name: "LIFE TANK ($14)",    pal: 0, tiles: [0x14],                     pt1: false, w:8, h:8 },
       { name: "STAGE FLAG",         pal: 0, tiles: [0x6C,0xFC,0x6D,0xFD],     pt1: false },
-      // HUD animated tank / GAME OVER scroll sprite — PT1 tiles $78–$7F.
-      // ROM $C7DB DrawHUDTanks: 4 OAM 8×16 entries side-by-side = 32×16px; same tiles used for
-      // in-field GAME OVER scroll ($D2C6/$D2CA wiggle tables). DrawHUDTanks alternates F1/F2.
-      { name: "HUD TANK F1",        pal: 7, tiles: [0x78,0x7A,0x79,0x7B],     pt1: false, w:16, h:16 },
-      { name: "HUD TANK F2",        pal: 7, tiles: [0x7C,0x7E,0x7D,0x7F],     pt1: false, w:16, h:16 },
       // BCD digit tiles $60–$69; formula: digit_value + $60 = tile.
       // ROM $D9A7 SkipLeadingZeros + 26 call sites (score, lives, stage#, hi-score).
       { name: "DIGIT 0 ($60)",      pal: 0, tiles: [0x60], pt1: false, w:8, h:8 },
@@ -254,10 +249,10 @@
       { name: "BULLET EXP (LEFT)",  type: "bullet_exp", dir: 1 },
       { name: "BULLET EXP (DOWN)",  type: "bullet_exp", dir: 2 },
       { name: "BULLET EXP (RIGHT)", type: "bullet_exp", dir: 3 },
-      // GAME OVER scroll sprite: PT1 tiles $78–$7F, 4 OAM 8×16 entries = 32×16px total.
-      // ROM $C7DB DrawHUDTanks: alternates tile pair ($79/$7B ↔ $7D/$7F) every 16 frames.
-      // Same tiles drive in-field GAME OVER scroll via goScrollX/goScrollY ($D2C6/$D2CA).
-      { name: "GAME/OVER SCROLL",   type: "gameover_scroll", w: 32, h: 16 },
+      // GAME OVER banner sprite: PT1 tiles $78–$7F spell "GAME" (top 8px) + "OVER" (bottom 8px).
+      // ROM $C7CD DrawGameOverBanner: 4 OAM 8×16 entries side-by-side = 32×16px total (no alternation).
+      // GameOverBannerAnim ($C7F8) scrolls it in via HUDTankWiggleX/Y ($D2C6/$D2CA).
+      { name: "GAME/OVER BANNER",   type: "gameover_scroll", w: 32, h: 16 },
     ],
   };
 
@@ -402,14 +397,11 @@
         drawCHRTile(ctx, top + 1, 7, cx,  8 * SCALE, true);
 
       } else if (item.type === "gameover_scroll") {
-        // ROM $C7DB DrawHUDTanks: PT1 tiles $78–$7F, 4 OAM 8×16 entries side-by-side = 32×16px.
-        // Two animation frames alternate every 16 frames: F1=$78–$7B, F2=$7C–$7F.
-        // Same sprites used for GAME OVER in-field scroll ($C7F8 HUDTankAnimation).
-        const f = Math.floor(frame / 16) % 2;
-        const base = f === 0 ? 0x78 : 0x7C;  // F1 or F2 tile base
+        // ROM $C7CD DrawGameOverBanner: always draws all 8 tiles ($78–$7F), no alternation.
+        // Tiles $78–$7B = "GAME" letter columns (top 8px each), $7C–$7F = "OVER" letter columns (bottom 8px).
         for (let col = 0; col < 4; col++) {
-          drawCHRTile(ctx, base + col * 2,     7, col * 8 * SCALE, 0,         true);
-          drawCHRTile(ctx, base + col * 2 + 1, 7, col * 8 * SCALE, 8 * SCALE, true);
+          drawCHRTile(ctx, 0x78 + col * 2,     7, col * 8 * SCALE, 0,         true);
+          drawCHRTile(ctx, 0x78 + col * 2 + 1, 7, col * 8 * SCALE, 8 * SCALE, true);
         }
       }
     });

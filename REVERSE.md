@@ -675,8 +675,8 @@ Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique
 | $C7AE | DrawHUDKillIconB | Draw one HUD kill-counter icon from sprite table $D22B (alternate frame) |
 | $C625 | ClearKillTallies | Zero ZP $73–$7A (8 bytes): kill-tally buffer for all enemy types; called from LevelStart before DrawAllHUDKillIcons |
 | $C7BD | DrawAllHUDKillIcons | Loop $5A=$12→0 step−2 (10 pairs), call $C79F: draw all 10 HUD kill-counter icons |
-| $C7CD | DrawHUDTanks | Draw two tank sprites (tiles $79/$7D) at $0105/$0106 and $0105+$10/$0106; used for HUD enemy-count animation |
-| $C7F8 | HUDTankAnimation | Count down $0108 (HUDTankCount) every 16 frames; when ≥$0A: apply HUDTankWiggleX/Y[$0107] delta to $0105/$0106 (tank X/Y); call DrawHUDTanks; when $0108→0 set $0106=$F0 (off-screen) |
+| $C7CD | DrawGameOverBanner | Draw two 16×16 OAM sprite pairs (tiles $79/$7B and $7D/$7F) = 32×16px "GAME OVER" banner at $0105/$0106; not a tank — PT1 tiles $78–$7F are letter art |
+| $C7F8 | GameOverBannerAnim | Count down $0108 (HUDTankCount) every 16 frames; when ≥$0A: apply HUDTankWiggleX/Y[$0107] delta to $0105/$0106 (banner X/Y); call DrawGameOverBanner; when $0108→0 set $0106=$F0 (off-screen) |
 | $D2C6 | HUDTankWiggleX | 4-entry s8 table: X deltas for HUD tank wobble animation {0,−1,0,+1} (N/W/S/E) |
 | $D2CA | HUDTankWiggleY | 4-entry s8 table: Y deltas for HUD tank wobble animation {−1,0,+1,0} (N/W/S/E) |
 | $D5FC | TileAddrCompute | Tile (X=tileX, Y=tileY) → RAM address: low = tileX | (tileY&7)<<5; high = $04|(tileY>>3). Covers $0400–$07FF |
@@ -1851,8 +1851,8 @@ These are written to the nametable via `DrawNametableTile ($D82B)` / `PPUQueueTi
 | `$6B` | Blank spacer | `$D15C`, `$D15F`, `$D169` (HUD text spacers in score-header arrays) | Used as padding/separator in nametable text string arrays |
 | `$6C` | Stage flag icon TL | `$D225` (HUD stage-flag data: `[$6C,$FC,$FF]` at col 29–30 row 23) | Top-left tile of 2×2 stage-flag icon |
 | `$6D` | Stage flag icon BL | `$D228` (HUD stage-flag data: `[$6D,$FD,$FF]` at row 24) | Bottom-left tile of 2×2 stage-flag icon |
-| `$78`–`$7B` | HUD animated tank L-half | `$C7DB` (DrawHUDTanks: LDA #`$79` / STA `$53` → OAM `$79`,`$7B`; PT1 tiles `$78`–`$7B`) | Two 8×16 OAM entries (tile `$79` top+bottom, `$7B` tail). Animated tank icon in HUD right sidebar |
-| `$7C`–`$7F` | HUD animated tank R-half | `$C7EC` (DrawHUDTanks: LDA #`$7D` / STA `$53` → OAM `$7D`,`$7F`; PT1 `$7C`–`$7F`) | Right half of HUD tank icon |
+| `$78`–`$7B` | GAME OVER banner left half | `$C7CD` (DrawGameOverBanner: LDA #`$79` / STA `$53` → JSR DrawTank; OAM `$79`,`$7B` → PT1 `$78`–`$7B`) | Top 8px = "GA", bottom 8px = "OV". No alternation — DrawGameOverBanner always draws all 8 tiles. |
+| `$7C`–`$7F` | GAME OVER banner right half | `$C7EC` (DrawGameOverBanner: LDA #`$7D` / STA `$53` → JSR DrawTank; OAM `$7D`,`$7F` → PT1 `$7C`–`$7F`) | Top 8px = "ME", bottom 8px = "ER". GameOverBannerAnim (`$C7F8`) scrolls the 32×16 sprite via HUDTankWiggleX/Y (`$D2C6`/`$D2CA`). |
 | `$80`–`$81` | Power-up: helmet (type 0) | `$E31C` (DrawPowerUp type=0: tile=0×4+`$81`=`$81`; OAM `$81` → PT1 `$80`–`$81`) | Shield/helmet power-up icon sprite |
 | `$84`–`$85` | Power-up: clock (type 1) | `$E31C` (DrawPowerUp type=1: tile=`$85`; OAM `$85` → PT1 `$84`–`$85`) | Freeze/timer power-up icon |
 | `$88`–`$89` | Power-up: shovel (type 2) | `$E31C` (DrawPowerUp type=2: tile=`$89`; OAM `$89` → PT1 `$88`–`$89`) | Fortify-base (shovel) power-up icon |
@@ -1949,9 +1949,9 @@ Drawn during PreLoop ($CFAA) and StageStartDraw ($D071) on nametable $24:
 | 21–22 | P2 player icon: tiles $5F,$6B | $D15E (2P only) |
 | ~23–28 | P2 score digits (SkipLeadingZeros Y=$1E X=$17) | ZP $1E...$23 (2P only) |
 
-#### HUD Bouncing Enemy Tank (OAM sprites)
+#### GAME OVER Banner Sprite (OAM sprites)
 
-**DrawHUDTanks ($C7CD)** draws 2 OAM sprites from RAM $0105/$0106:
+**DrawGameOverBanner ($C7CD)** draws 2 OAM sprite pairs from RAM $0105/$0106 = 32×16px "GAME OVER" text:
 
 | Sprite | OAM offset | CHR tile | Attr (palette) | X position | Y position |
 |--------|------------|----------|----------------|------------|------------|
@@ -1960,7 +1960,7 @@ Drawn during PreLoop ($CFAA) and StageStartDraw ($D071) on nametable $24:
 
 - **Normal visible position**: $0105=$70=112, $0106=$70=112 → sprites at pixel (96, 104) and (112, 104).
 - **Hidden (off-screen)**: $0106=$F0=240 → sprites at Y=232 (off bottom).
-- **HUDTankAnimation ($C7F8)**: decrements $0108 (enemy count display) every 16 frames; when $0108≥$0A applies wiggle deltas (HUDTankWiggleX $D2C6, HUDTankWiggleY $D2CA); when $0108=0 → Y=$F0 to hide.
+- **GameOverBannerAnim ($C7F8)**: decrements $0108 (enemy count display) every 16 frames; when $0108≥$0A applies wiggle deltas (HUDTankWiggleX $D2C6, HUDTankWiggleY $D2CA); when $0108=0 → Y=$F0 to hide.
 - **SetHUDSprites ($C43F)**: initialises $0105=$0106=$70, $0108=$70.
 - **ClearAndRespawn ($C301)**: clears $0106=$F0, $0108=0.
 - $0107 = wiggle animation index (cycles through 4-direction wiggle table).
@@ -2459,7 +2459,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 ## Next Tasks
 
 - [x] Disassemble $D352 (NMI_Sub) — VS System coin/service input handler; double-reads $4016; detects bits $24 (coin/service buttons); $4A=CoinHeldCounter, $4B=CoinCredits, $0300=CoinEventFlag
-- [x] Disassemble $C7F8 — HUDTankAnimation: counts down $0108 (HUDTankCount) every 16 frames; when ≥$0A applies D2C6/D2CA 4-directional wiggle delta to $0105/$0106; calls DrawHUDTanks
+- [x] Disassemble $C7F8 — GameOverBannerAnim: counts down $0108 (HUDTankCount) every 16 frames; when ≥$0A applies D2C6/D2CA 4-directional wiggle delta to $0105/$0106; calls DrawGameOverBanner
 - [x] Disassemble $C625 — ClearKillTallies: zeros ZP $73-$7A (8 bytes of per-type kill tallies) at level start before DrawAllHUDKillIcons
 - [x] Disassemble $D82B — `DrawNametableTile(A=tile_type, X=pixel_x, Y=pixel_y)`: divides coords by 8 via $D733; palette from $DB69[type]; 4 CHR tiles from $DB79[type*4]; writes 2×2 metatile to nametable+attribute. Called from $E461 to clear spawn tile ($0F=open ground) and from $F25B during level load
 - [x] Identify GameState $60 value $30 — **stage start screen**: set by PreLoop ($CFE2) and StageStartDraw ($D087) while "STAGE XX" banner is displayed; cleared to $00 once banner finishes; $60 values: $00=gameplay, $30=stage-start banner, $6E=attract/title
@@ -2726,7 +2726,7 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
   - **Bullet explosion palette WRONG**: ROM `BulletExplode ($E1AF)` sets $04=2 → SP2 (palIdx 6). game.js uses palIdx=4 (SP0).
   - **Eagle sprite palette WRONG**: ROM `EagleStateUpdate ($E386)` sets $04=3 → SP3 (palIdx 7) before dispatching all eagle draw handlers. game.js uses palIdx=6 (SP2).
   - **Enemy palette cycling**: ROM `MoveTank ($E06A)` uses `EnemySpeedTable ($E0B7)` [02,00,00,01,02,01,02,02] indexed by `($0B×4 + $A8,X) & 7` — cycles SP0/SP1/SP2 for animation. game.js fixes all enemies at SP2 except powerup→SP3. (Low priority, close approximation.)
-  - **HUD tank icons**: ROM `DrawHUDTanks ($C7CD)` draws OAM sprites tiles $79/$7B and $7D/$7F (2×8×16 = 16×16px total) with SP3 (palIdx 7). game.js uses colored rectangle only.
+  - **GAME OVER banner**: ROM `DrawGameOverBanner ($C7CD)` draws OAM sprites tiles $79/$7B and $7D/$7F = 32×16px "GAME OVER" text (PT1 tiles $78–$7F are letter art, not tank sprites), SP3 (palIdx 7). game.js renders CHR tiles correctly at `goScrollX`/`goScrollY`.
 
 **Investigation — root causes:**
 
@@ -2740,7 +2740,7 @@ All sprites are visually broken (screenshot 2026-02-22): player tank shows garbl
 
 - [x] **Investigate HUD enemy icon tile 0x6A**: ROM `$C7BD DrawAllHUDKillIcons` calls `PPUQueueTiles` ($D6D3) writing to PPU nametable address $22D2 — these are background tiles, not OAM sprites. **Update (session 52)**: HUD attribute table is palette 0 (BG0), NOT palette 3 (BG3). `ClearNametableSlot` sets all attributes to $00; level loader only writes attributes for playfield (tile cols 2–27, attr cols 0–6); HUD area (attr col 7) is never modified. All HUD BG tiles render with BG0 palette [0x0F,0x17,0x06,0x00] = orange-brown tones.
 
-- [x] **Verify HUD OAM tank icon rendering**: ROM `$C7CD DrawHUDTanks` confirmed: draws two 8×16 OAM sprites with tiles $79 and $7D (both BG bank, via DrawTank at $DB0A), palette SP3 ($04=3, palIdx 7). game.js uses colored rectangle — this is a missing CHR rendering (fix tracked below).
+- [x] **Verify HUD OAM tank icon rendering**: ROM `$C7CD DrawGameOverBanner` confirmed: draws four 8×16 OAM entries (tiles $79/$7B/$7D/$7F) = 32×16px GAME OVER text, palette SP3 ($04=3, palIdx 7). CHR tiles $78–$7F are letter art, not tank sprites. game.js renders CHR tiles correctly via `goScrollX`/`goScrollY` state.
 
 **Fix tasks (implement after investigation above):**
 
@@ -2845,11 +2845,11 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 - [x] **Audit HUD kill icon spacing and tile $6A position**: Disassembled `DrawAllHUDKillIcons ($C7BD)` + `HUDKillCounterHelper ($C791)` + `PPUQueueTiles ($D6D3)` + `CalcPPUAddr ($D5FC)`. NOTE: the `$11/$12 = $22,$D2` in `DrawHUDKillIconA` is the DATA SOURCE pointer `$D222` (ROM), NOT a PPU destination. The tile data at `$D222` = `[$6A, $6A, $FF]` = two kill-icon tiles per row. PPU destination is computed by `CalcPPUAddr(X,Y)`: `HUDKillCounterHelper` yields X=29, Y=3–12 for the 10 loop iterations ($5A: 18→0 step -2, Y = $5A/2+3). Grid: nametable col 29–30, rows 3–12 → pixel X=232/240, Y=24–96, spacing 8px. game.js had three bugs: (1) base X `+1` → `+2`, (2) base Y `+12` → `+8`, (3) spacing `9` → `8` for both col and row. **Fixed** in `web/game.js` (CHR path and fallback rect path). DrawHUDKillIconB ($C7AE) targets nametable $2BD2 (VS cabinet second screen — not used in web port).
 
-- [x] **Audit HUD animated tank position and tile order vs ROM `DrawHUDTanks ($C7CD)`**: Fully traced `DrawHUDTanks ($C7CD)` → `DrawTank ($DB0A)` → `DrawEntityTile ($DABA)`. **PPUCTRL = $B0** (set at `$C09E`): bit5=1 → **8×16 sprite mode**. `SetHUDSprites ($C43F)` initializes `$0105=$70=112`, `$0106=$70=112` each frame; `HUDTankAnimation ($C7F8)` applies wiggle delta from `HUDTankWiggleX ($D2C6)` = {0,−1,0,+1} / `HUDTankWiggleY ($D2CA)` = {−1,0,+1,0} (4-direction oscillation). After DrawEntityTile: OAM Y = $0106−8 = 104; OAM X positions = 104,112,120,128. In 8×16 mode, OAM tile byte bit0=1 (all four tiles $79/$7B/$7D/$7F) selects PT1 (BG bank = chr_tiles[0..255]); top half = tile&$FE, bottom half = tile|1. This gives **two 16×16 tanks**:
-  - **Tank 1** (OAM sprites $79+$7B, X=104+112): top row = chr[$78]+chr[$7A], bottom row = chr[$79]+chr[$7B]
-  - **Tank 2** (OAM sprites $7D+$7F, X=120+128): top row = chr[$7C]+chr[$7E], bottom row = chr[$7D]+chr[$7F]
+- [x] **Audit GAME OVER banner position and tile order vs ROM `DrawGameOverBanner ($C7CD)`**: Fully traced `DrawGameOverBanner ($C7CD)` → `DrawTank ($DB0A)` → `DrawEntityTile ($DABA)`. **PPUCTRL = $B0** (set at `$C09E`): bit5=1 → **8×16 sprite mode**. `SetHUDSprites ($C43F)` initializes `$0105=$70=112`, `$0106=$70=112` each frame; `GameOverBannerAnim ($C7F8)` applies wiggle delta from `HUDTankWiggleX ($D2C6)` = {0,−1,0,+1} / `HUDTankWiggleY ($D2CA)` = {−1,0,+1,0} (4-direction oscillation). After DrawEntityTile: OAM Y = $0106−8 = 104; OAM X positions = 104,112,120,128. In 8×16 mode, OAM tile byte bit0=1 (all four tiles $79/$7B/$7D/$7F) selects PT1 (BG bank = chr_tiles[0..255]); top half = tile&$FE, bottom half = tile|1. This produces a **32×16px GAME OVER text banner** (NOT two tanks — CHR tiles $78–$7F are letter art):
+  - **Left half** (OAM $79+$7B, X=104+112): top 8px = "GA" (chr[$78]+chr[$7A]), bottom 8px = "OV" (chr[$79]+chr[$7B])
+  - **Right half** (OAM $7D+$7F, X=120+128): top 8px = "ME" (chr[$7C]+chr[$7E]), bottom 8px = "ER" (chr[$7D]+chr[$7F])
   - OAM Y=104 → screen top=105. Attribute $03 = SP3 = palette index 7.
-  - game.js had three bugs: (1) drew only ONE 16×16 sprite instead of two; (2) tile layout was 2×2 mixing tiles from both tanks; (3) missing 4 bottom-half tiles (chr[$79,$7B,$7D,$7F]). X=104 WAS correct (= $0105−8). **Fixed** in `web/game.js` — replaced single `drawSprite16` with 8 `drawCHRTile` calls (Tank1 at px=104 py=105, Tank2 at px=120 py=105).
+  - game.js had three bugs: (1) drew only ONE 16×16 sprite instead of two; (2) tile layout was 2×2 mixing tiles from both halves; (3) missing 4 bottom-half tiles (chr[$79,$7B,$7D,$7F]). X=104 WAS correct (= $0105−8). **Fixed** in `web/game.js` — replaced single `drawSprite16` with 8 `drawCHRTile` calls (left half at px=104 py=105, right half at px=120 py=105).
 
 ### 7 — BG terrain tiles
 
@@ -2890,7 +2890,7 @@ Goal: verify every sprite/tile rendered in game.js matches the ROM pixel-for-pix
 
 - [x] **Implement trees z-ordering**: ROM `DrawEntityTile ($DACC-$DAD4)` checks if sprite position falls on BG tile $22 (tree); if so, ORs OAM attribute with `$6E` (set to $20 = priority-behind-BG during gameplay at `$D3DF: LDA #$20; STA $6E`). This makes entities appear BEHIND tree tiles — a classic Battle City mechanic. game.js draws entities after all BG tiles so entities appear on top of trees. **Fixed**: added `drawTreesOverlay()` called after `drawPowerUp()` in `render()`; loops the 13×13 grid, re-draws any `T.TREES` cell with CHR path using `transparent=true` (so only green pixels cover entities, matching NES BG/sprite interaction) or fallback colored-rects (opaque green, full cover). Tanks/bullets driving under trees now appear hidden behind foliage as in ROM.
 
-- [x] **Add HUD animated tank wiggle**: ROM `HUDTankAnimation ($C7F8)` applies 4-direction oscillation delta to tank display position: `HUDTankWiggleX ($D2C6)` = {0,−1,0,+1}, `HUDTankWiggleY ($D2CA)` = {−1,0,+1,0}, cycling via `$0107` every frame while `$0108 ≥ $0A`. game.js draws HUD tanks at fixed (104, py=105) with no wiggle. **Fixed**: added `hudTankWiggleIdx` state (0–3, `(hudTankWiggleIdx+1)&3` each frame in `update()`); `render()` HUD tank block now computes `wx=WX[idx]` / `wy=WY[idx]` and offsets both tank X positions by `wx` and `py` by `wy`, giving the classic circular 1-pixel oscillation matching ROM.
+- [x] **Add GAME OVER banner wiggle**: ROM `GameOverBannerAnim ($C7F8)` applies 4-direction oscillation delta to banner display position: `HUDTankWiggleX ($D2C6)` = {0,−1,0,+1}, `HUDTankWiggleY ($D2CA)` = {−1,0,+1,0}, cycling via `$0107` every frame while `$0108 ≥ $0A`. game.js draws the banner at fixed (104, py=105) with no wiggle. **Fixed**: added `hudTankWiggleIdx` state (0–3, `(hudTankWiggleIdx+1)&3` each frame in `update()`); `render()` banner block now computes `wx=WX[idx]` / `wy=WY[idx]` and offsets both halves, giving the classic circular 1-pixel oscillation matching ROM. (Note: these are GAME OVER letter tiles, not tank sprites.)
 
 ### 9 — Tooling / debug scripts
 
