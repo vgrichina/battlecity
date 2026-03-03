@@ -137,19 +137,43 @@
     // P1 base=0x00, P2 base=0x20; enemy tier bases: 0x80/0xA0/0xC0/0xE0
     // tiles array = [tl, tr, bl, br] = [T, T+2, T+1, T+3]
     entities: [
+      // P1 tier 0 (no upgrades) — base $00; dir*8 = UP$00/LEFT$08/DOWN$10/RIGHT$18
       { name: "P1 (UP)",         pal: 4, tiles: [0x00,0x02,0x01,0x03], pt1: true },
       { name: "P1 (LEFT)",       pal: 4, tiles: [0x08,0x0A,0x09,0x0B], pt1: true },
       { name: "P1 (DOWN)",       pal: 4, tiles: [0x10,0x12,0x11,0x13], pt1: true },
       { name: "P1 (RIGHT)",      pal: 4, tiles: [0x18,0x1A,0x19,0x1B], pt1: true },
-      { name: "P2 (UP)",         pal: 5, tiles: [0x20,0x22,0x21,0x23], pt1: true },
-      { name: "P2 (LEFT)",       pal: 5, tiles: [0x28,0x2A,0x29,0x2B], pt1: true },
-      { name: "P2 (DOWN)",       pal: 5, tiles: [0x30,0x32,0x31,0x33], pt1: true },
-      { name: "P2 (RIGHT)",      pal: 5, tiles: [0x38,0x3A,0x39,0x3B], pt1: true },
-      { name: "ENEMY T0 (UP)",   pal: 6, tiles: [0x80,0x82,0x81,0x83], pt1: true },
-      { name: "ENEMY T1 (UP)",   pal: 6, tiles: [0xA0,0xA2,0xA1,0xA3], pt1: true },
-      { name: "ENEMY T2 (UP)",   pal: 6, tiles: [0xC0,0xC2,0xC1,0xC3], pt1: true },
-      { name: "ENEMY T3 (UP)",   pal: 6, tiles: [0xE0,0xE2,0xE1,0xE3], pt1: true },
-      { name: "BONUS TANK (UP)", pal: 7, tiles: [0x80,0x82,0x81,0x83], pt1: true },
+      // P1 star upgrades — base $20/$40/$60; sprite bank. ROM $E06A + $EBAC EntityStarLevel
+      { name: "P1 ★1 (UP)",      pal: 4, tiles: [0x20,0x22,0x21,0x23], pt1: true },
+      { name: "P1 ★2 (UP)",      pal: 4, tiles: [0x40,0x42,0x41,0x43], pt1: true },
+      { name: "P1 ★3 (UP)",      pal: 4, tiles: [0x60,0x62,0x61,0x63], pt1: true },
+      // P2 tier 0 — base $00 (ROM $E0A4: $A8,X & $F0 = 0 at spawn $E419); SP1 palette (green).
+      // P1 and P2 share the same tile ranges; palette SP0/SP1 distinguishes them.
+      { name: "P2 (UP)",         pal: 5, tiles: [0x00,0x02,0x01,0x03], pt1: true },
+      { name: "P2 (LEFT)",       pal: 5, tiles: [0x08,0x0A,0x09,0x0B], pt1: true },
+      { name: "P2 (DOWN)",       pal: 5, tiles: [0x10,0x12,0x11,0x13], pt1: true },
+      { name: "P2 (RIGHT)",      pal: 5, tiles: [0x18,0x1A,0x19,0x1B], pt1: true },
+      // Enemy T0 (basic) — base $80; all 4 dirs
+      { name: "ENEMY T0 (UP)",    pal: 6, tiles: [0x80,0x82,0x81,0x83], pt1: true },
+      { name: "ENEMY T0 (LEFT)",  pal: 6, tiles: [0x88,0x8A,0x89,0x8B], pt1: true },
+      { name: "ENEMY T0 (DOWN)",  pal: 6, tiles: [0x90,0x92,0x91,0x93], pt1: true },
+      { name: "ENEMY T0 (RIGHT)", pal: 6, tiles: [0x98,0x9A,0x99,0x9B], pt1: true },
+      // Enemy T1 (fast) — base $A0; all 4 dirs
+      { name: "ENEMY T1 (UP)",    pal: 6, tiles: [0xA0,0xA2,0xA1,0xA3], pt1: true },
+      { name: "ENEMY T1 (LEFT)",  pal: 6, tiles: [0xA8,0xAA,0xA9,0xAB], pt1: true },
+      { name: "ENEMY T1 (DOWN)",  pal: 6, tiles: [0xB0,0xB2,0xB1,0xB3], pt1: true },
+      { name: "ENEMY T1 (RIGHT)", pal: 6, tiles: [0xB8,0xBA,0xB9,0xBB], pt1: true },
+      // Enemy T2 (power) — base $C0; all 4 dirs
+      { name: "ENEMY T2 (UP)",    pal: 6, tiles: [0xC0,0xC2,0xC1,0xC3], pt1: true },
+      { name: "ENEMY T2 (LEFT)",  pal: 6, tiles: [0xC8,0xCA,0xC9,0xCB], pt1: true },
+      { name: "ENEMY T2 (DOWN)",  pal: 6, tiles: [0xD0,0xD2,0xD1,0xD3], pt1: true },
+      { name: "ENEMY T2 (RIGHT)", pal: 6, tiles: [0xD8,0xDA,0xD9,0xDB], pt1: true },
+      // Enemy T3 (armor) — base $E0; all 4 dirs
+      { name: "ENEMY T3 (UP)",    pal: 6, tiles: [0xE0,0xE2,0xE1,0xE3], pt1: true },
+      { name: "ENEMY T3 (LEFT)",  pal: 6, tiles: [0xE8,0xEA,0xE9,0xEB], pt1: true },
+      { name: "ENEMY T3 (DOWN)",  pal: 6, tiles: [0xF0,0xF2,0xF1,0xF3], pt1: true },
+      { name: "ENEMY T3 (RIGHT)", pal: 6, tiles: [0xF8,0xFA,0xF9,0xFB], pt1: true },
+      // Bonus (power-up) tank — same tile base as T0 but SP3 palette (flashing)
+      { name: "BONUS TANK (UP)",  pal: 7, tiles: [0x80,0x82,0x81,0x83], pt1: true },
     ],
 
     // --- TERRAIN ---
@@ -194,6 +218,31 @@
       { name: "BLANK SLOT ($11)",   pal: 0, tiles: [0x11],                     pt1: false, w:8, h:8 },
       { name: "LIFE TANK ($14)",    pal: 0, tiles: [0x14],                     pt1: false, w:8, h:8 },
       { name: "STAGE FLAG",         pal: 0, tiles: [0x6C,0xFC,0x6D,0xFD],     pt1: false },
+      // HUD animated tank / GAME OVER scroll sprite — PT1 tiles $78–$7F.
+      // ROM $C7DB DrawHUDTanks: 4 OAM 8×16 entries side-by-side = 32×16px; same tiles used for
+      // in-field GAME OVER scroll ($D2C6/$D2CA wiggle tables). DrawHUDTanks alternates F1/F2.
+      { name: "HUD TANK F1",        pal: 7, tiles: [0x78,0x7A,0x79,0x7B],     pt1: false, w:16, h:16 },
+      { name: "HUD TANK F2",        pal: 7, tiles: [0x7C,0x7E,0x7D,0x7F],     pt1: false, w:16, h:16 },
+      // BCD digit tiles $60–$69; formula: digit_value + $60 = tile.
+      // ROM $D9A7 SkipLeadingZeros + 26 call sites (score, lives, stage#, hi-score).
+      { name: "DIGIT 0 ($60)",      pal: 0, tiles: [0x60], pt1: false, w:8, h:8 },
+      { name: "DIGIT 1 ($61)",      pal: 0, tiles: [0x61], pt1: false, w:8, h:8 },
+      { name: "DIGIT 2 ($62)",      pal: 0, tiles: [0x62], pt1: false, w:8, h:8 },
+      { name: "DIGIT 3 ($63)",      pal: 0, tiles: [0x63], pt1: false, w:8, h:8 },
+      { name: "DIGIT 4 ($64)",      pal: 0, tiles: [0x64], pt1: false, w:8, h:8 },
+      { name: "DIGIT 5 ($65)",      pal: 0, tiles: [0x65], pt1: false, w:8, h:8 },
+      { name: "DIGIT 6 ($66)",      pal: 0, tiles: [0x66], pt1: false, w:8, h:8 },
+      { name: "DIGIT 7 ($67)",      pal: 0, tiles: [0x67], pt1: false, w:8, h:8 },
+      { name: "DIGIT 8 ($68)",      pal: 0, tiles: [0x68], pt1: false, w:8, h:8 },
+      { name: "DIGIT 9 ($69)",      pal: 0, tiles: [0x69], pt1: false, w:8, h:8 },
+      // Score header nametable tiles. ROM $D15B: P1 icon $5E/$6B at col 2–3 row 3;
+      // $D167 HI label $48/$49 at col 11–12; $D15E P2 icon $5F at col 21 (2P only).
+      { name: "P1 ICON ($5E)",      pal: 0, tiles: [0x5E], pt1: false, w:8, h:8 },
+      { name: "P2 ICON ($5F)",      pal: 0, tiles: [0x5F], pt1: false, w:8, h:8 },
+      { name: "HI 'H' ($48)",       pal: 0, tiles: [0x48], pt1: false, w:8, h:8 },
+      { name: "HI 'I' ($49)",       pal: 0, tiles: [0x49], pt1: false, w:8, h:8 },
+      // Score separator / col marker tile. ROM $D162/$D165.
+      { name: "SEPARATOR ($13)",    pal: 0, tiles: [0x13], pt1: false, w:8, h:8 },
     ],
 
     // --- ANIMATIONS ---
@@ -205,6 +254,10 @@
       { name: "BULLET EXP (LEFT)",  type: "bullet_exp", dir: 1 },
       { name: "BULLET EXP (DOWN)",  type: "bullet_exp", dir: 2 },
       { name: "BULLET EXP (RIGHT)", type: "bullet_exp", dir: 3 },
+      // GAME OVER scroll sprite: PT1 tiles $78–$7F, 4 OAM 8×16 entries = 32×16px total.
+      // ROM $C7DB DrawHUDTanks: alternates tile pair ($79/$7B ↔ $7D/$7F) every 16 frames.
+      // Same tiles drive in-field GAME OVER scroll via goScrollX/goScrollY ($D2C6/$D2CA).
+      { name: "GAME/OVER SCROLL",   type: "gameover_scroll", w: 32, h: 16 },
     ],
   };
 
@@ -347,6 +400,17 @@
         const cx = 4 * SCALE; // center 8px tile in 16px canvas
         drawCHRTile(ctx, top,     7, cx,  0,         true);
         drawCHRTile(ctx, top + 1, 7, cx,  8 * SCALE, true);
+
+      } else if (item.type === "gameover_scroll") {
+        // ROM $C7DB DrawHUDTanks: PT1 tiles $78–$7F, 4 OAM 8×16 entries side-by-side = 32×16px.
+        // Two animation frames alternate every 16 frames: F1=$78–$7B, F2=$7C–$7F.
+        // Same sprites used for GAME OVER in-field scroll ($C7F8 HUDTankAnimation).
+        const f = Math.floor(frame / 16) % 2;
+        const base = f === 0 ? 0x78 : 0x7C;  // F1 or F2 tile base
+        for (let col = 0; col < 4; col++) {
+          drawCHRTile(ctx, base + col * 2,     7, col * 8 * SCALE, 0,         true);
+          drawCHRTile(ctx, base + col * 2 + 1, 7, col * 8 * SCALE, 8 * SCALE, true);
+        }
       }
     });
 

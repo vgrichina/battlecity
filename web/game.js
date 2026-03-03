@@ -63,8 +63,9 @@ const tileCache = new Map();      // cached offscreen canvases keyed by "abs_pal
 
 // Mapper 99 per-stage CHR bank select via StageFlagsTable ($80B6).
 // Bit 2: 1 -> banks 0+1 (default, index 0), 0 -> banks 2+3 (alt, index 1).
-// Values from ROM: $80B6: 04 04 04 00 04 04 04 04 04 00 00 04 00
-const STAGE_CHR_BANK = [0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1];
+// ROM $80B6: 04 04 04 00 04 04 04 04 04 00 00 04 00 00 2E 00 00 24 00 00 28 00 00 26 00 00 24 00 00 24 00 00 28 00 01
+// D2 bit: 1=banks 0+1 (default), 0=banks 2+3 (alt). All 35 stages listed.
+const STAGE_CHR_BANK = [0,0,0,1,0,0,0,0,0,1,1,0,1,1,0,1,1,0,1,1,1,1,1,0,1,1,0,1,1,0,1,1,1,1,1];
 
 const chrSheets = [null, null];   // [0]=default (banks 0+1), [1]=alt (banks 2+3)
 let chrBankIdx = 0;               // which bank pair is currently active
@@ -661,7 +662,7 @@ window.addEventListener('keyup',   e => { keys[e.code] = false; });
 // Returns direction (0-3) or -1 if no d-pad held
 // P1: Arrows (+ WASD in 1P mode); P2: WASD
 function p1Dir() {
-  if (demoMode && entities[0]) return entities[0].demoDir !== undefined ? entities[0].demoDir : -1;
+  if (demoMode && entities[0]) return entities[0].dir;  // AI sets e.dir via tickDemoAI
   if (keys['ArrowUp'])    return 0;
   if (keys['ArrowLeft'])  return 1;
   if (keys['ArrowDown'])  return 2;
@@ -675,7 +676,7 @@ function p1Dir() {
   return -1;
 }
 function p2Dir() {
-  if (demoMode && entities[1]) return entities[1].demoDir !== undefined ? entities[1].demoDir : -1;
+  if (demoMode && entities[1]) return entities[1].dir;  // AI sets e.dir via tickDemoAI
   if (keys['KeyW']) return 0;
   if (keys['KeyA']) return 1;
   if (keys['KeyS']) return 2;
@@ -2018,8 +2019,9 @@ function drawHUD() {
   }
 
   // Enemy count  ROM $C7BD DrawAllHUDKillIcons: rows 3–12, cols 29–30
-  // ROM: BG tile $6A = small enemy tank icon; $11 = blank (erased on spawn)
-  const total = enemiesLeft + activeEnemyCount;
+  // ROM: BG tile $6A = small enemy tank icon; $11 = blank (erased at spawn, not death)
+  // Icon erased when enemy SPAWNS → icon count = enemiesLeft (not including active enemies)
+  const total = enemiesLeft;  // ROM $7F EnemiesRemaining (enemies not yet spawned)
   for (let i = 0; i < 20; i++) {
     const col = i % 2, row = Math.floor(i / 2);
     if (i < total) {
@@ -2027,6 +2029,11 @@ function drawHUD() {
         drawCHRTile(0x6A, 3, hx + 8 + col * 8, 3 * 8 + row * 8, true);
       } else {
         fillRect(hx + 8 + col * 8, 3 * 8 + row * 8, 8, 6, C.ENEMY);
+      }
+    } else {
+      // ROM $C7AE DrawHUDKillIconB: write tile $11 (steel/blank) for consumed slots
+      if (chrOff) {
+        drawCHRTile(0x11, 3, hx + 8 + col * 8, 3 * 8 + row * 8, false);
       }
     }
   }
@@ -2391,7 +2398,7 @@ function drawTitleScreen() {
   } else {
     drawNesText('I-', 16, 24, 3);
   }
-  drawNesText(p1Score.toString().padStart(2, '0'), 32, 24, 3);
+  drawNesText(p1Score.toString().padStart(6, ' '), 24, 24, 3);  // ROM: 6 digits, leading-zero suppressed
   drawNesText('HI-' + hiScore.toString().padStart(6, ' '), 88, 24, 3);
 
   // ROM $CFAA: "BATTLE" at (26,46), "CITY" at (60,86) via DrawSpriteString ($D14F/$D156)
