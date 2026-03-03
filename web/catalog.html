@@ -213,12 +213,13 @@
       { name: "SCORE 400 ($C4)", pal: 6, tiles: [0xC4,0xC6,0xC5,0xC7], pt1: false }, // armor enemy kill
       { name: "SHIELD F1",       pal: 6, tiles: [0x28,0x2A,0x29,0x2B], pt1: false }, // OAM tile $29 (odd→PT1)
       { name: "SHIELD F2",       pal: 6, tiles: [0x2C,0x2E,0x2D,0x2F], pt1: false }, // OAM tile $2D (odd→PT1)
-      // Eagle wall sprites — BG bank (PT1), palIdx 7. ROM EagleWallClosed/EagleWallOpen ($E3E2/$E3EA).
-      // 4 draw calls each placing L+R 8×16 OAM pair → 4×2 grid of 8×16 = 32×32px total.
-      // OAM tile bytes $D1/$D5/$D9/$DD (L-halves) + $D3/$D7/$DB/$DF (R-halves); all odd → PT1.
-      // Tile order below is raster (left→right, top→bottom) for 4-col drawMetasprite.
-      { name: "EAGLE WALL INTACT", pal: 7, tiles: [0xD0,0xD2,0xD4,0xD6,0xD1,0xD3,0xD5,0xD7,0xD8,0xDA,0xDC,0xDE,0xD9,0xDB,0xDD,0xDF], pt1: false, w:32, h:32 },
-      { name: "EAGLE WALL OPEN",   pal: 7, tiles: [0xE0,0xE2,0xE4,0xE6,0xE1,0xE3,0xE5,0xE7,0xE8,0xEA,0xEC,0xEE,0xE9,0xEB,0xED,0xEF], pt1: false, w:32, h:32 },
+      // Eagle HQ emblem sprites — BG bank (PT1), palIdx 7 SP3. ROM EagleDrawIntact/EagleDrawDamaged ($E3E2/$E3EA).
+      // Drawn via OAM over the eagle base during the hit/destruction flicker animation.
+      // Also reused by DrawExpandSprite ($DFFA) for the large spawn-star expansion frame.
+      // 4 draw calls each placing 2 sprites → 4 cols × 2 rows of 8×16 = 32×32px total.
+      // OAM tile bytes $D1/$D5/$D9/$DD (L col each row) + $D3/$D7/$DB/$DF (R col); all odd → PT1.
+      { name: "EAGLE HQ INTACT ($D0)", pal: 7, tiles: [0xD0,0xD2,0xD4,0xD6,0xD1,0xD3,0xD5,0xD7,0xD8,0xDA,0xDC,0xDE,0xD9,0xDB,0xDD,0xDF], pt1: false, w:32, h:32 },
+      { name: "EAGLE HQ DAMAGED ($E0)",pal: 7, tiles: [0xE0,0xE2,0xE4,0xE6,0xE1,0xE3,0xE5,0xE7,0xE8,0xEA,0xEC,0xEE,0xE9,0xEB,0xED,0xEF], pt1: false, w:32, h:32 },
       // Kill explosion static frames (BG bank, palIdx 7 SP3). ROM DrawMovingSprite/DrawSmallSprite.
       { name: "EXPL SMALL",  pal: 7, tiles: [0xF0,0xF2,0xF1,0xF3], pt1: false }, // T=$F1 ($7x/$1x state)
       { name: "EXPL MEDIUM", pal: 7, tiles: [0xF4,0xF6,0xF5,0xF7], pt1: false }, // T=$F5 ($6x state)
@@ -396,7 +397,7 @@
           drawCHRTile(ctx, 0xF9, 7, cenX,              cenY + 8 * SCALE,  true);
           drawCHRTile(ctx, 0xFB, 7, cenX + 8 * SCALE,  cenY + 8 * SCALE,  true);
         } else {
-          // 32×32 expand sprite (phase 3): intact eagle tiles $D0-$DF.
+          // 32×32 expand sprite (phase 3): eagle HQ emblem tiles $D0-$DF (BG bank, reused by DrawExpandSprite).
           // ROM DrawExpandSprite ($DFFA): 4×4 CHR tile grid. Formula: base + col*2 + (row&1) + (row>>1)*8.
           const base = 0xD0;
           for (let row = 0; row < 4; row++)

@@ -644,9 +644,9 @@ Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique
 | $E3CB | EagleAnimB | Draw eagle sprite tile $F5 at ($78,$D8) |
 | $E3D0 | EagleAnimC | Draw eagle sprite tile $F9 at ($78,$D8) |
 | $E3DC | EagleAnimDraw | DrawTank with tile=$53+$69 at fixed eagle position |
-| $E3E2 | EagleWallClosed | Set $69=0; draw 4 base wall tiles around eagle (closed/intact formation) |
-| $E3EA | EagleWallOpen | Set $69=$10; draw 4 base wall tiles (open/damaged formation) |
-| $E3F2 | DrawEagleWalls | Draw 4 wall sprites at (70,D0),(80,D0),(70,E0),(80,E0) with tiles $D1/$D5/$D9/$DD+$69 |
+| $E3E2 | EagleDrawIntact | Set $69=0; draw eagle HQ emblem sprite (intact form, tiles $D0-$DF) as 4-col×2-row 32×32px OAM overlay at eagle base |
+| $E3EA | EagleDrawDamaged | Set $69=$10; draw eagle HQ emblem (damaged form, tiles $E0-$EF) with +$10 tile offset |
+| $E3F2 | EagleDrawFull | Draw 4 OAM pairs at (70,D0),(80,D0),(70,E0),(80,E0) with tiles $D1/$D5/$D9/$DD+$69; forms 32×32px eagle emblem |
 | $EB17 | PowerUpCollision | Effect-position vs player proximity check (12px); if hit: set EffectTimer=50, dispatch via $EB87 power-up table |
 | $EB95 | PU_Helmet | Helmet power-up: ShieldTimer[$89,X] = 10 (≈640 frames invincibility) |
 | $EB9A | PU_Timer | Timer/Clock power-up: EnemyFreezeTimer[$0100] = 10 (freeze enemies ≈640 frames) |
@@ -705,8 +705,8 @@ Bank 1 sub-routines ($D0BD etc.) are valid code using overlapping-byte technique
 | 1 | $E3C6 | Eagle anim frame A (tile $F1) |
 | 2 | $E3CB | Eagle anim frame B (tile $F5) |
 | 3 | $E3D0 | Eagle anim frame C (tile $F9) |
-| 4 | $E3E2 | Eagle wall closed ($69=0, 4 wall sprites) |
-| 5 | $E3EA | Eagle wall open ($69=$10, 4 wall sprites) |
+| 4 | $E3E2 | EagleDrawIntact: draw eagle HQ emblem (intact, tiles $D0-$DF, $69=0) |
+| 5 | $E3EA | EagleDrawDamaged: draw eagle HQ emblem (damaged, tiles $E0-$EF, $69=$10) |
 
 ### SetSpeedPtr ($E4E8) — corrected
 
@@ -1569,8 +1569,8 @@ JMP via EagleHandlerTable[$E3BA, Y]
 | 2  | $E3C6   | Draw tile $F1 at center (explosion frame 1) |
 | 4  | $E3CB   | Draw tile $F5 at center (explosion frame 2) |
 | 6  | $E3D0   | Draw tile $F9 at center (explosion frame 3) |
-| 8  | $E3E2   | Eagle intact ($69=0) — draw 4-tile 2×2 HQ sprite |
-| 10 | $E3EA   | Eagle damaged ($69=$10) — draw HQ with +$10 tile offset |
+| 8  | $E3E2   | EagleDrawIntact ($69=0) — draw eagle HQ emblem sprite (intact form, tiles $D0-$DF) as 32×32px OAM overlay |
+| 10 | $E3EA   | EagleDrawDamaged ($69=$10) — draw eagle HQ emblem (damaged form, tiles $E0-$EF) with +$10 tile offset |
 
 **Eagle draw** (`$E3F2`): draws **8 OAM entries in a 4×2 grid** (32×32px) at fixed screen positions using `$DB0A` (each call draws 2 side-by-side 8×16 entries):
 - 4 calls × 2 OAM entries each = 8 entries: X=104/112/120/128 px, Y=200/216 (OAM Y= Y−8)
@@ -1889,8 +1889,8 @@ These are written to the nametable via `DrawNametableTile ($D82B)` / `PPUQueueTi
 | `$CD` | Destroyed eagle BL | `$D26E` (EagleHit data) | |
 | `$CE` | Destroyed eagle TR | `$D26C` (EagleHit data) | |
 | `$CF` | Destroyed eagle BR | `$D26F` (EagleHit data) | |
-| `$D0`–`$DF` | Eagle wall sprites (intact, 8 OAM entries) | `$E3F7` (LDA #`$D1`), `$E400` (LDA #`$D5`), `$E409` (LDA #`$D9`), `$E412` (LDA #`$DD`); odd OAM bytes → PT1; `$E3E2` (EagleWallClosed: `$69`=0 → tile+0) | 4×2 grid of 8×16 OAM sprites = 32×32px. OAM bytes `$D1`,`$D5`,`$D9`,`$DD` + R-halves `$D3`,`$D7`,`$DB`,`$DF` |
-| `$E0`–`$ED` | Eagle wall sprites (open/damaged) | `$E3EA` (EagleWallOpen: `$69`=`$10` → tile+`$10`); same draw calls as intact with +`$10` offset; OAM bytes `$E1`,`$E5`,`$E9`,`$ED` → PT1 | Drawn when shovel fortify expires; eagle base becomes open/unfortified |
+| `$D0`–`$DF` | Eagle HQ emblem — intact form; OAM sprite overlay (starburst/phoenix pattern) drawn at eagle base during hit flicker (EagleDrawIntact `$E3E2`, handler Y=8: `$69`=0) and reused by DrawExpandSprite (`$DFFA`) for large spawn-star expansion frame | `$E3F7` (LDA #`$D1`), `$E400` (LDA #`$D5`), `$E409` (LDA #`$D9`), `$E412` (LDA #`$DD`); odd OAM bytes → PT1 | 4×2 grid of 8×16 OAM sprites = 32×32px; visually a burst/starburst pattern representing the eagle emblem; NOT the brick/steel wall tiles (those are BG nametable $0F/$10) |
+| `$E0`–`$ED` | Eagle HQ emblem — damaged form (+`$10` tile offset from intact); drawn during destruction flicker to alternate with intact frame | `$E3EA` (EagleDrawDamaged: `$69`=`$10` → tile+`$10`); same draw calls as intact; OAM bytes `$E1`,`$E5`,`$E9`,`$ED` → PT1; state Y=10 in EagleHandlerTable | Alternates with intact form ($D0–$DF) during eagle base flicker sequence; reused by DrawExpandSprite for a later spawn-star expansion variant |
 | `$EE`–`$EF` | *Not found in code yet* | — | 2 tiles after eagle-wall open (`$E0`–`$ED`), before kill/spawn anim (`$F0`) |
 | `$F0`–`$F1` | Kill/spawn anim frame 1 + Eagle explosion A | `$DF96` (CalcSprTile state_hi=7: tile=`$F1`); `$E3C6` (EagleAnimA: LDA #`$F1`/STA `$53`) | Smallest star / first eagle explosion frame. Drawn for entity kill end (states `$70`–`$7F`) and eagle hit sequence |
 | `$F4`–`$F5` | Kill/spawn anim frame 2 + Eagle explosion B | `$DF96` (CalcSprTile state_hi=6: tile=`$F5`); `$E3CB` (EagleAnimB: LDA #`$F5`) | Medium star / second eagle explosion |
