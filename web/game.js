@@ -550,7 +550,7 @@ function spawnPlayer(slot) {
   e.y           = pos.y;
   e.dir         = 0;      // UP  ROM $E53B InitState players=$A0
   e.alive       = true;
-  e.spawnAnim   = 60;     // spawn star anim  ROM $DF09 StateIncSlot/$DF18 StateIncFire
+  e.spawnAnim   = 30;     // spawn star anim  ROM $DF09/$DF18: 15 states×2 frames ≈ 30 frames
   e.shieldTimer = 3;      // spawn shield: 3 ticks × 64 frames = 192 frames  ROM $89,X
   e.starLevel   = 0;      // ROM $0101,X reset on death
   e.blinkFrame  = 0;
@@ -613,7 +613,7 @@ function spawnEnemy() {
     e.y          = EN_SPAWN_Y;
     e.dir        = 2;     // DOWN  ROM $E53B InitState enemies=$A2
     e.alive      = true;
-    e.spawnAnim  = 60;
+    e.spawnAnim  = 30;
 
     // Enemy type: per-stage sequence from ROM $E5A9 EnemyTypeTable + $E6A9 SpeedTable
     // spawnIdx = enemies already spawned = 20 - enemiesLeft (0..19)
@@ -1111,7 +1111,7 @@ function startPlayerDeathScroll(playerIdx) {
 function killEntity(e) {
   if (!e.alive) return;
   e.alive = false;
-  e.deathTimer = 18;  // ROM $DEB1/$DEB6: 3 phases × 6 frames each = 18 total
+  e.deathTimer = 24;  // ROM state $73→$00: ~24 countdown steps (3 per phase × 8 phases)
 
   if (e.isPlayer) {
     // ROM $DEBA/$DEBC: DEC $51/$52 lives for P1/P2
@@ -1749,19 +1749,61 @@ function drawEagleBase() {
 
 // ROM $DB02 DrawTank2x2  $DABA DrawEntityTile  $DF81 DrawMovingSprite
 function drawEntity(e) {
-  // ROM $E073 EntityKillDispatch: 3-phase explosion at entity center before slot cleared
-  // Tiles $84–$8F (PT0 sprite bank), phase0=$84-$87, phase1=$88-$8B, phase2=$8C-$8F
-  // Each phase 6 frames (ROM $DEB1/$DEB6 ORA #$06); palette SP0 (palIdx 4); 16×16px 2×2 tile block
+  // ROM entity kill animation: initial state $73 counts to $00 over ~24 frames.
+  // DrawDispatch at $DF6C uses ($A0,X >> 3)&$FE as byte offset into MoveUpdateDispatch ($E575):
+  //   states $7x/$6x/$5x → DrawMovingSprite ($DF81) → CalcSprTile → tile $F1/$F5/$F9 → 16×16 spark
+  //   states $4x/$3x     → DrawExpandSprite ($DFFA) → 32×32 burst (eagle intact $D0-$DF / damaged $E0-$EF)
+  //   state  $2x         → DrawSmallSprite  ($DFE7→$DFA4) → tile $F9 → 16×16 spark
+  //   state  $1x         → DrawSpawnSprite  ($DFB1→$DFA4) → tile $F1 → 16×16 spark
+  // All phases: palette SP3 (palIdx 7), BG bank (PT1, no +256).
   if (!e.alive && e.deathTimer > 0) {
-    const phase = Math.min(2, Math.floor((18 - e.deathTimer) / 6));
-    const Tbase = 256 + 0x84 + phase * 4;
+    const t = e.deathTimer;
     if (chrOff) {
-      drawCHRTile(Tbase,     4, e.x - 8, e.y - 8, true);  // top-left
-      drawCHRTile(Tbase + 2, 4, e.x,     e.y - 8, true);  // top-right
-      drawCHRTile(Tbase + 1, 4, e.x - 8, e.y,     true);  // bottom-left
-      drawCHRTile(Tbase + 3, 4, e.x,     e.y,     true);  // bottom-right
+      if (t >= 22) {
+        // state $7x: DrawMovingSprite → CalcSprTile → tile $F1, 16×16
+        drawCHRTile(0xF0, 7, e.x - 8, e.y - 8, true);
+        drawCHRTile(0xF1, 7, e.x - 8, e.y,     true);
+        drawCHRTile(0xF2, 7, e.x,     e.y - 8, true);
+        drawCHRTile(0xF3, 7, e.x,     e.y,     true);
+      } else if (t >= 19) {
+        // state $6x: DrawMovingSprite → CalcSprTile → tile $F5, 16×16
+        drawCHRTile(0xF4, 7, e.x - 8, e.y - 8, true);
+        drawCHRTile(0xF5, 7, e.x - 8, e.y,     true);
+        drawCHRTile(0xF6, 7, e.x,     e.y - 8, true);
+        drawCHRTile(0xF7, 7, e.x,     e.y,     true);
+      } else if (t >= 16) {
+        // state $5x: DrawMovingSprite → CalcSprTile → tile $F9, 16×16
+        drawCHRTile(0xF8, 7, e.x - 8, e.y - 8, true);
+        drawCHRTile(0xF9, 7, e.x - 8, e.y,     true);
+        drawCHRTile(0xFA, 7, e.x,     e.y - 8, true);
+        drawCHRTile(0xFB, 7, e.x,     e.y,     true);
+      } else if (t >= 10) {
+        // states $4x/$3x: DrawExpandSprite ($DFFA) → 32×32, tile formula:
+        // tileAbs = base + (row&1) + col*2 + (row>>1)*8  (4 quadrants × DrawTank = 16 tiles)
+        const base = (t >= 13) ? 0xD0 : 0xE0;  // $4x→intact eagle $D0-$DF, $3x→damaged $E0-$EF
+        for (let row = 0; row < 4; row++) {
+          for (let col = 0; col < 4; col++) {
+            const tileAbs = base + (row & 1) + col * 2 + (row >> 1) * 8;
+            drawCHRTile(tileAbs, 7, e.x - 16 + col * 8, e.y - 16 + row * 8, true);
+          }
+        }
+      } else if (t >= 7) {
+        // state $2x: DrawSmallSprite ($DFE7→$DFA4) → tile $F9, 16×16
+        drawCHRTile(0xF8, 7, e.x - 8, e.y - 8, true);
+        drawCHRTile(0xF9, 7, e.x - 8, e.y,     true);
+        drawCHRTile(0xFA, 7, e.x,     e.y - 8, true);
+        drawCHRTile(0xFB, 7, e.x,     e.y,     true);
+      } else {
+        // state $1x: DrawSpawnSprite ($DFB1→$DFA4) → tile $F1, 16×16
+        drawCHRTile(0xF0, 7, e.x - 8, e.y - 8, true);
+        drawCHRTile(0xF1, 7, e.x - 8, e.y,     true);
+        drawCHRTile(0xF2, 7, e.x,     e.y - 8, true);
+        drawCHRTile(0xF3, 7, e.x,     e.y,     true);
+      }
     } else {
-      const r = 4 + phase * 2;
+      // fallback: expanding rect
+      const phase = Math.floor((24 - t) / 4);
+      const r = 2 + phase * 2;
       fillRect(e.x - r, e.y - r, r * 2, r * 2, '#ff8800');
     }
     return;
@@ -1775,13 +1817,13 @@ function drawEntity(e) {
     fillRect(e.x - 8, e.y - 8, TANK_SZ, TANK_SZ, C.FIELD);
     if (chrOff) {
       const SPAWN_SEQ = [0xAD,0xAD,0xA9,0xA9,0xA5,0xA5,0xA1,0xA1,0xA1,0xA5,0xA5,0xA9,0xA9,0xAD,0xAD];
-      const seqIdx = Math.min(14, Math.floor((60 - e.spawnAnim) / 4));
+      const seqIdx = Math.min(14, Math.floor((30 - e.spawnAnim) / 2));
       const T = SPAWN_SEQ[seqIdx];
       // ROM DrawShootSprite ($E0BF): JSR DrawTank ($DB0A) → two 8×16 OAM entries = 16×16 sprite
       // Left col OAM_X = entity_x-8, right col OAM_X = entity_x, both OAM_Y = entity_y-8; palIdx 7 = SP3
       const sx = e.x - 8, sy = e.y - 8;
-      // ODD tile index in 8x16 mode → PT1 (index 256+)
-      const tl = 256 + (T & 0xFE), tr = 256 + ((T + 2) & 0xFE);
+      // ODD tile byte T → PT1 (BG bank, no +256): top=T&$FE, bottom=(T&$FE)+1
+      const tl = T & 0xFE, tr = (T + 2) & 0xFE;
       drawCHRTile(tl,     7, sx,     sy,     true);  // top-left
       drawCHRTile(tr,     7, sx + 8, sy,     true);  // top-right
       drawCHRTile(tl + 1, 7, sx,     sy + 8, true);  // bottom-left

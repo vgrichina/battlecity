@@ -14,27 +14,36 @@
     select { background: #000; color: #f8e800; border: 1px solid #f8e800; padding: 5px; }
     .tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; margin-bottom: 5px; }
     .tag-spr { background: #440064; color: #fff; }
-    .tag-bg { background: #083a00; color: #fff; }
+    .tag-bg  { background: #083a00; color: #fff; }
   </style>
 </head>
 <body>
 
   <h1>BATTLE CITY METASPRITE CATALOG</h1>
 
-
   <div class="section">
-    <h2>PLAYERS & ENEMIES</h2>
+    <h2>PLAYERS &amp; ENEMIES</h2>
     <div class="grid" id="gridEntities"></div>
   </div>
 
   <div class="section">
-    <h2>ANIMATIONS & SFX</h2>
-    <div class="grid" id="gridAnims"></div>
+    <h2>TERRAIN</h2>
+    <div class="grid" id="gridTerrain"></div>
   </div>
 
   <div class="section">
-    <h2>SPECIALS & UI</h2>
+    <h2>SPECIALS &amp; POWER-UPS</h2>
     <div class="grid" id="gridSpecials"></div>
+  </div>
+
+  <div class="section">
+    <h2>HUD ELEMENTS</h2>
+    <div class="grid" id="gridHUD"></div>
+  </div>
+
+  <div class="section">
+    <h2>ANIMATIONS &amp; SFX</h2>
+    <div class="grid" id="gridAnims"></div>
   </div>
 
 <script>
@@ -43,10 +52,16 @@
   const CHR_BORDER = 1;
 
   // ROM-derived constants
-  const NES_MASTER_HEX = ['#545454', '#001e74', '#081090', '#300088', '#440064', '#5c0030', '#540400', '#3c1800', '#202a00', '#083a00', '#004000', '#003c00', '#00323c', '#000000', '#000000', '#000000', '#989698', '#084cc4', '#3032ec', '#5c1ee4', '#8814b0', '#a01464', '#982220', '#783c00', '#545a00', '#287200', '#087c00', '#007628', '#006678', '#000000', '#000000', '#000000', '#eceeec', '#4c9aec', '#787cec', '#b062ec', '#e454ec', '#ec58b4', '#ec6a64', '#d48820', '#a0aa00', '#74c400', '#4cd020', '#38cc6c', '#38b4cc', '#3c3c3c', '#000000', '#000000', '#eceeec', '#a8ccec', '#bcbcec', '#d4b2ec', '#ecaeec', '#ecaed4', '#ecb4b0', '#e4c490', '#ccd278', '#b4de78', '#a8e290', '#98e2b4', '#a0d6e4', '#a0a2a0', '#000000', '#000000'];
+  const NES_MASTER_HEX = ['#545454','#001e74','#081090','#300088','#440064','#5c0030','#540400','#3c1800','#202a00','#083a00','#004000','#003c00','#00323c','#000000','#000000','#000000','#989698','#084cc4','#3032ec','#5c1ee4','#8814b0','#a01464','#982220','#783c00','#545a00','#287200','#087c00','#007628','#006678','#000000','#000000','#000000','#eceeec','#4c9aec','#787cec','#b062ec','#e454ec','#ec58b4','#ec6a64','#d48820','#a0aa00','#74c400','#4cd020','#38cc6c','#38b4cc','#3c3c3c','#000000','#000000','#eceeec','#a8ccec','#bcbcec','#d4b2ec','#ecaeec','#ecaed4','#ecb4b0','#e4c490','#ccd278','#b4de78','#a8e290','#98e2b4','#a0d6e4','#a0a2a0','#000000','#000000'];
   const ROM_PALETTE_DATA = [
-    [0x0F, 0x17, 0x06, 0x00], [0x0F, 0x3C, 0x10, 0x12], [0x0F, 0x29, 0x09, 0x0B], [0x0F, 0x00, 0x10, 0x20],
-    [0x0F, 0x18, 0x27, 0x38], [0x0F, 0x0A, 0x1B, 0x3B], [0x0F, 0x0C, 0x10, 0x20], [0x0F, 0x04, 0x16, 0x20],
+    [0x0F, 0x17, 0x06, 0x00], // 0 BG0 — border/HUD/brick
+    [0x0F, 0x3C, 0x10, 0x12], // 1 BG1 — water
+    [0x0F, 0x29, 0x09, 0x0B], // 2 BG2 — trees
+    [0x0F, 0x00, 0x10, 0x20], // 3 BG3 — steel/ice
+    [0x0F, 0x18, 0x27, 0x38], // 4 SP0 — P1 yellow
+    [0x0F, 0x0A, 0x1B, 0x3B], // 5 SP1 — P2 green
+    [0x0F, 0x0C, 0x10, 0x20], // 6 SP2 — enemies/power-ups/shield
+    [0x0F, 0x04, 0x16, 0x20], // 7 SP3 — bonus tank/eagle/explosion
   ];
 
   let currentPal = [];
@@ -68,19 +83,18 @@
 
     const tcol = tileAbs % 32, trow = (tileAbs / 32) | 0;
     const sx = tcol * CHR_CELL + CHR_BORDER, sy = trow * CHR_CELL + CHR_BORDER;
-    
-    // Extract 8x8 source
+
     const temp = document.createElement('canvas');
     temp.width = 8; temp.height = 8;
     const tctx = temp.getContext('2d');
     tctx.drawImage(chrImg, sx, sy, 8, 8, 0, 0, 8, 8);
     const pdata = tctx.getImageData(0, 0, 8, 8).data;
-    
+
     const pal = currentPal[palIdx];
     const cached = document.createElement('canvas');
     cached.width = 8 * SCALE; cached.height = 8 * SCALE;
     const cctx = cached.getContext('2d');
-    
+
     for (let y = 0; y < 8; y++) {
       for (let x = 0; x < 8; x++) {
         const cidx = grayToIdx(pdata[(y * 8 + x) * 4]);
@@ -99,7 +113,9 @@
     ctx.drawImage(cached, dx, dy);
   }
 
-  // Optimized draw for catalog
+  // Draw a 2×2 (16×16) metasprite.
+  // tiles = [top-left, top-right, bottom-left, bottom-right] CHR indices
+  // pt1 = true → sprite bank (+256 offset), false → BG bank (no offset)
   function drawMetasprite(ctx, tiles, palIdx, pt1 = false) {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     tiles.forEach((t, i) => {
@@ -109,94 +125,228 @@
     });
   }
 
+  // -------------------------------------------------------------------------
+  // Catalog data
+  // -------------------------------------------------------------------------
+
   const CATALOG = {
+
+    // --- PLAYERS & ENEMIES ---
+    // Sprite bank (pt1:true). Tank formula: base + dir*8 + animBit.
+    // dirs: 0=UP, 1=LEFT, 2=DOWN, 3=RIGHT → base offsets 0x00/0x08/0x10/0x18
+    // P1 base=0x00, P2 base=0x20; enemy tier bases: 0x80/0xA0/0xC0/0xE0
+    // tiles array = [tl, tr, bl, br] = [T, T+2, T+1, T+3]
     entities: [
-      { name: "P1 YELLOW (UP)",   pal: 4, tiles: [0x00, 0x02, 0x01, 0x03], pt1: true },
-      { name: "P1 YELLOW (LEFT)", pal: 4, tiles: [0x08, 0x0A, 0x09, 0x0B], pt1: true },
-      { name: "P2 GREEN (UP)",    pal: 5, tiles: [0x00, 0x02, 0x01, 0x03], pt1: true },
-      { name: "ENEMY TIER 0",     pal: 6, tiles: [0x80, 0x82, 0x81, 0x83], pt1: true },
-      { name: "ENEMY TIER 1",     pal: 6, tiles: [0xA0, 0xA2, 0xA1, 0xA3], pt1: true },
-      { name: "ENEMY TIER 2",     pal: 6, tiles: [0xC0, 0xC2, 0xC1, 0xC3], pt1: true },
-      { name: "ENEMY TIER 3",     pal: 6, tiles: [0xE0, 0xE2, 0xE1, 0xE3], pt1: true },
-      { name: "BONUS TANK",       pal: 7, tiles: [0x80, 0x82, 0x81, 0x83], pt1: true },
+      { name: "P1 (UP)",         pal: 4, tiles: [0x00,0x02,0x01,0x03], pt1: true },
+      { name: "P1 (LEFT)",       pal: 4, tiles: [0x08,0x0A,0x09,0x0B], pt1: true },
+      { name: "P1 (DOWN)",       pal: 4, tiles: [0x10,0x12,0x11,0x13], pt1: true },
+      { name: "P1 (RIGHT)",      pal: 4, tiles: [0x18,0x1A,0x19,0x1B], pt1: true },
+      { name: "P2 (UP)",         pal: 5, tiles: [0x20,0x22,0x21,0x23], pt1: true },
+      { name: "P2 (LEFT)",       pal: 5, tiles: [0x28,0x2A,0x29,0x2B], pt1: true },
+      { name: "P2 (DOWN)",       pal: 5, tiles: [0x30,0x32,0x31,0x33], pt1: true },
+      { name: "P2 (RIGHT)",      pal: 5, tiles: [0x38,0x3A,0x39,0x3B], pt1: true },
+      { name: "ENEMY T0 (UP)",   pal: 6, tiles: [0x80,0x82,0x81,0x83], pt1: true },
+      { name: "ENEMY T1 (UP)",   pal: 6, tiles: [0xA0,0xA2,0xA1,0xA3], pt1: true },
+      { name: "ENEMY T2 (UP)",   pal: 6, tiles: [0xC0,0xC2,0xC1,0xC3], pt1: true },
+      { name: "ENEMY T3 (UP)",   pal: 6, tiles: [0xE0,0xE2,0xE1,0xE3], pt1: true },
+      { name: "BONUS TANK (UP)", pal: 7, tiles: [0x80,0x82,0x81,0x83], pt1: true },
     ],
+
+    // --- TERRAIN ---
+    // BG bank (pt1:false). ROM TILE_CHR ($DB79): full-type CHR indices.
+    terrain: [
+      { name: "BRICK (FULL)",  pal: 0, tiles: [0x0F,0x0F,0x0F,0x0F], pt1: false }, // $DB89
+      { name: "STEEL (FULL)",  pal: 3, tiles: [0x10,0x10,0x10,0x10], pt1: false }, // $DB9D
+      { name: "WATER",         pal: 1, tiles: [0x12,0x12,0x12,0x12], pt1: false }, // $DBA1
+      { name: "TREES",         pal: 2, tiles: [0x22,0x22,0x22,0x22], pt1: false }, // $DBA5
+      { name: "ICE",           pal: 3, tiles: [0x21,0x21,0x21,0x21], pt1: false }, // $DBA9
+      { name: "BORDER ($FC)",  pal: 0, tiles: [0xFC,0xFC,0xFC,0xFC], pt1: false }, // ClearNametableSlot $98EB
+    ],
+
+    // --- SPECIALS & POWER-UPS ---
+    // Eagle: BG bank, palette BG0 (attribute byte $00 from ClearNametableSlot; level loader never writes eagle area attribute).
+    // Power-ups: ODD OAM byte → PT1 (BG bank, no +256). Formula: $81+type*4. SP2=palIdx 6.
+    // Shield: ODD OAM tile $29/$2D → PT1 (BG bank). SP2=palIdx 6. ROM PlayerShieldDraw $E330.
     specials: [
-      { name: "EAGLE INTACT",     pal: 3, tiles: [0xC8, 0xCA, 0xC9, 0xCB], pt1: false },
-      { name: "EAGLE DESTROYED",  pal: 3, tiles: [0xCC, 0xCE, 0xCD, 0xCF], pt1: false },
-      { name: "HELMET",           pal: 6, tiles: [0x80, 0x82, 0x81, 0x83], pt1: false },
-      { name: "TIMER",            pal: 6, tiles: [0x84, 0x86, 0x85, 0x87], pt1: false },
-      { name: "SHOVEL",           pal: 6, tiles: [0x88, 0x8A, 0x89, 0x8B], pt1: false },
-      { name: "STAR",             pal: 6, tiles: [0x8C, 0x8E, 0x8D, 0x8F], pt1: false },
-      { name: "GRENADE",          pal: 6, tiles: [0x90, 0x92, 0x91, 0x93], pt1: false },
-      { name: "1-UP",             pal: 6, tiles: [0x94, 0x96, 0x95, 0x97], pt1: false },
+      { name: "EAGLE INTACT",    pal: 0, tiles: [0xC8,0xCA,0xC9,0xCB], pt1: false }, // nametable BG metatile
+      { name: "EAGLE DESTROYED", pal: 0, tiles: [0xCC,0xCE,0xCD,0xCF], pt1: false }, // after hit
+      { name: "HELMET",          pal: 6, tiles: [0x80,0x82,0x81,0x83], pt1: false }, // type 0 $81+0*4=$81→$80-$83
+      { name: "TIMER",           pal: 6, tiles: [0x84,0x86,0x85,0x87], pt1: false }, // type 1
+      { name: "SHOVEL",          pal: 6, tiles: [0x88,0x8A,0x89,0x8B], pt1: false }, // type 2
+      { name: "STAR",            pal: 6, tiles: [0x8C,0x8E,0x8D,0x8F], pt1: false }, // type 3
+      { name: "GRENADE",         pal: 6, tiles: [0x90,0x92,0x91,0x93], pt1: false }, // type 4
+      { name: "1-UP",            pal: 6, tiles: [0x94,0x96,0x95,0x97], pt1: false }, // type 5 (LivesGrantCheck only)
+      { name: "PU FLASH",        pal: 6, tiles: [0x3A,0x3C,0x3B,0x3D], pt1: false }, // $62 collection flash
+      { name: "SHIELD F1",       pal: 6, tiles: [0x28,0x2A,0x29,0x2B], pt1: false }, // OAM tile $29 (odd→PT1)
+      { name: "SHIELD F2",       pal: 6, tiles: [0x2C,0x2E,0x2D,0x2F], pt1: false }, // OAM tile $2D (odd→PT1)
+      // Kill explosion static frames (BG bank, palIdx 7 SP3). ROM DrawMovingSprite/DrawSmallSprite.
+      { name: "EXPL SMALL",  pal: 7, tiles: [0xF0,0xF2,0xF1,0xF3], pt1: false }, // T=$F1 ($7x/$1x state)
+      { name: "EXPL MEDIUM", pal: 7, tiles: [0xF4,0xF6,0xF5,0xF7], pt1: false }, // T=$F5 ($6x state)
+      { name: "EXPL LARGE",  pal: 7, tiles: [0xF8,0xFA,0xF9,0xFB], pt1: false }, // T=$F9 ($5x/$2x state)
     ],
+
+    // --- HUD ELEMENTS ---
+    // BG bank (pt1:false). Attribute byte $00 for HUD col 7 → BG0 (palIdx 0). ROM session 52/53.
+    // Flag icon uses tiles $6C/$FC/$6D/$FD at nametable rows 23–24 cols 29–30. ROM $C7F8/$D225.
+    // Single 8×8 tiles: w:8, h:8 → canvas 32×32; tiles array has 1 element.
+    hud: [
+      { name: "ENEMY ICON ($6A)",   pal: 0, tiles: [0x6A],                     pt1: false, w:8, h:8 },
+      { name: "BLANK SLOT ($11)",   pal: 0, tiles: [0x11],                     pt1: false, w:8, h:8 },
+      { name: "LIFE TANK ($14)",    pal: 0, tiles: [0x14],                     pt1: false, w:8, h:8 },
+      { name: "STAGE FLAG",         pal: 0, tiles: [0x6C,0xFC,0x6D,0xFD],     pt1: false },
+    ],
+
+    // --- ANIMATIONS ---
     anims: [
-      { name: "SPAWN STAR", type: "spawn" },
-      { name: "TANK EXPLOSION", type: "explosion" },
-      { name: "BULLET EXPLOSION", type: "bullet_exp" },
-    ]
+      { name: "SPAWN STAR",         type: "spawn" },
+      { name: "TANK EXPLOSION",     type: "explosion",  w: 32, h: 32 },
+      { name: "SHIELD BLINK",       type: "shield" },
+      { name: "BULLET EXP (UP)",    type: "bullet_exp", dir: 0 },
+      { name: "BULLET EXP (LEFT)",  type: "bullet_exp", dir: 1 },
+      { name: "BULLET EXP (DOWN)",  type: "bullet_exp", dir: 2 },
+      { name: "BULLET EXP (RIGHT)", type: "bullet_exp", dir: 3 },
+    ],
   };
 
-  function createCatalog() {
-    const renderList = (id, list) => {
-      const container = document.getElementById(id);
-      list.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'item';
-        const canvas = document.createElement('canvas');
-        canvas.width = (item.w || 16) * SCALE;
-        canvas.height = (item.h || 16) * SCALE;
-        div.appendChild(canvas);
+  // -------------------------------------------------------------------------
+  // Catalog rendering
+  // -------------------------------------------------------------------------
+
+  function createSection(id, list) {
+    const container = document.getElementById(id);
+    list.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'item';
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = (item.w || 16) * SCALE;
+      canvas.height = (item.h || 16) * SCALE;
+      div.appendChild(canvas);
+
+      // Bank tag (skip for animations — they span banks)
+      if (item.tiles) {
         const tag = document.createElement('div');
         tag.className = `tag ${item.pt1 ? 'tag-spr' : 'tag-bg'}`;
         tag.textContent = item.pt1 ? 'Sprite' : 'BG';
         div.appendChild(tag);
-        const lbl = document.createElement('div');
-        lbl.textContent = item.name;
-        div.appendChild(lbl);
-        container.appendChild(div);
-        item.ctx = canvas.getContext('2d');
-      });
-    };
+      }
 
-    renderList('gridEntities', CATALOG.entities);
-    renderList('gridSpecials', CATALOG.specials);
-    renderList('gridAnims', CATALOG.anims);
+      const lbl = document.createElement('div');
+      lbl.className = 'label';
+      lbl.textContent = item.name;
+      div.appendChild(lbl);
+
+      container.appendChild(div);
+      item.ctx = canvas.getContext('2d');
+    });
   }
+
+  function createCatalog() {
+    createSection('gridEntities', CATALOG.entities);
+    createSection('gridTerrain',  CATALOG.terrain);
+    createSection('gridSpecials', CATALOG.specials);
+    createSection('gridHUD',      CATALOG.hud);
+    createSection('gridAnims',    CATALOG.anims);
+  }
+
+  // -------------------------------------------------------------------------
+  // Animation loop
+  // -------------------------------------------------------------------------
 
   function updateAll() {
     frame++;
 
+    // --- Entities: tread animation toggles between animBit=0 and animBit=4 every 10 frames ---
+    const animOffset = (Math.floor(frame / 10) % 2) * 4;
     CATALOG.entities.forEach(item => {
-      const animOffset = (Math.floor(frame / 10) % 2) * 4;
-      const tiles = item.tiles.map(t => t + animOffset);
-      drawMetasprite(item.ctx, tiles, item.pal, item.pt1);
+      drawMetasprite(item.ctx, item.tiles.map(t => t + animOffset), item.pal, item.pt1);
     });
 
+    // --- Terrain: static ---
+    CATALOG.terrain.forEach(item => {
+      drawMetasprite(item.ctx, item.tiles, item.pal, item.pt1);
+    });
+
+    // --- Specials: static (shield frames shown separately) ---
     CATALOG.specials.forEach(item => {
       drawMetasprite(item.ctx, item.tiles, item.pal, item.pt1);
     });
 
+    // --- HUD: static ---
+    CATALOG.hud.forEach(item => {
+      drawMetasprite(item.ctx, item.tiles, item.pal, item.pt1);
+    });
+
+    // --- Animations ---
     CATALOG.anims.forEach(item => {
-      item.ctx.clearRect(0, 0, item.ctx.canvas.width, item.ctx.canvas.height);
+      const ctx = item.ctx;
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
       if (item.type === "spawn") {
+        // ROM DrawShootSprite ($E0BF): 15-step triangle wave, BG bank tiles $A0-$AF, palIdx 7 SP3.
+        // Two 8×16 OAM entries side-by-side = 16×16 sprite. Duration ~30 frames (2 frames per step).
         const SEQ = [0xAD,0xAD,0xA9,0xA9,0xA5,0xA5,0xA1,0xA1,0xA1,0xA5,0xA5,0xA9,0xA9,0xAD,0xAD];
         const T = SEQ[Math.floor(frame / 4) % 15];
-        drawCHRTile(item.ctx, T&0xFE, 7, 0, 0, true);
-        drawCHRTile(item.ctx, (T&0xFE)+1, 7, 0, 8*SCALE, true);
-        drawCHRTile(item.ctx, (T+2)&0xFE, 7, 8*SCALE, 0, true);
-        drawCHRTile(item.ctx, ((T+2)&0xFE)+1, 7, 8*SCALE, 8*SCALE, true);
+        const tl = T & 0xFE, tr = (T + 2) & 0xFE;
+        drawCHRTile(ctx, tl,     7,           0,         0, true);
+        drawCHRTile(ctx, tl + 1, 7,           0, 8 * SCALE, true);
+        drawCHRTile(ctx, tr,     7, 8 * SCALE,  0,          true);
+        drawCHRTile(ctx, tr + 1, 7, 8 * SCALE, 8 * SCALE,  true);
+
       } else if (item.type === "explosion") {
-        const phase = Math.floor(frame / 6) % 3;
-        const base = 256 + 0x84 + phase * 4;
-        drawCHRTile(item.ctx, base, 4, 0, 0, true);
-        drawCHRTile(item.ctx, base + 2, 4, 8*SCALE, 0, true);
-        drawCHRTile(item.ctx, base + 1, 4, 0, 8*SCALE, true);
-        drawCHRTile(item.ctx, base + 3, 4, 8*SCALE, 8*SCALE, true);
+        // Full kill-explosion sequence (7 phases, 6 frames each). Canvas is 32×32.
+        // ROM DrawDispatchLoop ($DF60): state transitions $73→$00.
+        // Phases 0,1,6 = 16×16 centered; phases 2,3,4,5 = 32×32. BG bank, palIdx 7.
+        const phase = Math.floor(frame / 6) % 7;
+        const cenX = 8 * SCALE, cenY = 8 * SCALE; // offset to center a 16×16 on a 32×32 canvas
+        if (phase === 0 || phase === 6) {
+          // Small 16×16: T=$F1 → tl=$F0, tr=$F2, bl=$F1, br=$F3
+          drawCHRTile(ctx, 0xF0, 7, cenX,              cenY,              true);
+          drawCHRTile(ctx, 0xF2, 7, cenX + 8 * SCALE,  cenY,              true);
+          drawCHRTile(ctx, 0xF1, 7, cenX,              cenY + 8 * SCALE,  true);
+          drawCHRTile(ctx, 0xF3, 7, cenX + 8 * SCALE,  cenY + 8 * SCALE,  true);
+        } else if (phase === 1 || phase === 5) {
+          // Medium 16×16: T=$F5 → $F4/$F6/$F5/$F7
+          drawCHRTile(ctx, 0xF4, 7, cenX,              cenY,              true);
+          drawCHRTile(ctx, 0xF6, 7, cenX + 8 * SCALE,  cenY,              true);
+          drawCHRTile(ctx, 0xF5, 7, cenX,              cenY + 8 * SCALE,  true);
+          drawCHRTile(ctx, 0xF7, 7, cenX + 8 * SCALE,  cenY + 8 * SCALE,  true);
+        } else if (phase === 2 || phase === 4) {
+          // Large 16×16: T=$F9 → $F8/$FA/$F9/$FB, centered on 32×32
+          drawCHRTile(ctx, 0xF8, 7, cenX,              cenY,              true);
+          drawCHRTile(ctx, 0xFA, 7, cenX + 8 * SCALE,  cenY,              true);
+          drawCHRTile(ctx, 0xF9, 7, cenX,              cenY + 8 * SCALE,  true);
+          drawCHRTile(ctx, 0xFB, 7, cenX + 8 * SCALE,  cenY + 8 * SCALE,  true);
+        } else {
+          // 32×32 expand sprite (phase 3): intact eagle tiles $D0-$DF.
+          // ROM DrawExpandSprite ($DFFA): 4×4 CHR tile grid. Formula: base + col*2 + (row&1) + (row>>1)*8.
+          const base = 0xD0;
+          for (let row = 0; row < 4; row++)
+            for (let col = 0; col < 4; col++)
+              drawCHRTile(ctx, base + col*2 + (row&1) + (row>>1)*8, 7,
+                          col * 8 * SCALE, row * 8 * SCALE, true);
+        }
+
+      } else if (item.type === "shield") {
+        // ROM PlayerShieldDraw ($E330): alternates OAM tile $29/$2D on $0B&$02 (every 2 frames).
+        // $29/$2D are ODD → PT1 (BG bank, no +256). Palette SP2 = palIdx 6.
+        const f2 = Math.floor(frame / 16) % 2;
+        const tiles = f2 === 0
+          ? [0x28, 0x2A, 0x29, 0x2B]  // OAM tile $29 → top-left=$28, top-right=$2A, bl=$29, br=$2B
+          : [0x2C, 0x2E, 0x2D, 0x2F]; // OAM tile $2D → top-left=$2C, top-right=$2E, bl=$2D, br=$2F
+        tiles.forEach((t, i) => {
+          const ox = (i % 2) * 8 * SCALE, oy = Math.floor(i / 2) * 8 * SCALE;
+          drawCHRTile(ctx, t, 6, ox, oy, true);
+        });
+
       } else if (item.type === "bullet_exp") {
-        const T = 0xB1; // phase 0
-        drawCHRTile(item.ctx, T&0xFE, 7, 4*SCALE, 0, true);
-        drawCHRTile(item.ctx, (T&0xFE)+1, 7, 4*SCALE, 8*SCALE, true);
+        // ROM BulletExplode ($E1AF): single 8×16 OAM entry, tile $B1+dir*2 (ODD → PT1 = BG bank).
+        // Top = T&$FE, bottom = top+1. Centered horizontally on 16×16 canvas.
+        const T = 0xB1 + item.dir * 2;
+        const top = T & 0xFE;
+        const cx = 4 * SCALE; // center 8px tile in 16px canvas
+        drawCHRTile(ctx, top,     7, cx,  0,         true);
+        drawCHRTile(ctx, top + 1, 7, cx,  8 * SCALE, true);
       }
     });
 

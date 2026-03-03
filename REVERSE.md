@@ -1334,17 +1334,17 @@ All three tables are **16 entries × 2 bytes = 32 bytes** each (not 24). Y = (st
 | $E0–$EF     | $1C | [14] | $DF18 (StateIncFire) | Spawn: count up, call EnemySpawn at $EE |
 | $F0–$FF     | $1E | [15] | $DF09 (StateIncSlot) | Spawn: count up, jump to $E0 at $FE |
 
-**$E575 — MoveUpdateDispatch** (called from MoveUpdate $DF5A — sprite drawing):
+**$E575 — DrawDispatch** (called from DrawDispatchLoop $DF60 via DrawDispatch $DF6C — sprite draw):
 | State range | Y | Entry | Handler | Role |
 |-------------|---|-------|---------|------|
-| $00–$0F     | $00 | [0]  | $DC9E (Null) | Skip |
-| $10–$1F     | $02 | [1]  | $DFB1 (DrawSpawnSprite) | "Star" spawn sprite |
-| $20–$2F     | $04 | [2]  | $DFE7 (DrawSmallSprite) | Small spawn frame |
-| $30–$3F     | $06 | [3]  | $DFFA (DrawExpandSprite) | Expanding spawn |
-| $40–$4F     | $08 | [4]  | $DFFA (DrawExpandSprite) | Expanding spawn |
-| $50–$5F     | $0A | [5]  | $DF81 (DrawMovingSprite) | Death animation |
-| $60–$6F     | $0C | [6]  | $DF81 | Death animation |
-| $70–$7F     | $0E | [7]  | $DF81 | Death animation |
+| $00–$0F     | $00 | [0]  | $DC9E (Null) | Dead — skip |
+| $10–$1F     | $02 | [1]  | $DFB1 (DrawSpawnSprite) | Spawn entry OR kill end: tile $F1 → CHR $F0-$F3, 16×16, palIdx 7 |
+| $20–$2F     | $04 | [2]  | $DFE7 (DrawSmallSprite) | Spawn entry OR kill phase: tile $F9 → CHR $F8-$FB, 16×16, palIdx 7 |
+| $30–$3F     | $06 | [3]  | $DFFA (DrawExpandSprite) | Spawn entry OR kill phase: 32×32 damaged eagle $E0-$EF, palIdx 7 |
+| $40–$4F     | $08 | [4]  | $DFFA (DrawExpandSprite) | Spawn entry OR kill phase: 32×32 intact eagle $D0-$DF, palIdx 7 |
+| $50–$5F     | $0A | [5]  | $DF81 (DrawMovingSprite) | Kill start OR spawn entry: CalcSprTile→tile $F9 → CHR $F8-$FB |
+| $60–$6F     | $0C | [6]  | $DF81 | Kill start OR spawn entry: CalcSprTile→tile $F5 → CHR $F4-$F7 |
+| $70–$7F     | $0E | [7]  | $DF81 | Kill start: CalcSprTile→tile $F1 → CHR $F0-$F3 |
 | $80–$8F     | $10 | [8]  | $E06A (MoveTank) | Draw active tank sprite |
 | $90–$9F     | $12 | [9]  | $E06A | Draw active tank sprite |
 | $A0–$AF     | $14 | [10] | $E06A | Draw active tank sprite |
@@ -2418,7 +2418,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 
 ### Web port gameplay gaps (session 13 — remaining features)
 
-- [x] **Implement entity kill explosion animation**: ROM `EntityKillDispatch ($E073)` plays a 3-frame 16×16 explosion sprite at the killed entity's center before clearing the slot. The explosion uses OAM tiles `$84–$8F` (PT0 sprite bank, 3 phases × 4 tiles): `phase0=$84-$87`, `phase1=$88-$8B`, `phase2=$8C-$8F`, each lasting ~4 frames, all palette SP2 (palIdx 6). **Fixed (session 14)**: added `deathTimer: 0` to `makeEntity()`; `killEntity()` sets `e.deathTimer=12` alongside `e.alive=false`; `tickTimers()` decrements `deathTimer` for dead entities; `spawnEnemy()` guards slot with `e.alive || e.deathTimer > 0`; `drawEntity()` checks `!e.alive && e.deathTimer>0` first — computes `phase=floor((12-deathTimer)/4)` (0/1/2), draws 2×2 CHR tiles at `256+0x84+phase*4` (palIdx 6, transparent) at entity center; fallback draws orange rect expanding from r=4 to r=8.
+- [x] **Implement entity kill explosion animation**: `killEntity()` sets `e.alive=false` + `e.deathTimer=24`. `DrawDispatchLoop ($DF60)` runs each frame; `DrawDispatch ($DF6C)` indexes `$E575` via `(state>>3)&$FE` to select handler. Kill animation: state $73→$00 over ~24 frames through 7 phases — all BG bank (no +256), palIdx 7 (SP3): `t≥22` ($7x): DrawMovingSprite→CalcSprTile→tile $F1→CHR $F0-$F3, 16×16; `t≥19` ($6x): tile $F5→CHR $F4-$F7, 16×16; `t≥16` ($5x): tile $F9→CHR $F8-$FB, 16×16; `t≥13` ($4x): DrawExpandSprite→32×32 intact-eagle tiles $D0-$DF; `t≥10` ($3x): 32×32 damaged-eagle tiles $E0-$EF; `t≥7` ($2x): DrawSmallSprite→tile $F9→CHR $F8-$FB, 16×16; `t≥1` ($1x): DrawSpawnSprite→tile $F1→CHR $F0-$F3, 16×16. **Fixed (session 14+revision)**: `deathTimer` 12→24; tiles corrected from PT0 `$84-$8F`/palIdx 6 (SP2) to BG-bank `$D0-$FF`/palIdx 7 (SP3); expand sprite draws 4×4 tile grid at `e.x-16+col*8, e.y-16+row*8`; catalog.html updated to 32×32 canvas, tiles $D0-$EF.
 - [x] **Implement stage-clear score tally screen**: ROM `StageClearTallyScreen ($CAF1)` → `TallyScreenInit ($CD04)` shows 4 rows (one per enemy type), drains per-type kill count one-at-a-time with score animation, then totals. **Fixed (session 15)**: added `killCounts[4]` global (reset in `initLevel()`, incremented in `killEntity()` enemy branch); added `tallyState = {countsLeft, row, frameTimer, done}` initialized in `checkStageClear()`; replaced 'clear' phase update to drain row-by-row at 4 frames/kill with 12-frame inter-row pause and 180-frame hold when done; replaced `drawStageClear()` with full tally panel (192×100 at x=32,y=68): yellow "STAGE CLEAR!" title, 4 rows each with 16×16 CHR enemy icon (spriteBase=0x80+type×0x20, palIdx 6), type label, animated `count × pts = score`, and TOTAL line after all done.
 - [x] **Add lives grant check on score thresholds**: ROM `LivesGrantCheck ($CF44)` at `$EB60` (called from PowerUpCollision and ScoreAdd paths) — award 1 extra life when score passes multiples of 20000. Currently only the 1-Up power-up grants lives. Add threshold check in score-update path. **Fixed**: added `p1NextLifeScore` (init 20000 at boot); after `p1Score += pts` in `killEntity()`, `while (p1Score >= p1NextLifeScore) { p1Lives++; p1NextLifeScore += 20000; }`.
 - [x] **Implement ICE tile momentum/sliding**: ROM `MoveGridSnap ($DD30)` on ice tile (`$0400` cache tile $1B or $1C): entity continues in current direction even without input, and cannot change direction until it leaves ice. **Fixed**: in `moveEntities()`, detect ice under entity center via `grid[irow][icol] === T.ICE` (center→grid: `icol=floor((e.x-FX)/META)`, `irow=floor((e.y-FY)/META)`); for player on ice, skip the `d===-1` early-exit and direction-change block so tank keeps sliding in `e.dir`; for enemies on ice, suppress AI direction-change (`blocked || aiTimer<=0` check wrapped in `!onIce`).
@@ -2427,7 +2427,7 @@ Compute $84 (eagle Y-position limit) from player count + $85 (stage count)
 - [x] **Calibrate enemy speed tiers against ROM SpeedTable**: ROM `SpeedTable ($E6A9)` is spawn counts, NOT speed params (already documented). Movement rates are correct: type 1 ($A0 fast) always processes, others alternate = 0.5 px/frame via `(i ^ frameCount) & 1`. Fire rate fix: ROM `EnemyFireCheck ($E216)` uses per-frame `RNG & $1F == 0` (1/32 chance per enemy per frame, avg 32 frames), NOT a countdown timer. **Fixed**: replaced `fireTimer` countdown (avg 75 frames, 2.3× too slow) in `handleEnemyFire()` with direct `(Math.random() * 32 | 0) === 0` check; removed timer init/reset; removed `fireTimer` field usage.
 - [x] **Fix stale comment on game.js line 1467**: Comment says `chr_pt0.png` but `initCHR()` now loads `chr_all.png`. **Fixed**: updated line 20 of game.js from `chr_pt0.png` to `chr_all.png`.
 - [x] **Investigate remaining animation discrepancies**: Investigated all four reported animations. `render_frame.py --stage 1` generates correct BG reference PNG. Full audit results:
-  - **Tank spawn animation**: CORRECT — SPAWN_SEQ `[$AD×2,$A9×2,$A5×2,$A1×3,$A5×2,$A9×2,$AD×2]` (large→small→large over 60 frames), palIdx=7 (SP3), `4-drawCHRTile` 16×16 layout all verified correct. No fix needed.
+  - **Tank spawn animation**: **FIXED (post-session 20 revision)** — SPAWN_SEQ `[$AD×2,$A9×2,$A5×2,$A1×3,$A5×2,$A9×2,$AD×2]` is correct (AND #$FC in $E0BF culls to 4 levels). BUT tile bank was WRONG: code used `256+(T&$FE)` (sprite bank) when spawn tiles $A0-$AF are PT1 (BG bank, no +256). Fixed to `tl=T&$FE, tr=(T+2)&$FE`. Duration also halved from 60→30 frames (ROM: 15 states×~2 frames; each seqIdx divisor 4→2).
   - **Tank tread animation**: CORRECT — `animBit` (0 or 4) XOR'd each 8px step in `moveEntities()`; `tileBase = entityBase + e.dir*8 + e.animBit` matches ROM `$E0A4–$E0AB` formula exactly. No fix needed.
   - **Eagle rendering**: CORRECT — `intactTiles=[0xD1,0xD3,0xD5,0xD7,0xD9,0xDB,0xDD,0xDF]`, `damagedTiles=[0xE1..0xEF odd]`, palIdx=7 (SP3), explosion phases via `eagleAnimPhase()` all correct. No fix needed.
   - **Bullet explosion**: BUG FOUND AND FIXED — ROM `BulletExplode ($E1AF)` uses a single 8×16 OAM entry (PPUCTRL bit5=1); tile byte `$B1+dir×2` (odd) → top tile `T&$FE` ($B0/$B2/$B4/$B6), bottom tile `T+1` ($B1/$B3/$B5/$B7). `check_explosion_tiles.py` confirms ALL eight tiles $B0–$B7 contain non-zero pixel data. game.js was only drawing the top half (8×8); bottom 8 rows of explosion were invisible. **Fixed (game.js:1342–1348)**: added `drawCHRTile(T+1, 6, b.ex, b.ey+8, true)` for bottom half; fallback rect height changed 8→16.

@@ -27,6 +27,8 @@
 1,C29F,GameUpdate2
 1,E2EF,EntityUpdate
 1,DF5A,MoveUpdate
+1,DF60,DrawDispatchLoop
+1,DF6C,DrawDispatch
 1,E18C,CollisionUpdate
 # EBF6 = SoundResetInit (labeled below, not GameOverHandler)
 1,D6D3,PPUQueueTiles
