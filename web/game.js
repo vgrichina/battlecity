@@ -22,8 +22,6 @@ ctx.imageSmoothingEnabled = false;
 // BG tile N: col=N%32 row=N/32   Sprite tile N: abs=N+256
 const CHR_CELL = 9, CHR_BORDER = 1;
 
-// ROM $D475 PaletteColorTable: 4 variants × 64 NES color indices
-const PALETTE_COLOR_TABLE = [9, 31, 45, 53, 12, 11, 43, 18, 14, 5, 51, 58, 37, 26, 26, 26, 29, 57, 23, 44, 39, 7, 2, 55, 62, 49, 58, 38, 4, 40, 40, 40, 28, 16, 3, 1, 30, 61, 46, 10, 13, 19, 35, 25, 36, 47, 47, 47, 8, 33, 21, 34, 42, 0, 17, 54, 60, 52, 63, 25, 20, 48, 48, 48, 63, 53, 39, 9, 32, 61, 18, 58, 29, 43, 62, 15, 52, 0, 0, 0, 19, 36, 44, 9, 40, 54, 8, 51, 2, 55, 15, 20, 6, 30, 30, 30, 12, 17, 23, 11, 25, 5, 34, 1, 46, 57, 50, 27, 57, 45, 45, 45, 47, 7, 28, 35, 11, 60, 33, 46, 10, 3, 4, 27, 14, 56, 56, 56, 24, 8, 27, 25, 41, 18, 29, 52, 11, 7, 56, 4, 63, 9, 9, 9, 3, 44, 19, 60, 0, 12, 28, 22, 21, 20, 4, 23, 17, 26, 26, 26, 39, 42, 16, 32, 43, 1, 38, 37, 54, 40, 53, 61, 48, 46, 46, 46, 39, 6, 58, 51, 30, 31, 10, 35, 59, 50, 2, 61, 15, 57, 57, 57, 38, 6, 35, 1, 28, 32, 22, 34, 50, 43, 33, 27, 40, 4, 4, 4, 8, 42, 18, 36, 37, 39, 51, 7, 0, 14, 14, 25, 2, 20, 20, 20, 49, 31, 26, 58, 47, 16, 23, 57, 3, 60, 10, 53, 62, 29, 29, 29, 54, 59, 61, 48, 19, 5, 12, 13, 45, 15, 30, 53, 55, 56, 56, 56];
 
 const NES_MASTER_HEX = ['#545454', '#001e74', '#081090', '#300088', '#440064', '#5c0030', '#540400', '#3c1800', '#202a00', '#083a00', '#004000', '#003c00', '#00323c', '#000000', '#000000', '#000000', '#989698', '#084cc4', '#3032ec', '#5c1ee4', '#8814b0', '#a01464', '#982220', '#783c00', '#545a00', '#287200', '#087c00', '#007628', '#006678', '#000000', '#000000', '#000000', '#eceeec', '#4c9aec', '#787cec', '#b062ec', '#e454ec', '#ec58b4', '#ec6a64', '#d48820', '#a0aa00', '#74c400', '#4cd020', '#38cc6c', '#38b4cc', '#3c3c3c', '#000000', '#000000', '#eceeec', '#a8ccec', '#bcbcec', '#d4b2ec', '#ecaeec', '#ecaed4', '#ecb4b0', '#e4c490', '#ccd278', '#b4de78', '#a8e290', '#98e2b4', '#a0d6e4', '#a0a2a0', '#000000', '#000000'];
 
@@ -38,8 +36,7 @@ const ROM_PALETTE_DATA = [
   [0x0F, 0x04, 0x16, 0x20],  // SP3 spcl
 ];
 
-// Active palette (hex strings), updated via updateActivePalette()
-let dipSwitch = 0;  // ROM $4E (derived from $4017 bit 6/7)
+// Active palette (hex strings), built once at startup
 const NES_PAL = [
   ['#000000','#000000','#000000','#000000'],
   ['#000000','#000000','#000000','#000000'],
@@ -57,17 +54,12 @@ function grayToIdx(r) { return r < 0x2B ? 0 : r < 0x7F ? 1 : r < 0xD5 ? 2 : 3; }
 let chrOff = null;                // offscreen canvas 2d context for active CHR sheet
 const tileCache = new Map();      // cached offscreen canvases keyed by "abs_pal_transp"
 
-function updateActivePalette() {
-  for (let si = 0; si < 8; si++) {
-    for (let i = 0; i < 4; i++) {
-      const baseColor = ROM_PALETTE_DATA[si][i];
-      // Standard NES mapping (ignoring VS. PPU remap table for now as it needs hardware-specific RGB palettes)
-      NES_PAL[si][i] = NES_MASTER_HEX[baseColor & 0x3F];
-    }
-  }
-  tileCache.clear();
-}
-updateActivePalette(); // initial sync
+// Build NES_PAL once: direct 2C02 lookup, no VS. System remap
+(function buildPalette() {
+  for (let si = 0; si < 8; si++)
+    for (let i = 0; i < 4; i++)
+      NES_PAL[si][i] = NES_MASTER_HEX[ROM_PALETTE_DATA[si][i] & 0x3F];
+})();
 
 // Mapper 99 per-stage CHR bank select via StageFlagsTable ($80B6).
 // Bit 2: 1 -> banks 0+1 (default, index 0), 0 -> banks 2+3 (alt, index 1).
@@ -159,12 +151,19 @@ function drawMetatile(chrTiles, palIdx, px, py) {
 // Draw 2×2 sprite (16×16px): sprTiles = [TL, TR, BL, BR] tile indices (0–255)
 // pt1=false (default) → sprite bank: PNG index = 256+T
 // pt1=true  → BG/PT1 bank (power-ups, eagle, spawn, bullet-expl): PNG index = T directly
+// Draws a 16×16 metasprite made of two 8×16 OAM entries
+// sprTiles contains the tile byte assigned to each 8×16 entry: [left_tile, right_tile]
+// In NES 8×16 mode: Top = T & 0xFE, Bottom = T | 0x01
 function drawSprite16(sprTiles, palIdx, px, py, pt1 = false) {
-  const ti = pt1 ? (t => t) : (t => 256 + t);
-  drawCHRTile(ti(sprTiles[0]), palIdx, px,   py,   true);
-  drawCHRTile(ti(sprTiles[1]), palIdx, px+8, py,   true);
-  drawCHRTile(ti(sprTiles[2]), palIdx, px,   py+8, true);
-  drawCHRTile(ti(sprTiles[3]), palIdx, px+8, py+8, true);
+  const bank = pt1 ? 0 : 256;
+  const draw8x16 = (t, ox) => {
+    const top = bank + (t & 0xFE);
+    const bot = bank + (t | 0x01);
+    drawCHRTile(top, palIdx, px + ox, py,     true);
+    drawCHRTile(bot, palIdx, px + ox, py + 8, true);
+  };
+  draw8x16(sprTiles[0], 0); // left entry
+  draw8x16(sprTiles[1], 8); // right entry
 }
 
 // Draw a single CHR tile magnified 4× (8×8 → 32×32 NES pixels) for big text
@@ -646,7 +645,6 @@ const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyM') toggleSound();  // M = mute/unmute
-  if (e.code === 'KeyP') { dipSwitch = (dipSwitch + 1) & 3; updateActivePalette(); } // P = cycle palette variant
   if (e.code === 'KeyC') { credits = Math.min(99, credits + 1); playSound(SND.COIN); } // C = insert coin
   if (e.code === 'KeyE' && gamePhase === 'title') { 
     gamePhase = 'edit'; 
@@ -1867,18 +1865,11 @@ function drawEntity(e) {
     }
   }
 
-  // Shield CHR overlay  ROM $E330 DrawPlayerShield: tiles $28-$2B (even) / $2C-$2F (odd), SP2=palIdx6
-  // Phase based on frameCount bit1 — alternates every 2 frames; BG bank (tileAbs 0-255)
+  // Shield CHR overlay  ROM $E330 DrawPlayerShield: tiles $28-$2F (BG bank), SP2=palIdx6
+  // drawSprite16 uses [left_tile, right_tile] bytes from OAM entries
   if (e.shieldTimer > 0 && chrOff) {
-    const phase = (frameCount >> 1) & 1;
-    const tl = phase ? 0x2C : 0x28;
-    const tr = phase ? 0x2E : 0x2A;
-    const bl = phase ? 0x2D : 0x29;
-    const br = phase ? 0x2F : 0x2B;
-    drawCHRTile(tl, 6, e.x - 8, e.y - 8, true);  // top-left
-    drawCHRTile(tr, 6, e.x,     e.y - 8, true);  // top-right
-    drawCHRTile(bl, 6, e.x - 8, e.y,     true);  // bottom-left
-    drawCHRTile(br, 6, e.x,     e.y,     true);  // bottom-right
+    const base = (frameCount >> 1) & 1 ? 0x2D : 0x29; // ROM tile bytes $2D/$29 (ODD)
+    drawSprite16([base, base + 2], 6, e.x - 8, e.y - 8, true);
   }
 }
 
@@ -1919,16 +1910,17 @@ function drawPowerUp() {
   // 8×16 odd-byte $3B → PT1 tiles: TL=$3A, BL=$3B (left col), TR=$3C, BR=$3D (right col)
   if (puFlashTimer > 0 && puFlashPos) {
     // ROM tile $3B is ODD → BG bank (PT0)
-    const base = 0x3A;
-    drawSprite16([base, base + 2, base + 1, base + 3], 6, puFlashPos.x - 8, puFlashPos.y - 8, true);
+    // drawSprite16 uses [left_tile, right_tile] assigned to OAM entries
+    drawSprite16([0x3B, 0x3D], 6, puFlashPos.x - 8, puFlashPos.y - 8, true);
     return;
   }
   if (!powerUp) return;
   if ((frameCount >> 3) & 1) return;  // blink  ROM $0B&$08 gate
   const x = powerUp.x, y = powerUp.y;
-  // ROM: $53 = type*4 + $81 (ODD) → PT1/BG bank; T&0xFE = $80+type*4
-  const base = 0x80 + powerUp.type * 4;
-  drawSprite16([base, base + 2, base + 1, base + 3], 6, x - 8, y - 8, true);
+  // ROM: $53 = type*4 + $81 (ODD) → PT1/BG bank;
+  // drawSprite16 uses [left_tile, right_tile]
+  const base = 0x81 + powerUp.type * 4;
+  drawSprite16([base, base + 2], 6, x - 8, y - 8, true);
 }
 
 // ROM $DACC-$DAD4 DrawEntityTile: if sprite on BG tile $22 (tree), ORs OAM attr with $6E=$20
