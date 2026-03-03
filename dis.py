@@ -118,7 +118,8 @@ class NESRom:
 # ---------------------------------------------------------------------------
 
 def load_labels(path):
-    """Return dict: (bank, addr_int) -> name.  bank=None means any bank."""
+    """Return dict: (bank, addr_int) -> (name, dtype).  bank=None means any bank.
+    dtype defaults to 'code' when the 4th column is absent or empty."""
     labels = {}
     if not os.path.exists(path):
         return labels
@@ -128,11 +129,14 @@ def load_labels(path):
                 continue
             if len(row) < 3:
                 continue
-            bank_s, addr_s, name = row[0].strip(), row[1].strip(), row[2].strip()
+            bank_s = row[0].strip()
+            addr_s = row[1].strip()
+            name   = row[2].strip()
+            dtype  = row[3].strip() if len(row) >= 4 and row[3].strip() else 'code'
             try:
                 bank = int(bank_s, 16) if bank_s not in ('', '*') else None
                 addr = int(addr_s, 16)
-                labels[(bank, addr)] = name
+                labels[(bank, addr)] = (name, dtype)
             except ValueError:
                 pass
     return labels
@@ -158,14 +162,104 @@ def load_comments(path):
     return comments
 
 def resolve_label(labels, bank, addr):
-    """Look up label for (bank, addr), falling back to (None, addr)."""
+    """Look up (name, dtype) for (bank, addr), falling back to (None, addr). Returns (name, dtype) or None."""
     return labels.get((bank, addr)) or labels.get((None, addr))
+
+def resolve_name(labels, bank, addr):
+    """Return just the label name string, or None."""
+    entry = resolve_label(labels, bank, addr)
+    return entry[0] if entry else None
 
 def make_label_resolver(labels, bank):
     """Return a function addr->name suitable for format_operand."""
     def resolver(addr):
-        return resolve_label(labels, bank, addr)
+        return resolve_name(labels, bank, addr)
     return resolver
+
+# ---------------------------------------------------------------------------
+# Tile character decoder (for data/string dumps)
+# ---------------------------------------------------------------------------
+
+def decode_tile_char(b):
+    """Map a Battle City BG tile index to a printable character for display."""
+    if b == 0xFF: return '↵'
+    if b in (0x20, 0x6B): return ' '   # space / blank spacer tile
+    if 0x30 <= b <= 0x39: return chr(b) # digits 0-9
+    if 0x41 <= b <= 0x5A: return chr(b) # letters A-Z
+    if b == 0x5B: return '['
+    if b == 0x5D: return ']'
+    if b == 0x5E: return '①'           # P1 icon
+    if b == 0x5F: return '②'           # P2 icon
+    return f'\\{b:02X}'
+
+# ---------------------------------------------------------------------------
+# Data dump modes
+# ---------------------------------------------------------------------------
+
+def dump_data(rom, cpu_start, bank, n_lines, dtype, labels, comments):
+    """
+    Yield formatted dump lines for a data region.
+    n_lines controls how many rows/entries to output.
+
+    Formats by dtype:
+      data/string  — one FF-terminated tile string per line, decoded
+      data/ptr     — one 2-byte LE pointer per line, label-resolved
+      data/table   — 8 bytes per row, hex + decimal annotation
+      data/seq     — 8 bytes per row, raw hex (music/sound sequences)
+      data (etc.)  — 8 bytes per row, raw hex
+    """
+    addr = cpu_start
+
+    if dtype == 'data/string':
+        for _ in range(n_lines):
+            file_off = rom.cpu_to_file_offset(addr, bank)
+            if file_off is None or file_off >= len(rom.prg):
+                break
+            row_addr = addr
+            raw = []
+            while file_off < len(rom.prg):
+                b = rom.prg[file_off]
+                raw.append(b)
+                file_off += 1
+                addr += 1
+                if b == 0xFF:
+                    break
+            hex_part  = ' '.join(f'{b:02X}' for b in raw)
+            char_part = ''.join(decode_tile_char(b) for b in raw)
+            cmt = comments.get((bank, row_addr)) or comments.get((None, row_addr))
+            cmt_str = f'  ; {cmt}' if cmt else ''
+            yield f'  ${row_addr:04X}  {hex_part:<36}  "{char_part}"{cmt_str}'
+
+    elif dtype == 'data/ptr':
+        for _ in range(n_lines):
+            file_off = rom.cpu_to_file_offset(addr, bank)
+            if file_off is None or file_off + 1 >= len(rom.prg):
+                break
+            lo  = rom.prg[file_off]
+            hi  = rom.prg[file_off + 1]
+            ptr = (hi << 8) | lo
+            tgt = resolve_name(labels, bank, ptr) or f'${ptr:04X}'
+            cmt = comments.get((bank, addr)) or comments.get((None, addr))
+            cmt_str = f'  ; {cmt}' if cmt else ''
+            yield f'  ${addr:04X}  {lo:02X} {hi:02X}  .ptr {tgt}{cmt_str}'
+            addr += 2
+
+    else:
+        # Generic hex dump: 8 bytes per row
+        # data/table also shows decimal value for single-byte entries
+        cols = 8
+        for _ in range(n_lines):
+            file_off = rom.cpu_to_file_offset(addr, bank)
+            if file_off is None or file_off >= len(rom.prg):
+                break
+            row = rom.prg[file_off:file_off + cols]
+            if not row:
+                break
+            hex_part = ' '.join(f'{b:02X}' for b in row)
+            cmt = comments.get((bank, addr)) or comments.get((None, addr))
+            cmt_str = f'  ; {cmt}' if cmt else ''
+            yield f'  ${addr:04X}  {hex_part:<32}{cmt_str}'
+            addr += len(row)
 
 # ---------------------------------------------------------------------------
 # Disassembler core
@@ -173,13 +267,20 @@ def make_label_resolver(labels, bank):
 
 def disassemble(rom, cpu_start, bank, n_lines, labels, comments):
     """
-    Disassemble `n_lines` instructions starting at CPU address `cpu_start`
-    in the given PRG `bank`.
-
-    Yields formatted strings.
+    Disassemble `n_lines` instructions starting at CPU address `cpu_start`.
+    If the start address carries a non-code data label, delegates to dump_data()
+    with the appropriate format instead of disassembling.
     """
-    addr   = cpu_start
-    label_res = {a: n for (b, a), n in labels.items()
+    # Check if start address is a data label — if so, dump instead of disassemble
+    start_lbl = resolve_label(labels, bank, cpu_start)
+    if start_lbl and start_lbl[1] != 'code':
+        name, dtype = start_lbl
+        yield f'\n{name}:  ; [{dtype}]'
+        yield from dump_data(rom, cpu_start, bank, n_lines, dtype, labels, comments)
+        return
+
+    addr      = cpu_start
+    label_res = {a: entry[0] for (b, a), entry in labels.items()
                  if b is None or b == bank}
 
     for _ in range(n_lines):
@@ -188,28 +289,25 @@ def disassemble(rom, cpu_start, bank, n_lines, labels, comments):
             yield f"  ${addr:04X}  ; <out of PRG range>"
             break
 
-        # Label line
+        # Label line (mid-stream: show type annotation for data labels)
         lbl = resolve_label(labels, bank, addr)
         if lbl:
-            yield f"\n{lbl}:"
+            name, dtype = lbl
+            type_ann = f'  ; [{dtype}]' if dtype != 'code' else ''
+            yield f"\n{name}:{type_ann}"
 
-        # Comment line
+        # Comment
         cmt = comments.get((bank, addr)) or comments.get((None, addr))
 
-        # Decode
+        # Decode instruction
         mnemonic, mode, length, cycles, operand = decode(rom.prg, file_off)
 
-        # Bytes field
         byte_str = ' '.join(f'{b:02X}' for b in rom.prg[file_off:file_off+length])
-
-        # Operand string
         next_addr = addr + length
-        op_str = format_operand(mode, operand, next_addr, label_res)
+        op_str    = format_operand(mode, operand, next_addr, label_res)
 
-        # Format line
         cmt_str = f'  ; {cmt}' if cmt else ''
-        line = f'  ${addr:04X}  {byte_str:<8}  {mnemonic} {op_str}{cmt_str}'
-        yield line
+        yield f'  ${addr:04X}  {byte_str:<8}  {mnemonic} {op_str}{cmt_str}'
 
         addr += length
         if addr > 0xFFFF:

@@ -1,6 +1,7 @@
-# bank,addr,name
+# bank,addr,name,type
 # bank: hex PRG bank number (0-based), or * for any bank
 # addr: hex CPU address (no prefix)
+# type: code (default), data, data/table, data/string, data/ptr, data/seq
 1,C070,Reset
 1,D300,NMI
 1,D3BF,Init
@@ -15,7 +16,7 @@
 1,D3AC,ClearSpriteBuf
 1,D352,NMI_Sub
 1,D41E,InitPalette
-1,D44A,PaletteData
+1,D44A,PaletteData,data
 1,D46A,PaletteApplyDIP
 1,D5AF,SetGamePalette
 1,D5D3,SetTitlePalette
@@ -68,7 +69,7 @@
 1,DFE7,DrawSmallSprite
 1,DFFA,DrawExpandSprite
 1,E06A,MoveTank
-1,E0B7,EnemySpeedTable
+1,E0B7,EnemySpeedTable,data/table
 1,E0BF,DrawShootSprite
 1,E0E2,BulletUpdate
 1,E0F0,BulletDispatch
@@ -90,18 +91,18 @@
 1,E4DD,SetStateLo
 1,E4E8,SetSpeedPtr
 1,E50E,DecodeDirection
-1,E529,DirDeltaY
-1,E52D,DirDeltaX
-1,E531,EnemySpawnX
-1,E534,EnemySpawnY
-1,E537,PlayerSpawnX
-1,E539,PlayerSpawnY
-1,E53B,InitState
+1,E529,DirDeltaY,data/table
+1,E52D,DirDeltaX,data/table
+1,E531,EnemySpawnX,data/table
+1,E534,EnemySpawnY,data/table
+1,E537,PlayerSpawnX,data/table
+1,E539,PlayerSpawnY,data/table
+1,E53B,InitState,data/table
+1,E543,DirToStateTable,data/table
 1,E555,MovementDispatch
 1,E575,MoveUpdateDispatch
-1,E595,BulletDispatchTable
-1,E543,DirToStateTable
-1,E6A9,SpeedTable
+1,E595,BulletDispatchTable,data/table
+1,E6A9,SpeedTable,data/table
 1,E7A9,BulletMoveCollision
 1,E8B1,EnemyBulletPlayerHit
 1,EAB5,BulletVsBulletCancel
@@ -112,9 +113,9 @@
 1,DB02,DrawTank2x2
 1,DB0A,DrawTank
 1,D726,PPUAddrFromXY
-0,8000,LevelCodePtrs
-0,801A,LevelFormationPtrs
-0,8034,Stage0FormationData
+0,8000,LevelCodePtrs,data/ptr
+0,801A,LevelFormationPtrs,data/ptr
+0,8034,Stage0FormationData,data
 0,874D,Level0Init
 0,8A6E,Level1Init
 0,896A,Level2Init
@@ -128,8 +129,8 @@
 1,C7BD,DrawAllHUDKillIcons
 1,C7CD,DrawGameOverBanner
 1,C7F8,GameOverBannerAnim
-1,EBEE,BulletDeltaX
-1,EBF2,BulletDeltaY
+1,EBEE,BulletDeltaX,data/table
+1,EBF2,BulletDeltaY,data/table
 # Session 3 additions
 1,DDFC,RandomDirChange
 1,DE22,ClampXMove
@@ -157,48 +158,48 @@
 0,91E8,Level3Init
 0,8B48,Level4Init
 0,874D,Level0Init
-1,E5A9,EnemyTypeTable
-0,803C,Stage3FormationTable
-0,804C,Stage4FormationTable
-0,805E,Stage5FormationTable
-0,8066,Stage7FormationTable
-0,806C,Stage2FormationTable
-0,8078,Stage1FormationTable
-0,807C,Stage8FormationTable
-0,8084,Stage6FormationTable
-0,808A,Stage9FormationTable
-0,8096,Stage10FormationTable
-0,80A0,Stage11FormationTable
-0,80A4,Stage12FormationTable
+1,E5A9,EnemyTypeTable,data/table
+0,803C,Stage3FormationTable,data/table
+0,804C,Stage4FormationTable,data/table
+0,805E,Stage5FormationTable,data/table
+0,8066,Stage7FormationTable,data/table
+0,806C,Stage2FormationTable,data/table
+0,8078,Stage1FormationTable,data/table
+0,807C,Stage8FormationTable,data/table
+0,8084,Stage6FormationTable,data/table
+0,808A,Stage9FormationTable,data/table
+0,8096,Stage10FormationTable,data/table
+0,80A0,Stage11FormationTable,data/table
+0,80A4,Stage12FormationTable,data/table
 # Session 8 additions
 0,8B9F,EntitySlotFill3
 0,8C00,EntitySlotFill4
 0,8DC4,EntitySpriteSetup
-0,8C52,StageSelectLUT
-0,82F4,SlotSprPtrLo
-0,82FA,SlotSprOffset
-0,8300,SlotSprPtrHi
-0,8306,SlotEntityType
-0,830C,SlotOAMBase
-0,8312,WaveCtrlInit
-0,8348,SlotDataPtrALo
-0,834E,SlotDataPtrAHi
-0,8354,SlotDataPtrBLo
-0,835A,SlotDataPtrBHi
-0,8360,SlotDataBlocksA
-0,8384,SlotDataBlocksB
-0,83AD,StageNumLUT
-0,83A2,SpeedDeltaTable
+0,8C52,StageSelectLUT,data/table
+0,82F4,SlotSprPtrLo,data/table
+0,82FA,SlotSprOffset,data/table
+0,8300,SlotSprPtrHi,data/table
+0,8306,SlotEntityType,data/table
+0,830C,SlotOAMBase,data/table
+0,8312,WaveCtrlInit,data/table
+0,8348,SlotDataPtrALo,data/table
+0,834E,SlotDataPtrAHi,data/table
+0,8354,SlotDataPtrBLo,data/table
+0,835A,SlotDataPtrBHi,data/table
+0,8360,SlotDataBlocksA,data/table
+0,8384,SlotDataBlocksB,data/table
+0,83AD,StageNumLUT,data/table
+0,83A2,SpeedDeltaTable,data/table
 0,8ADD,StageTransitionHelper
 0,8AEF,StageAdvance
 0,B1E4,EntityAnimLoop
-0,B20A,EntitySpriteLayout
+0,B20A,EntitySpriteLayout,data/table
 0,B4D9,EntityAnimContinue
 0,988C,SpriteFillHelper
 0,9811,SpriteTileDraw
 # Session 9 additions
 1,E386,EagleStateUpdate
-1,E3BA,EagleHandlerTable
+1,E3BA,EagleHandlerTable,data/table
 1,E3C6,EagleExplosion1
 1,E3CB,EagleExplosion2
 1,E3D0,EagleExplosion3
@@ -216,8 +217,8 @@
 0,96F1,FormationDataLoad
 # Session 10 additions
 1,C625,ClearKillTallies
-1,D2C6,HUDTankWiggleX
-1,D2CA,HUDTankWiggleY
+1,D2C6,HUDTankWiggleX,data/table
+1,D2CA,HUDTankWiggleY,data/table
 # Session 11 additions
 1,D071,StageStartDraw
 1,C25A,NewGameInit
@@ -225,17 +226,17 @@
 1,C8A7,TwoPlayerStart
 1,C8AC,OnePlayerStart
 1,D733,PixelToTile
-1,DB69,TileAttrTable
-1,DB79,TileCHRTable
+1,DB69,TileAttrTable,data/table
+1,DB79,TileCHRTable,data/table
 # Session 10: level tile loader, sound engine, title screen
 1,F200,LevelTileLoad
-1,F27D,LevelMapData
+1,F27D,LevelMapData,data
 1,EE54,SoundSeqPtrLoad
 1,EE63,SoundSeqReadByte
-1,EEA3,SoundSeqPtrTable
+1,EEA3,SoundSeqPtrTable,data/ptr
 1,EC80,SoundAPUWrite
-1,D1A7,TitleStringA
-1,D1BA,TitleStringB
+1,D1A7,TitleStringA,data/string
+1,D1BA,TitleStringB,data/string
 1,D6FD,PPUQueueTilesB
 # Session 12: APU engine, level tile loader, attract mode
 1,EBF6,SoundResetInit
@@ -258,26 +259,26 @@
 0,99D2,ControllerDoubleRead
 1,C912,BrickWallInit
 1,C9BB,SteelWallFortify
-1,D214,StrGAME
-1,D219,StrOVER
-1,D22D,EagleWallBrickData
-1,D249,EagleWallSteelData
-1,D291,StrPeaceBeWithYou
-1,D2A4,StrNowLongWar
-1,D2B1,StrComesTo
-1,D2BA,StrAnEnd
-1,D145,VictorySpritesData
-1,D14F,StrBATTLE
-1,D156,StrCITY
-1,D15B,SprP1Icon
-1,D15E,SprP2Icon
-1,D167,SprHiLabel
-1,D16B,StrHISCORE
-1,D17C,SprP1PlayerLabel
-1,D185,SprP2PlayerLabel
-1,D1E7,StrCopyright
-1,D1FE,StrAllRightsReserved
-1,D2C2,KillScoreTable
+1,D214,StrGAME,data/string
+1,D219,StrOVER,data/string
+1,D22D,EagleWallBrickData,data
+1,D249,EagleWallSteelData,data
+1,D291,StrPeaceBeWithYou,data/string
+1,D2A4,StrNowLongWar,data/string
+1,D2B1,StrComesTo,data/string
+1,D2BA,StrAnEnd,data/string
+1,D145,VictorySpritesData,data
+1,D14F,StrBATTLE,data/string
+1,D156,StrCITY,data/string
+1,D15B,SprP1Icon,data/string
+1,D15E,SprP2Icon,data/string
+1,D167,SprHiLabel,data/string
+1,D16B,StrHISCORE,data/string
+1,D17C,SprP1PlayerLabel,data/string
+1,D185,SprP2PlayerLabel,data/string
+1,D1E7,StrCopyright,data/string
+1,D1FE,StrAllRightsReserved,data/string
+1,D2C2,KillScoreTable,data/table
 # Stage-clear score tally screen
 1,CAF1,StageClearTallyScreen
 1,CD04,TallyScreenInit
@@ -289,12 +290,12 @@
 1,CCF3,TallyFinalHold
 1,CF3C,TallyDrawSprite16
 1,D137,DelayXFrames
-1,D271,Str_ArrowLeft
-1,D273,Str_ArrowRight
-1,D275,Str_TOTAL
-1,D27B,Str_Separator7
-1,D283,Str_BONUS
-1,D21E,Str_PTS
+1,D271,Str_ArrowLeft,data/string
+1,D273,Str_ArrowRight,data/string
+1,D275,Str_TOTAL,data/string
+1,D27B,Str_Separator7,data/string
+1,D283,Str_BONUS,data/string
+1,D21E,Str_PTS,data/string
 1,DA62,SetScoreWeight
 1,DA31,ScoreAdd
 # Session 13: game-over sequence
@@ -307,7 +308,7 @@
 0,9A3F,ReadControllerBits
 0,99D2,ControllerDoubleRead
 # Session 14: palette DIP remapping
-1,D475,PaletteColorTable
+1,D475,PaletteColorTable,data/table
 1,D575,WaitVBlank
 # Session 15: DrawVictoryScreen
 1,D91B,DrawRowTiles
@@ -325,7 +326,7 @@
 0,8747,WritePPUCtrl
 0,871C,StageFirstTimeInit
 # StageFlagsTable: 13 bytes, bit 2 = VS coin-counter-2 output to $4016 via $59 shadow
-0,80B6,StageFlagsTable
+0,80B6,StageFlagsTable,data/table
 # Session 17: LevelCodePtrs mapping
 0,BB32,Level9Init
 0,BE65,Level10Init
@@ -353,7 +354,7 @@
 # Session: ZP $D0-$D4 in Level0Init — stage-0 animation state
 0,892B,Stage0InitPhase1
 0,8930,Stage0InitPhase2
-0,8153,Level0DispatchTable
+0,8153,Level0DispatchTable,data/table
 0,8834,Level0DispatchSub
 0,886A,Level0Phase_SpriteCycle
 0,8885,Level0Phase_SubState
@@ -366,12 +367,12 @@
 0,BD41,MusicSlotLoad
 0,BD4D,MusicSeqPtrLoad
 0,BD0C,MusicAPUWrite4
-0,82EA,MusicSlotInitTable
-0,8129,Level3SoundInitTable
+0,82EA,MusicSlotInitTable,data/table
+0,8129,Level3SoundInitTable,data/table
 0,AFA8,DivBy10
 # Session 14: SoundEngine sequence format fully decoded
-1,EE8B,NoteFreqTable
-1,ED8B,SoundCmdDispatchTable
+1,EE8B,NoteFreqTable,data/table
+1,ED8B,SoundCmdDispatchTable,data/table
 1,ECF4,SoundSeqInit
 1,ED2D,SoundSeqDecode
 1,EDAF,SoundCmdStop
@@ -386,12 +387,12 @@
 1,EE2A,SoundCmdMidLoop
 1,EE2D,SoundCmdOuterLoop
 1,EE3E,SoundCmdSkip
-1,EEDB,SeqBGM_Pulse1
-1,EF02,SeqBGM_Ch2
-1,EF2D,SeqBGM_Ch3
-1,EFD1,SeqCoin
-1,F044,SeqLifeUpP1
-1,F053,SeqLifeUpP2
+1,EEDB,SeqBGM_Pulse1,data/seq
+1,EF02,SeqBGM_Ch2,data/seq
+1,EF2D,SeqBGM_Ch3,data/seq
+1,EFD1,SeqCoin,data/seq
+1,F044,SeqLifeUpP1,data/seq
+1,F053,SeqLifeUpP2,data/seq
 # Session: score display routines
 1,D8F7,DrawSpriteString
 1,D87E,DrawBigSpriteTile
@@ -400,8 +401,8 @@
 1,D91B,DrawRowTiles
 1,D95F,WaitVBlank
 1,D966,WaitVBlankX
-1,D214,StrGAME
-1,D219,StrOVER
+1,D214,StrGAME,data/string
+1,D219,StrOVER,data/string
 # Session: power-up spawn + CHR tiles
 1,EA63,PowerUpSpawnPickPos
 1,EAA7,RNGToCoord

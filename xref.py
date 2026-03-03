@@ -75,7 +75,8 @@ def main():
     def lbl(addr, bank=None):
         k = (bank, addr)
         k2 = (None, addr)
-        return labels.get(k) or labels.get(k2) or f'${addr:04X}'
+        entry = labels.get(k) or labels.get(k2)
+        return entry[0] if entry else f'${addr:04X}'
 
     print(f"Cross-references to {lbl(target)} (${target:04X})")
     print()
