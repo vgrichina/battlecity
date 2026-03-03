@@ -1828,42 +1828,59 @@ These are written to the nametable via `DrawNametableTile ($D82B)` / `PPUQueueTi
 | Tile ID | Description | ROM addresses | Notes |
 |---------|-------------|---------------|-------|
 | `$00` | Empty / open ground | `$DB79` (TileCHRTable types 0-4, 13-15 slot); `$DD30` (MoveGridSnap: tile=0 → passable); `$D22D-$D232` (eagle area blank rows) | Mortar pattern (23 non-zero pixels), NOT visually blank. Collision map: passable. Drawn for fully-destroyed brick and all open cells |
+| `$01`–`$0E` | Brick partial-damage states | `$D763` (bullet-hit handler writes 4-bit bitmask directly as collision-map value AND nametable CHR tile index) | Bitmask encodes which of the 4 quads (TL/TR/BL/BR) are still intact: bit 3=TL, bit 2=TR, bit 1=BL, bit 0=BR. Value $0F = all intact; $00 = fully destroyed (tile becomes $00). The same nibble simultaneously serves as the CHR tile index |
 | `$0F` | Brick sub-tile (one intact 8×8 quad) | `$DB79` (TileCHRTable types 0–4 TL/TR/BL/BR slots); `$D235–$D248` (brick base-wall rows); `$CA25` (EagleWallClosed brick surround) | Placed in nametable as part of 2×2 brick metatile; collision map tiles `$01–$0F` encode which quads are intact |
 | `$10` | Solid steel wall | `$DB79` (TileCHRTable types 5–9); `$D251–$D263` (steel wall rows in SteelWallFortify); `$E892` (BulletTileCollision CMP #$10) | Blocks tank + bullet; armor-piercing bullet destroys it (writes `$00`); collision check: `CMP #$10` → `$030D=1` |
 | `$11` | Blank slot / water-check sentinel | `$D22B` (DrawHUDKillIconB: erase kill-count icon); `$E87B` (BulletTileCollision: CMP #$11 check before water/steel path) | Two roles: (1) BG tile written to erase a HUD kill-icon slot; (2) used as the comparison threshold in BulletTileCollision to route water/steel hits |
 | `$12` | Water / river | `$DB79` (TileCHRTable type 10 all 4 quads); `$E87B` (BulletTileCollision passability: tile≥$12 → non-collision; water itself is $12 < threshold) | Blocks tank (`$12 < $20` → non-passable in MoveGridSnap). BulletTileCollision: water is handled by the `CMP #$11` path which fires for any tile in $10–$11 range before the `tile≥$12` pass-through check |
 | `$13` | Score/stage separator tile | `$D162`, `$D165` (score header string data) | Used in PPU nametable as column markers in the score/stage area |
 | `$14` | Player lives icon | `$D212` (StartGame `$C6C5` draws at HUD col 29 row 18/21) | BG tile for P1/P2 life-count display; one drawn per player per frame |
+| `$15`–`$1F` | *Not found in code yet* | — | 17 tiles; CHR data present; no ROM code or data references located |
 | `$20` | Steel open frame (partial steel quad) | `$DB79` (TileCHRTable types 5–8 open-quad slots); `$DD4A` (MoveGridSnap passability: tile≥`$20` → passable) | Used as the "open" corner of partial steel metatiles; also the passability boundary: tiles `$20–$7F` are passable terrain |
 | `$21` | Ice | `$DB79` (TileCHRTable type 12 all 4 quads) | Passable (≥`$20`); no slide mechanic — tanks move at normal speed |
 | `$22` | Trees / forest | `$DB79` (TileCHRTable type 11 all 4 quads) | Passable; tanks/bullets pass through. Entity draws after BG but `DrawEntityTile ($DACC)` re-draws trees on top (priority-behind-BG OAM attribute bit `$20`) |
+| `$23`–`$27` | *Found in data, purpose unclear* | `$D1CD` (PPUQueueTiles col 7 row 7 on stage-select screen at `$C107`); also `$D1DF` (col 13 row 16) | Appear in the stage-select BG nametable row alongside tile IDs `$9E`/`$9F`; exact visual purpose not yet identified |
 | `$28`–`$29` | Player shield animation frame A | `$E351` (DrawPlayerShield: ADC #$29, frame_bit=0 → OAM tile `$29` → PT1 `$28`–`$29`) | OAM tile byte `$29` (odd) → PT1; 8×16 shield ring sprite; toggles with frame B every 2 frames |
+| `$2A`–`$2B` | *Not found in code yet* | — | 2 tiles between shield frame A and B |
 | `$2C`–`$2D` | Player shield animation frame B | `$E351` (DrawPlayerShield: frame_bit=4 → OAM tile `$2D` → PT1 `$2C`–`$2D`) | OAM tile byte `$2D` (odd) → PT1; alternates with frame A |
+| `$2E`–`$2F` | *Not found in code yet* | — | 2 tiles after shield frame B, before digits |
 | `$3A`–`$3B` | Star power-up item | `$E306` (DrawPowerUp: LDA #`$3B` / STA `$53`; OAM tile `$3B` → PT1) | Single 8×16 sprite drawn at power-up pixel position; `$3B` is odd → PT1 |
-| `$48` | 'H' letter | `$D167` (HI-score label string) | ASCII-mapped CHR tile; part of "HI" display in score header |
-| `$49` | 'I' letter | `$D168` (HI-score label string) | ASCII-mapped CHR tile |
+| `$3C`–`$3F` | ASCII symbols `< = > ?` | `$D1CD` (stage-select BG row data); `$D1DF` (stage-select row 16 data) | Tile indices match ASCII values: `$3C`=`<`, `$3D`=`=`, `$3E`=`>`, `$3F`=`?`; appear as decoration/framing tiles in the stage-select display |
+| `$40` | `©` copyright symbol | `$D1E5` (copyright string: `$40 20 31 39 38 30 ...` = `©1980 1985 NAMCO LTD`); `$C107` (PPUQueueTiles col 7 row 7) | ASCII `@` slot repurposed as the copyright glyph; drawn on stage-select/title screen |
+| `$41`–`$5A` | ASCII uppercase A–Z | All text strings in `$D14F`–`$D2BA` (BATTLE, CITY, PLAYER, PUSH START BUTTON, PLEASE INSERT COIN, HISCORE, CREDIT, STAGE, PEACE BE WITH YOU, NOW LONG WAR, COMES TO, AN END, BONUS, TOTAL, etc.); drawn via `PPUQueueTiles ($D6D3)` and `DrawSpriteString ($D8F7)` | Tile index = ASCII value: `$41`=A … `$5A`=Z. Used for all on-screen text as both BG nametable tiles and OAM sprite tiles (with `$60` offset applied in DrawSpriteString) |
 | `$5B` | `[` bracket | `$D271` (tally screen data array) | Used in end-of-level tally display |
+| `$5C` | Dashed separator line tile | `$D27D` (tally screen: `[$5C×8,$FF]` = 8-tile horizontal row) | Drawn as a full-width separator bar in the end-of-level tally screen; exact visual glyph unclear (not a standard ASCII backslash) |
 | `$5D` | `]` bracket | `$D273` (tally screen data array) | Used in end-of-level tally display |
 | `$5E` | P1 player icon (score header) | `$D15B` (score header string → PPUQueueTiles col 2–3 row 3) | Tile for Player 1 icon on stage-start score line |
 | `$5F` | P2 player icon (score header) | `$D15E` (score header string → PPUQueueTiles, 2P only) | Tile for Player 2 icon on stage-start score line |
 | `$30`–`$39` | ASCII digits 0–9 | `$D6D3` (PPUQueueTiles writes ASCII code = tile index); 26 call sites via `$D9A7` SkipLeadingZeros | ASCII '0'=$30 → BG tile $30; used for score, stage number, lives count, hi-score HUD display |
-| `$60`–`$67` | NAMCO logo tiles | `$D145` (VictoryTileData), `$D04C` (stage-start col 13 row 23), `$C44D` (victory screen col 12 row 14) | 8 tiles form "NAMCO" word as thick block-letter strip; tile $68 = blank trailing space |
+| `$60`–`$68` | NAMCO logo tiles | `$D145` (VictoryTileData: `[$60–$68,$FF]`), `$D04C` (stage-start col 13 row 23), `$C44D` (victory screen col 12 row 14) | 9 tiles form "NAMCO" word as thick block-letter graphic strip |
+| `$69` | Decorative tail symbol | `$D1FC` (copyright string `©1980 1985 NAMCO LTD`+`$69`+`$FF`); `$D2BD` (victory string `AN END`+`$69`+`$FF`); drawn via PPUQueueTiles | Appears as a trailing decoration after "NAMCO LTD" and "AN END"; exact visual unclear — not found in code as a tile draw target, only in data strings |
 | `$6A` | Enemy kill-count icon | `$D222`–`$D223` (DrawAllHUDKillIcons: `[$6A,$6A,$FF]` per row, 10 rows) | Two tiles wide per HUD row (cols 29–30); one pair = one enemy slot; erased by DrawHUDKillIconB |
 | `$6B` | Blank spacer | `$D15C`, `$D15F`, `$D169` (HUD text spacers in score-header arrays) | Used as padding/separator in nametable text string arrays |
 | `$6C` | Stage flag icon TL | `$D225` (HUD stage-flag data: `[$6C,$FC,$FF]` at col 29–30 row 23) | Top-left tile of 2×2 stage-flag icon |
 | `$6D` | Stage flag icon BL | `$D228` (HUD stage-flag data: `[$6D,$FD,$FF]` at row 24) | Bottom-left tile of 2×2 stage-flag icon |
+| `$6E`–`$77` | *Found in data, purpose unclear* | `$D1CD` (stage-select BG row at col 7 row 7, `$C107`); `$C0CB` stores `$6E` into `$60` (tile-draw offset register) before stage-select display | 10 tiles; appear in the stage-select nametable display row. `$6E` also used as the DrawSpriteString tile-offset value (`STA $60`) — may indicate these tiles are alphabet letters shifted by `$6E`-`$41`=`$2D` from ASCII, i.e. alternate-style uppercase glyphs |
 | `$78`–`$7B` | GAME OVER banner left half | `$C7CD` (DrawGameOverBanner: LDA #`$79` / STA `$53` → JSR DrawTank; OAM `$79`,`$7B` → PT1 `$78`–`$7B`) | Top 8px = "GA", bottom 8px = "OV". No alternation — DrawGameOverBanner always draws all 8 tiles. |
 | `$7C`–`$7F` | GAME OVER banner right half | `$C7EC` (DrawGameOverBanner: LDA #`$7D` / STA `$53` → JSR DrawTank; OAM `$7D`,`$7F` → PT1 `$7C`–`$7F`) | Top 8px = "ME", bottom 8px = "ER". GameOverBannerAnim (`$C7F8`) scrolls the 32×16 sprite via HUDTankWiggleX/Y (`$D2C6`/`$D2CA`). |
 | `$80`–`$81` | Power-up: helmet (type 0) | `$E31C` (DrawPowerUp type=0: tile=0×4+`$81`=`$81`; OAM `$81` → PT1 `$80`–`$81`) | Shield/helmet power-up icon sprite |
+| `$82`–`$83` | *Not found in code yet* | — | 2 tiles between helmet and clock power-up icons |
 | `$84`–`$85` | Power-up: clock (type 1) | `$E31C` (DrawPowerUp type=1: tile=`$85`; OAM `$85` → PT1 `$84`–`$85`) | Freeze/timer power-up icon |
+| `$86`–`$87` | *Not found in code yet* | — | 2 tiles between clock and shovel power-up icons |
 | `$88`–`$89` | Power-up: shovel (type 2) | `$E31C` (DrawPowerUp type=2: tile=`$89`; OAM `$89` → PT1 `$88`–`$89`) | Fortify-base (shovel) power-up icon |
+| `$8A`–`$8B` | *Not found in code yet* | — | 2 tiles between shovel and star power-up icons |
 | `$8C`–`$8D` | Power-up: star (type 3) | `$E31C` (DrawPowerUp type=3: tile=`$8D`; OAM `$8D` → PT1 `$8C`–`$8D`) | Upgrade-star power-up icon |
+| `$8E`–`$8F` | *Not found in code yet* | — | 2 tiles between star and grenade power-up icons |
 | `$90`–`$91` | Power-up: grenade (type 4) | `$E31C` (DrawPowerUp type=4: tile=`$91`; OAM `$91` → PT1 `$90`–`$91`) | Grenade (destroy all enemies) power-up icon |
+| `$92`–`$93` | *Not found in code yet* | — | 2 tiles between grenade and pistol power-up icons |
 | `$94`–`$95` | Power-up: pistol (type 5) | `$E31C` (DrawPowerUp type=5: tile=`$95`; OAM `$95` → PT1 `$94`–`$95`) | Fast-bullet power-up icon |
+| `$96`–`$97` | *Not found in code yet* | — | 2 tiles between pistol and tank power-up icons |
 | `$98`–`$99` | Power-up: tank (type 6) | `$E31C` (DrawPowerUp type=6: tile=`$99`; OAM `$99` → PT1 `$98`–`$99`) | Extra life power-up icon |
+| `$9A`–`$9F` | *Found in data, purpose unclear* | `$D1CD` (stage-select BG row: includes `$9E` and `$9F`); `$D1DF` (stage-select row 16: includes `$9D` and `$9C`) | 6 tiles after last power-up pair; appear in stage-select display data; exact visual/semantic purpose not yet identified |
 | `$A0`–`$AF` | Spawn / shoot-fire animation | `$E0BF` (DrawShootSprite: tile=(`\|state&$F−7\|`×2)&$FC+`$A1`); all odd OAM bytes `$A1`–`$AF` → PT1 | Triangle-wave tiles: state $F7→`$A1`, state $F0/$FE→`$AD`. The R-half of each 8×16 entry adds +2 to the OAM byte (covering `$A1`–`$AF` step 2). Same tiles drawn for tank shoot animation (states $E0–$FF) and spawn-fire effect |
 | `$B0`–`$B7` | Bullet explosion (4 directions) | `$E1BD` (BulletExplode: LDA #`$B1`/STA `$53`; `$DAF3`: tile=`$B1`+dir×2 → `$B1`/`$B3`/`$B5`/`$B7`; all odd → PT1) | 8 CHR tiles total (4 dir × top+bottom per OAM entry). Single 8×16 sprite drawn at bullet position −5px |
 | `$B8`–`$C5` | Entity spawn star (type-dependent) | `$DFB1` (DrawSpawnSprite: tile=(`$A8,X`>>3&`$FC`)−`$10`+`$B9`); OAM bytes: `$B9`(basic), `$BD`(fast), `$C1`(power), `$C5`(armor), `$AD`(P1), `$B1`(P2) | Spawn-star size varies by entity type; `$A8,X`=0 → skipped. Drawn for states `$10`–`$2F` |
+| `$C6`–`$C7` | *Not found in code yet* | — | 2 tiles after spawn-star armor (`$C5`), before eagle BG tiles (`$C8`) |
 | `$C8` | Eagle BG tile TL (intact) | `$D23D`, `$D259`, `$D265` (BrickWallInit, SteelWallFortify, EagleHit data arrays); `$E840` (BulletTileCollision: CMP #`$C8`) | Eagle center TL; also the sentinel in BulletTileCollision that triggers eagle-hit / game-over sequence |
 | `$C9` | Eagle BG tile BL (intact) | `$D244`, `$D260`, `$D268` (wall init + EagleHit arrays) | Eagle center BL |
 | `$CA` | Eagle BG tile TR (intact) | `$D23E`, `$D25A`, `$D266` (wall init + EagleHit arrays) | Eagle center TR |
@@ -1874,11 +1891,14 @@ These are written to the nametable via `DrawNametableTile ($D82B)` / `PPUQueueTi
 | `$CF` | Destroyed eagle BR | `$D26F` (EagleHit data) | |
 | `$D0`–`$DF` | Eagle wall sprites (intact, 8 OAM entries) | `$E3F7` (LDA #`$D1`), `$E400` (LDA #`$D5`), `$E409` (LDA #`$D9`), `$E412` (LDA #`$DD`); odd OAM bytes → PT1; `$E3E2` (EagleWallClosed: `$69`=0 → tile+0) | 4×2 grid of 8×16 OAM sprites = 32×32px. OAM bytes `$D1`,`$D5`,`$D9`,`$DD` + R-halves `$D3`,`$D7`,`$DB`,`$DF` |
 | `$E0`–`$ED` | Eagle wall sprites (open/damaged) | `$E3EA` (EagleWallOpen: `$69`=`$10` → tile+`$10`); same draw calls as intact with +`$10` offset; OAM bytes `$E1`,`$E5`,`$E9`,`$ED` → PT1 | Drawn when shovel fortify expires; eagle base becomes open/unfortified |
+| `$EE`–`$EF` | *Not found in code yet* | — | 2 tiles after eagle-wall open (`$E0`–`$ED`), before kill/spawn anim (`$F0`) |
 | `$F0`–`$F1` | Kill/spawn anim frame 1 + Eagle explosion A | `$DF96` (CalcSprTile state_hi=7: tile=`$F1`); `$E3C6` (EagleAnimA: LDA #`$F1`/STA `$53`) | Smallest star / first eagle explosion frame. Drawn for entity kill end (states `$70`–`$7F`) and eagle hit sequence |
 | `$F4`–`$F5` | Kill/spawn anim frame 2 + Eagle explosion B | `$DF96` (CalcSprTile state_hi=6: tile=`$F5`); `$E3CB` (EagleAnimB: LDA #`$F5`) | Medium star / second eagle explosion |
 | `$F8`–`$F9` | Kill/spawn anim frame 3 + Eagle explosion C | `$DF96` (CalcSprTile state_hi=5: tile=`$F9`); `$E3D0` (EagleAnimC: LDA #`$F9`) | Largest star / third eagle explosion |
+| `$FA`–`$FB` | *Not found in code yet* | — | 2 tiles after kill-anim frame 3, before stage-flag icon tiles |
 | `$FC` | Stage flag icon TR | `$D226` (HUD stage-flag: `[$6C,$FC,$FF]`) | Visually blank or dark tile completing the flag icon top-right |
 | `$FD` | Stage flag icon BR | `$D229` (HUD stage-flag: `[$6D,$FD,$FF]`) | Visually blank or dark tile completing the flag icon bottom-right |
+| `$FE`–`$FF` | *Not found in code yet* | — | 2 tiles at end of PT1 bank; `$FF` is also used as the string terminator in all tile data arrays (dual-use: terminator byte AND CHR tile index `$FF`) |
 
 #### Sprite Tiles — PT0 / sprite bank (CHR bank 0 @ `$8010` or bank 2 @ `$A010`)
 
