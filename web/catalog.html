@@ -202,9 +202,23 @@
       { name: "STAR",            pal: 6, tiles: [0x8C,0x8E,0x8D,0x8F], pt1: false }, // type 3
       { name: "GRENADE",         pal: 6, tiles: [0x90,0x92,0x91,0x93], pt1: false }, // type 4
       { name: "1-UP",            pal: 6, tiles: [0x94,0x96,0x95,0x97], pt1: false }, // type 5 (LivesGrantCheck only)
-      { name: "PU FLASH",        pal: 6, tiles: [0x3A,0x3C,0x3B,0x3D], pt1: false }, // $62 collection flash
+      { name: "TANK ($98)",      pal: 6, tiles: [0x98,0x9A,0x99,0x9B], pt1: false }, // type 6 extra life icon
+      // Score popup sprites — BG bank (PT1), palIdx 6 SP2.
+      // ROM DrawSpawnSprite ($DFB1): tile=($A8,X>>3&$FC)−$10+$B9 → 100/200/300/400 pts.
+      // ROM PowerUpCollision ($EB17): on pickup score+500, draw tiles $3A-$3D (PU flash).
+      { name: "SCORE 500 ($3A)", pal: 6, tiles: [0x3A,0x3C,0x3B,0x3D], pt1: false }, // power-up collection flash
+      { name: "SCORE 100 ($B8)", pal: 6, tiles: [0xB8,0xBA,0xB9,0xBB], pt1: false }, // basic enemy kill
+      { name: "SCORE 200 ($BC)", pal: 6, tiles: [0xBC,0xBE,0xBD,0xBF], pt1: false }, // fast enemy kill
+      { name: "SCORE 300 ($C0)", pal: 6, tiles: [0xC0,0xC2,0xC1,0xC3], pt1: false }, // power enemy kill
+      { name: "SCORE 400 ($C4)", pal: 6, tiles: [0xC4,0xC6,0xC5,0xC7], pt1: false }, // armor enemy kill
       { name: "SHIELD F1",       pal: 6, tiles: [0x28,0x2A,0x29,0x2B], pt1: false }, // OAM tile $29 (odd→PT1)
       { name: "SHIELD F2",       pal: 6, tiles: [0x2C,0x2E,0x2D,0x2F], pt1: false }, // OAM tile $2D (odd→PT1)
+      // Eagle wall sprites — BG bank (PT1), palIdx 7. ROM EagleWallClosed/EagleWallOpen ($E3E2/$E3EA).
+      // 4 draw calls each placing L+R 8×16 OAM pair → 4×2 grid of 8×16 = 32×32px total.
+      // OAM tile bytes $D1/$D5/$D9/$DD (L-halves) + $D3/$D7/$DB/$DF (R-halves); all odd → PT1.
+      // Tile order below is raster (left→right, top→bottom) for 4-col drawMetasprite.
+      { name: "EAGLE WALL INTACT", pal: 7, tiles: [0xD0,0xD2,0xD4,0xD6,0xD1,0xD3,0xD5,0xD7,0xD8,0xDA,0xDC,0xDE,0xD9,0xDB,0xDD,0xDF], pt1: false, w:32, h:32 },
+      { name: "EAGLE WALL OPEN",   pal: 7, tiles: [0xE0,0xE2,0xE4,0xE6,0xE1,0xE3,0xE5,0xE7,0xE8,0xEA,0xEC,0xEE,0xE9,0xEB,0xED,0xEF], pt1: false, w:32, h:32 },
       // Kill explosion static frames (BG bank, palIdx 7 SP3). ROM DrawMovingSprite/DrawSmallSprite.
       { name: "EXPL SMALL",  pal: 7, tiles: [0xF0,0xF2,0xF1,0xF3], pt1: false }, // T=$F1 ($7x/$1x state)
       { name: "EXPL MEDIUM", pal: 7, tiles: [0xF4,0xF6,0xF5,0xF7], pt1: false }, // T=$F5 ($6x state)
@@ -235,7 +249,7 @@
       // BG tiles $60–$67 together spell "NAMCO" in thick block letters (8 tiles wide, 8px tall).
       // ROM $D145 VictoryTileData: {$60..$68,$FF}; $68 is blank trailing space.
       // Drawn at: victory screen (col 12, row 14) and stage-start pre-game (col 13, row 23).
-      { name: "NAMCO ($60–$67)", pal: 0, tiles: [0x60,0x61,0x62,0x63,0x64,0x65,0x66,0x67], pt1: false, w:64, h:8 },
+      { name: "NAMCO ($60–$68)", pal: 0, tiles: [0x60,0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68], pt1: false, w:72, h:8 },
       // Score header nametable tiles. ROM $D15B: P1 icon $5E/$6B at col 2–3 row 3;
       // $D167 HI label $48/$49 at col 11–12; $D15E P2 icon $5F at col 21 (2P only).
       { name: "P1 ICON ($5E)",      pal: 0, tiles: [0x5E], pt1: false, w:8, h:8 },
@@ -244,6 +258,16 @@
       { name: "HI 'I' ($49)",       pal: 0, tiles: [0x49], pt1: false, w:8, h:8 },
       // Score separator / col marker tile. ROM $D162/$D165.
       { name: "SEPARATOR ($13)",    pal: 0, tiles: [0x13], pt1: false, w:8, h:8 },
+      // Copyright symbol tile. ROM $D1E5 copyright string "©1980 1985 NAMCO LTD".
+      { name: "© ($40)",            pal: 0, tiles: [0x40], pt1: false, w:8, h:8 },
+      // End-of-level tally screen tiles. ROM $D271 (brackets) / $D27D (8-tile separator row).
+      { name: "'[' ($5B)",          pal: 0, tiles: [0x5B], pt1: false, w:8, h:8 },
+      { name: "DASH LINE ($5C)",    pal: 0, tiles: [0x5C], pt1: false, w:8, h:8 },
+      { name: "']' ($5D)",          pal: 0, tiles: [0x5D], pt1: false, w:8, h:8 },
+      // Decorative tail glyph. ROM $D1FC (copyright string) / $D2BD (victory "AN END" string).
+      { name: "TAIL ($69)",         pal: 0, tiles: [0x69], pt1: false, w:8, h:8 },
+      // Blank spacer used in score-header text strings. ROM $D15C/$D15F/$D169.
+      { name: "SPACER ($6B)",       pal: 0, tiles: [0x6B], pt1: false, w:8, h:8 },
     ],
 
     // --- ANIMATIONS ---
