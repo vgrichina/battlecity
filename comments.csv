@@ -165,8 +165,9 @@
 1,E1BF,BulletExplode tile setup: $53=$B1 → ODD→PT1(BG bank); dir*2 added by $DAF3; tiles $B0-$B7
 1,E302,PowerUpFlashDraw: $53=$3B → ODD→PT1(BG bank); tiles $3A-$3D at collect position
 1,E30D,PowerUpActiveDraw: $53=$88*4+$81 → ODD→PT1(BG bank); type 0-5 → tiles $80-$97 FROM BG BANK (not sprite bank!)
-1,DFC6,DrawSpawnSprite tile: $53=(($A8,X>>3)&$FC)-$10+$B9; ALWAYS ODD→PT1(BG bank); tiles $A9-$B9
-1,E3F2,EagleDrawFull: tiles $D1/$D5/$D9/$DD (+$69 for damaged); ALL ODD→PT1(BG bank); tiles $D0-$EF from BG bank
+1,DFFA,DrawExpandSprite: 4 DrawTank calls for entity states $30-$3F; tile formula ($A0,X&$F0)-$30 XOR$10 + (A*4+$D1); states $30-$3F→tiles $E0-$ED (ODD→PT1 BG bank); NOT tiles $D0-$DF (those are EagleDrawIntact only)
+1,DFC6,DrawScorePopup tile: $53=(($A8,X>>3)&$FC)-$10+$B9; ODD→PT1(BG bank); $A8,X=$80/$A0/$C0/$E0→tiles $B9/$BD/$C1/$C5 (score "100"/"200"/"300"/"400"); $A8,X=0 path→tile $F1 (small star via $DFA4)
+1,E3F2,EagleDrawFull: intact($69=0)→OAM tiles $D1/$D5/$D9/$DD→BG $D0-$DF; damaged($69=$10)→$E1/$E5/$E9/$ED→BG $E0-$EF; ALL ODD→PT1; 4×2 grid 32×32px over eagle base
 # Session: reset handler & stage select
 1,D57B,SetAllPaletteBlack: WaitVBlank + set 3 palette indices (7, 11, 15) to $0F (black) via QueuePaletteWrite
 1,D595,SetUIPrimaryPalette: WaitVBlank + set palette indices 7, 11, 15 to primary UI colors from PaletteData

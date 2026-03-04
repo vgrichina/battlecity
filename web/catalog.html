@@ -397,9 +397,9 @@
           drawCHRTile(ctx, 0xF9, 7, cenX,              cenY + 8 * SCALE,  true);
           drawCHRTile(ctx, 0xFB, 7, cenX + 8 * SCALE,  cenY + 8 * SCALE,  true);
         } else {
-          // 32×32 expand sprite (phase 3): eagle HQ emblem tiles $D0-$DF (BG bank, reused by DrawExpandSprite).
-          // ROM DrawExpandSprite ($DFFA): 4×4 CHR tile grid. Formula: base + col*2 + (row&1) + (row>>1)*8.
-          const base = 0xD0;
+          // 32×32 expand sprite (phase 3): entity states $30-$3F → DrawExpandSprite ($DFFA) → BG tiles $E0-$ED.
+          // Formula: ($A0,X & $F0) - $30 XOR $10 + (A*4+$D1); for state_hi=$3: (0 XOR $10)+$D1=$E1 → tiles $E0-$ED.
+          const base = 0xE0;
           for (let row = 0; row < 4; row++)
             for (let col = 0; col < 4; col++)
               drawCHRTile(ctx, base + col*2 + (row&1) + (row>>1)*8, 7,
