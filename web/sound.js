@@ -267,7 +267,9 @@ function playSound(slotIdx) {
   const chSel = seq[0];  // 1=sq1, 2=sq2, 3=tri, 4=noise
   s.channel = (chSel >= 1 && chSel <= 4) ? chSel - 1 : 0;
   s.volByte = seq[1];    // duty/volume register
-  s.vol = seq[1] & 0x0F;
+  // NES $4000 bit4: 1=const-vol (bits 3-0 = volume), 0=envelope mode (bits 3-0 = decay period).
+  // Web port doesn't simulate envelope decay; treat envelope mode as max volume (15).
+  s.vol = (seq[1] & 0x10) ? (seq[1] & 0x0F) : 15;
   // seq[2] = sweep (ignored in web port)
   // seq[3] = timer hi template (ignored)
   // seq[4] = noise reg (if ch=4)
@@ -407,7 +409,7 @@ function soundTick() {
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
           s.volByte = (s.volByte & 0x3F) | p;
-          s.vol = s.volByte & 0x0F;
+          s.vol = (s.volByte & 0x10) ? (s.volByte & 0x0F) : 15;
           setChannelVol(s.channel, s.vol);
         }
       } else if (b === 0xEA) {
@@ -415,7 +417,7 @@ function soundTick() {
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
           s.volByte = (s.volByte & 0xC0) | p;
-          s.vol = s.volByte & 0x0F;
+          s.vol = (s.volByte & 0x10) ? (s.volByte & 0x0F) : 15;
           setChannelVol(s.channel, s.vol);
         }
       } else if (b === 0xEB) {
@@ -423,7 +425,7 @@ function soundTick() {
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
           s.volByte = (s.volByte & 0x0F) | p;
-          s.vol = s.volByte & 0x0F;
+          s.vol = (s.volByte & 0x10) ? (s.volByte & 0x0F) : 15;
           setChannelVol(s.channel, s.vol);
         }
       } else if (b === 0xEC) {
@@ -436,7 +438,7 @@ function soundTick() {
         // SET DUTY/VOL
         if (s.pos < seq.length) {
           s.volByte = seq[s.pos++];
-          s.vol = s.volByte & 0x0F;
+          s.vol = (s.volByte & 0x10) ? (s.volByte & 0x0F) : 15;
           setChannelVol(s.channel, s.vol);
         }
       } else if (b === 0xEF) {

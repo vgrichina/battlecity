@@ -16,6 +16,15 @@
     .tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; margin-bottom: 5px; }
     .tag-spr { background: #440064; color: #fff; }
     .tag-bg  { background: #083a00; color: #fff; }
+    /* SFX cards */
+    .sfx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+    .sfx-card { background: #2a2a2a; border: 1px solid #444; border-radius: 4px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+    .sfx-card .play-btn { flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: #1a1a1a; border: 2px solid #f8e800; color: #f8e800; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.1s; }
+    .sfx-card .play-btn:hover { background: #f8e800; color: #000; }
+    .sfx-card .play-btn.playing { background: #f8e800; color: #000; }
+    .sfx-info { text-align: left; }
+    .sfx-name { font-size: 12px; color: #eee; font-weight: bold; }
+    .sfx-slot { font-size: 10px; color: #888; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -45,6 +54,11 @@
   <div class="section">
     <h2>ANIMATIONS &amp; SFX</h2>
     <div class="grid" id="gridAnims"></div>
+  </div>
+
+  <div class="section">
+    <h2>SOUNDS</h2>
+    <div class="sfx-grid" id="gridSounds"></div>
   </div>
 
 <script>
@@ -448,6 +462,63 @@
     updateAll();
   };
 
+</script>
+
+<script src="sound.js"></script>
+<script>
+  // ─── SFX Catalog ────────────────────────────────────────────────
+  // Each entry: { name, slotDesc, play: fn }
+  const SFX_CATALOG = [
+    { name: "Player Fire",   slotDesc: "slot 8",        play: () => { playSound(SND.PLAYER_FIRE); } },
+    { name: "Enemy Fire",    slotDesc: "slot 16",       play: () => { playSound(SND.ENEMY_FIRE); } },
+    { name: "Brick Hit",     slotDesc: "slot 12",       play: () => { playSound(SND.BRICK_HIT); } },
+    { name: "Steel Hit",     slotDesc: "slot 13",       play: () => { playSound(SND.STEEL_HIT); } },
+    { name: "Armor Hit",     slotDesc: "slot 14",       play: () => { playSound(SND.ARMOR_HIT); } },
+    { name: "Entity Kill",   slotDesc: "slots 10+7",    play: () => { playSound(SND.ENTITY_KILL); playSound(SND.EXPLOSION); } },
+    { name: "Eagle Hit",     slotDesc: "slot 11",       play: () => { playSound(SND.EAGLE_HIT); } },
+    { name: "Power-Up",      slotDesc: "slot 9",        play: () => { playSound(SND.POWERUP_APPEAR); } },
+    { name: "Life Up",       slotDesc: "slot 4",        play: () => { playSound(SND.LIFE_UP_P1); } },
+    { name: "Stage Clear",   slotDesc: "slots 21+22+23",play: () => { playSound(SND.STAGE_CLEAR1); playSound(SND.STAGE_CLEAR2); playSound(SND.STAGE_CLEAR3); } },
+    { name: "Victory",       slotDesc: "slots 24+25+26",play: () => { playSound(SND.VICTORY1); playSound(SND.VICTORY2); playSound(SND.VICTORY3); } },
+    { name: "BGM",           slotDesc: "slots 1+2+3",   play: () => { playSound(SND.BGM_SQ1); playSound(SND.BGM_TRI); playSound(SND.BGM_SQ2); } },
+  ];
+
+  let sfxAudioInited = false;
+  function ensureAudio() {
+    if (!sfxAudioInited) { initAudio(); sfxAudioInited = true; }
+  }
+
+  // Build SFX grid
+  const sfxGrid = document.getElementById('gridSounds');
+  SFX_CATALOG.forEach(entry => {
+    const card = document.createElement('div');
+    card.className = 'sfx-card';
+
+    const btn = document.createElement('button');
+    btn.className = 'play-btn';
+    btn.innerHTML = '&#9654;';
+    btn.title = 'Play ' + entry.name;
+    btn.addEventListener('click', () => {
+      ensureAudio();
+      stopAllSounds();
+      entry.play();
+      btn.classList.add('playing');
+      // Remove playing highlight after ~2s
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => btn.classList.remove('playing'), 2000);
+    });
+
+    const info = document.createElement('div');
+    info.className = 'sfx-info';
+    info.innerHTML = `<div class="sfx-name">${entry.name}</div><div class="sfx-slot">${entry.slotDesc}</div>`;
+
+    card.appendChild(btn);
+    card.appendChild(info);
+    sfxGrid.appendChild(card);
+  });
+
+  // Tick the sound engine at 60fps so sequences advance
+  setInterval(() => { if (sfxAudioInited) soundTick(); }, 1000 / 60);
 </script>
 </body>
 </html>
