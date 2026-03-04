@@ -25,7 +25,7 @@ bank,addr,name,type,comment
 0,CA85,UpdateCursorSprite,,UpdateCursorSprite: $98 = $8B + ($83 << 4); sets OAM sprite index for cursor tank
 0,D16A,SetupNametableStage,,
 0,D17F,DrawTitleScreen,,"DrawTitleScreen: sets nametable $24; draws BATTLE sprite-string at x=26 y=46; CITY at x=60 y=86; BG tiles $D2A5 at col=2 row=3; $D2A8 at col=11 row=3; HI-/SCORE headers; ""1 PLAYER"" row=17; ""2 PLAYERS"" row=19; ""CONSTRUCTION"" row=21; credits names row=23; copyright row=25; all rights row=27"
-0,D400,NMI,,NMI: push A/X/Y/P; OAM DMA from $0200; read $2002; JSR HideOffscreenSprites; if $4D>=0 JSR PaletteUpdate; write PPUCTRL=$50|$B0; scroll X=0 Y=$4F; PPUMASK=$1E; JSR ReadControllers2 ($D689); JSR HideSpritePairs; JSR SoundEngineTick ($EA7E); INC $0B (frame lo); every 64 INC $0A (frame hi); RTI
+0,D400,NMI,,NMI: push A/X/Y/P; OAM DMA $0200→PPU; LDA $2002 (reset addr latch); JSR VRAMNametableFlush ($D8FD, flush buffered nametable writes); if $4D>=0 JSR PaletteUpdate; write PPUCTRL=$B0|$50; scroll X=0 Y=$4F; PPUMASK=$1E; JSR ReadControllers2 ($D689); JSR HideSpritePairs ($DA93, hide unused OAM slots); JSR SoundEngineTick ($EA7E); INC $0B (frame lo); every 64 INC $0A (frame hi); RTI
 0,D467,WaitNMI,,
 0,D470,ClearSpriteBuf,,
 0,D47E,WriteNametable,,
@@ -49,8 +49,11 @@ bank,addr,name,type,comment
 0,D7CC,ClearEntitySlots,,
 0,D8D2,DrawSpriteString,,DrawSpriteString: reads ($13)
 0,D8F6,WaitVBlank,,WaitVBlank: LDA $0B; CMP $0B; BEQ (spin until frame counter changes)
-0,D8FD,HideOffscreenSprites,,
-0,DA93,HideSpritePairs,,
+0,D8FD,VRAMNametableFlush,,VRAMNametableFlush: terminates VRAM update buffer at $0180[$0C]; iterates triplets (addr_hi, addr_lo, data) from $0180[0..$0C) writing to PPU via $2006/$2006/$2007; resets $0C=0. NOT sprite-related — flushes buffered nametable tile writes to PPU.
+0,D9FE,InitEntitySlot,,InitEntitySlot: X=slot index; zero $00,X..$06,X (7 ZP bytes of entity state); STA $FF→$07,X (marks slot inactive/type=-1); RTS. Called from Init with X=$15(P1) and X=$1D(P2).
+0,DA93,HideSpritePairs,,HideSpritePairs: input $0D=current OAM write ptr (4-byte aligned), $0E=sprite stride (4). Negates $0E. Iterates backwards from $0D-4 down to OAM offset 4 (sprite 1), writing $F0 (Y=240, off-screen) to $0200+X each step. Updates $0D=4 on exit. Hides all unused OAM sprite slots after active sprites are written. Called from NMI ($D436) and Init ($94AF). Identical copy at $9A93.
+0,9A47,WriteSpriteToOAM,,WriteSpriteToOAM: LDX $0D; STA $0200+X = $48(Y), $0200+X+1=$53(tile), $0200+X+2=$04(attr), $0200+X+3=$47(X-pos); advance $0D += $0E (stride=4); RTS. Writes one 4-byte OAM entry for the current sprite.
+0,9A93,HideSpritePairs2,,HideSpritePairs2: identical copy of HideSpritePairs ($DA93) at lower mirror address. Same behavior: negate $0E; loop backwards from $0D-4 to OAM+4, write $F0; update $0D=4.
 0,9689,ReadControllers,,ReadControllers: STX $4016 (X=1 strobe hi); STY $4016 (Y=0 strobe lo); read 8 bits from $4016
 0,D284,str_WrittenBy,data/string,"str_WrittenBy: ""WRITTEN BY"" FF — staff credit header"
 0,D28F,str_CreditsNames,data/string,str_CreditsNames: tile indices $60-$68 FF — staff name graphic tiles

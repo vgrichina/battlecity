@@ -66,8 +66,13 @@
 | $D7CC | — | — | code | ClearEntitySlots |
 | $D8D2–$D8F5 | — | 36 | code | DrawSpriteString |
 | $D8F6–$D8FC | — | 7 | code | WaitVBlank |
-| $D8FD | — | — | code | HideOffscreenSprites |
-| $DA93–$DAAC | — | ~26 | code | HideSpritePairs |
+| $D8FD–$D933 | — | ~55 | code | VRAMNametableFlush: terminates VRAM write buffer at $0180[$0C]; iterates triplets (addrH, addrL, data) writing to PPU via $2006/$2006/$2007; resets $0C=0. NOT sprite-related — flushes buffered nametable tile writes each NMI. |
+| $D9FE–$DA12 | — | ~21 | code | InitEntitySlot (X=slot): zero $00,X..$06,X; set $07,X=$FF (inactive/type marker). |
+| $DA13–$DA2A | — | ~24 | code | Div10 helper: converts A to decimal (quotient→$3A, remainder→$3B). |
+| $DA2B–$DA92 | — | ~104 | code | Sprite helper routines (coord conversion, SetSpriteXY, misc). |
+| $DA93–$DAAC | — | 26 | code | HideSpritePairs: $0D=OAM write ptr, $0E=stride(4). Negates $0E; loops backwards from $0D-4 to OAM+4, writing Y=$F0 (off-screen) at each slot. Updates $0D=4. Hides all unused OAM entries each NMI frame. Identical copy at $9A93. |
+| $9A47–$9A63 | — | ~29 | code | WriteSpriteToOAM: writes 4-byte OAM entry at $0200[$0D]: Y=$48, tile=$53, attr=$04, X=$47; advances $0D+=$0E (stride=4). |
+| $9A93–$9AAC | — | 26 | code | HideSpritePairs2: identical copy of $DA93 (NROM-128 mirror region duplicate). |
 | $E413 | — | — | code | ClearEntitySlots2: clears $A0-$A7 and $0103-$010A (8 entity slots) |
 | $EA51–$EA7D | — | ~45 | code | APUSoundInit: STA $4015=$0F (enable sq1+sq2+tri+noise); STA $4017=$C0 (5-step, no IRQ); zero 28 channel blocks at $031C–$03FB and $0300–$031B |
 | $EA7E–$ECAD | — | ~560 | code | SoundEngineTick: NMI-called; $6D→$F5 (1 channel if game active, else 28); pointer $F0/$F1→$031C; iterate channels; write APU $4000+X*4; call GetChannelDataPtr/ReadChannelByte |
@@ -466,7 +471,7 @@ Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 - [x] Understand CheckSavedState / DefaultConfig ($D4EF / $C040) — continue feature? **Done.** $C040–$C04F = DevSignature "RYOUITI OOKUBO  " (16-byte ASCII dev name as SRAM magic). $D4E3 = WriteDefaultConfig (copies signature to RAM $0110–$011F, called at end of Init). $D4EF = CheckSavedState (compare $0110 vs $C040; A=1→soft-reset, skip $3F/$83 init; A=0→first boot, set $3F=2/$83=0). This is Battle City's "continue" mechanism: on first power-on the RAM won't have the signature so game resets state; on soft-reset the signature survives and state is preserved.
 - [x] Locate and map level/stage data (35 stages in Famicom vs 40 in VS). **Done.** StageDataTable confirmed at $F07A (Famicom ROM), 36 × 91 bytes = $F07A–$FD44. Entries 0–34 = stages 1–35 (playable). Entry 35 ($FCEB–$FD44) = blank stage loaded via A=$FF (mostly $DD/empty with eagle-area $6D). LoadStageData ($F000): A<$24→use as stage# directly; A≥$24→wrap (A-=$23); A=$FF→force entry 36. web/levels.js confirmed correct (same 35 stage layouts). REVERSE.md had wrong end ($F4C5→$FD44) and wrong count (1092→3276 bytes). web/levels.js header comment and tile type labels fixed.
 - [x] Map entity/enemy system (EntityType table, movement, AI) — covered above
-- [ ] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller)
+- [x] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller). **Done.** $DA93 = HideSpritePairs: hides all unused OAM sprite slots each NMI by writing Y=$F0 (off-screen) backwards from $0D-4 down to OAM+4 (sprite 1). Input: $0D=current OAM write ptr (incremented by WriteSpriteToOAM at $9A47), $0E=stride(4). Negates $0E then loops. Identical copy at $9A93 (NROM-128 mirror). $D8FD relabeled: NOT sprite-related — it's VRAMNametableFlush (flushes buffered triplet writes addr_hi/addr_lo/data from $0180 to PPU via $2006/$2007). NMI sequence: OAM-DMA→VRAMFlush→PaletteUpdate→PPUCtrl/scroll→ReadControllers→HideSpritePairs→SoundEngineTick.
 - [ ] Locate high score save/load logic
 - [ ] Identify palette data location and format
 - [ ] Understand GameTickMain subsystems ($E181, $E1FA, $E02E, $E2A9, $E27C, $E122, $E162, $DB0B, $C7C8) — bullet/collision/explosion/score logic
