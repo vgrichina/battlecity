@@ -22,17 +22,31 @@
       letter-spacing: 4px;
       margin-bottom: 8px;
     }
+    #screen {
+      overflow: hidden;
+      line-height: 0;
+      border: 2px solid #333;
+    }
     canvas {
       display: block;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      border: 2px solid #333;
+      margin-top: -24px;  /* hide 8 NES px × SCALE=3 overscan top */
+      margin-bottom: -24px; /* hide 8 NES px × SCALE=3 overscan bottom */
     }
-    p {
-      margin-top: 8px;
+    .about {
+      margin-top: 14px;
       font-size: 11px;
       color: #555;
+      text-align: center;
+      line-height: 1.8;
+      max-width: 520px;
     }
+    .about a {
+      color: #f8e800;
+      text-decoration: none;
+    }
+    .about a:hover { text-decoration: underline; }
     #controls-hint {
       display: flex;
       gap: 12px;
@@ -60,9 +74,14 @@
 </head>
 <body>
   <h1>BATTLE CITY</h1>
-  <canvas id="game"></canvas>
+  <div id="screen"><canvas id="game"></canvas></div>
   <div id="controls-hint"></div>
-  <p>RE ref: commit 973e914 &nbsp;|&nbsp; VS. Battle City (1985) Namco</p>
+  <p class="about">
+    Faithful web reimplementation of the 1985 Namco Famicom game,<br>
+    built by reverse-engineering the original ROM — CHR tiles, palettes,<br>
+    level maps, physics, and sound reconstructed from scratch.<br>
+    <a href="catalog.html">Sprite &amp; asset catalog →</a>
+  </p>
   <script src="levels.js"></script>
   <script src="sound.js"></script>
   <script src="game.js"></script>
