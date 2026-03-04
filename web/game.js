@@ -214,13 +214,16 @@ function drawBigCHRTile(tileAbs, palIdx, destX, destY) {
 // Draw NES-style text using BG-bank CHR font tiles
 // ROM $D8F7 DrawSpriteString: ASCII-indexed tiles ($41='A'..$5A='Z', $30='0'..$39='9', $20=space)
 // x,y = top-left corner in NES pixels; palIdx = BG palette index
+// Special tile overrides: ROM font stores '-'=tile $6B, '.'=tile $69 (outside ASCII→tile direct mapping)
+const NES_TILE_OVERRIDE = { '-': 0x6B, '.': 0x69 };
 function drawNesText(str, x, y, palIdx) {
   const s = str.toUpperCase();
   if (chrOff) {
     for (let i = 0; i < s.length; i++) {
-      const code = s.charCodeAt(i);
-      if (code >= 0x21 && code <= 0x5F) {
-        drawCHRTile(code, palIdx, x + i * 8, y, true);
+      const ch = s[i];
+      const tile = NES_TILE_OVERRIDE[ch] ?? s.charCodeAt(i);
+      if ((tile >= 0x21 && tile <= 0x5F) || tile >= 0x60) {
+        drawCHRTile(tile, palIdx, x + i * 8, y, true);
       }
     }
   } else {
@@ -1599,6 +1602,10 @@ function update() {
 }
 
 // ─── Rendering helpers  ───────────────────────────────────────────────────────
+// ROM $D934 FindFirstNonZeroScore: skips leading zeros but always shows ≥2 digits
+function fmtScore(n, width = 6) {
+  return n.toString().padStart(2, '0').padStart(width, ' ');
+}
 function fillRect(nx, ny, nw, nh, color) {
   ctx.fillStyle = color;
   ctx.fillRect(nx * SCALE, ny * SCALE, nw * SCALE, nh * SCALE);
@@ -2157,7 +2164,7 @@ function drawGameOver() {
     // ROM $C527: JSR RNG; AND #$3F; JSR QueuePaletteWrite — random NES color each frame
     const flashPal = Math.floor(Math.random() * 8);  // random palette each frame
     drawNesText('HISCORE', 88, 148, flashPal);
-    drawNesText(hiScore.toString().padStart(6, ' '), 88, 158, flashPal);
+    drawNesText(fmtScore(hiScore), 88, 158, flashPal);
   }
   // Retry hint (web-only; ROM returns to attract loop via $C0A6)
   drawNesText('PRESS START', 76, 172, 3);
@@ -2181,7 +2188,7 @@ function drawStageClear() {
 
   // Row 3 (y=24): HI-SCORE label + value  ROM $CF2D: (col 8, row 3); hi-score at col 18+skip ($CF34)
   drawNesText('HI-SCORE', 64, 24, 3);
-  drawNesText(hiScore.toString().padStart(6, ' '), 144, 24, 3);
+  drawNesText(fmtScore(hiScore), 144, 24, 3);
 
   // Row 5 (y=40): STAGE + number  ROM $CF44: (col 12, row 5); stage num at col 14+skip ($CF54)
   drawNesText('STAGE', 96, 40, 3);
@@ -2192,7 +2199,7 @@ function drawStageClear() {
   drawNesText('I-PLAYER', 24, 56, 3);
 
   // Row 9 (y=72): P1 accumulated score  ROM $CF72: (col 5+skip, row 9)
-  drawNesText(p1Score.toString().padStart(6, ' '), 40, 72, 3);
+  drawNesText(fmtScore(p1Score), 40, 72, 3);
 
   if (!tallyState) return;
   const ts = tallyState;
@@ -2428,7 +2435,7 @@ function drawVictoryScreen() {
 // ROM $CFAA PreGameDraw: draws "BATTLE" (26,46) + "CITY" (60,86) via DrawSpriteString
 function enterTitle() {
   stopAllSounds();  // silence everything on return to title
-  activeBGSet = -1; setBGPaletteSet(4); // ROM set 4 for title animation screen
+  activeBGSet = -1; setBGPaletteSet(3); // ROM $C9C2: STA $4D=#$03 (PlayerSelectLoop sets palette set 3)
   gamePhase   = 'title';
   titleFrame  = 0;
   titleTimer  = 0;
@@ -2444,16 +2451,18 @@ function drawTitleScreen() {
   // ROM $D17F DrawTitleScreen: score strip at nametable row 3 (y=24)
   // $D2A5 str_TilePairA: tile $5E at col=2 (x=16), tile $6B at col=3 (x=24)
   // P1 score via DrawNametableTextOffset with $60=$30: col=4 (x=32)
+  // All title screen elements use BG palette 0 (palIdx=0).
+  // With set 3: BG0=[0F,16,16,30] → color3=$30=white for text, color1=$16=orange-red for NAMCOT/cursor.
   if (chrOff) {
-    drawCHRTile(0x5E, 3, 16, 24, true); // tile $5E = 1P icon
-    drawCHRTile(0x6B, 3, 24, 24, true); // tile $6B = dash
+    drawCHRTile(0x5E, 0, 16, 24, true); // tile $5E = 1P icon
+    drawCHRTile(0x6B, 0, 24, 24, true); // tile $6B = dash
   } else {
-    drawNesText('I-', 16, 24, 3);
+    drawNesText('I-', 16, 24, 0);
   }
-  drawNesText(p1Score.toString().padStart(6, ' '), 32, 24, 3); // col=4 (x=32)
+  drawNesText(fmtScore(p1Score), 32, 24, 0); // col=4 (x=32)
   // $D2B1 str_HI: "HI" $6B at col=11 (x=88); HI score at col=14 (x=112)
-  drawNesText('HI-', 88, 24, 3);                               // col=11 (x=88)
-  drawNesText(hiScore.toString().padStart(6, ' '), 112, 24, 3); // col=14 (x=112)
+  drawNesText('HI-', 88, 24, 0);                               // col=11 (x=88)
+  drawNesText(fmtScore(hiScore), 112, 24, 0); // col=14 (x=112)
 
   // ROM $D199/$D1AC: "BATTLE" at sprite (x=26,y=46), "CITY" at (x=60,y=86)
   drawBigNesText('BATTLE', 26, 46, 0);
@@ -2462,30 +2471,30 @@ function drawTitleScreen() {
   // ROM $D221 "1 PLAYER" at col=11 row=17 (x=88,y=136)
   // ROM $D230 "2 PLAYERS" at col=11 row=19 (x=88,y=152)
   // ROM $D23F "CONSTRUCTION" at col=11 row=21 (x=88,y=168)
-  drawNesText('1 PLAYER',    88, 136, 3);
-  drawNesText('2 PLAYERS',   88, 152, 3);
-  drawNesText('CONSTRUCTION', 88, 168, 3);
+  drawNesText('1 PLAYER',    88, 136, 0);
+  drawNesText('2 PLAYERS',   88, 152, 0);
+  drawNesText('CONSTRUCTION', 88, 168, 0);
 
   // ROM $CA2F UpdateCursorSprite: sprite cursor at col=8 blinks every 4 frames ($B0 bit2 toggles)
   // cursor row = 17 + titleCursor*2 → y = 136 + titleCursor*16
   if ((titleFrame >> 2) & 1) {
     if (chrOff) {
-      drawCHRTile(0x5B, 3, 64, 136 + titleCursor * 16, true); // tile $5B = arrow cursor
+      drawCHRTile(0x5B, 0, 64, 136 + titleCursor * 16, true); // tile $5B = arrow cursor
     } else {
-      drawNesText('>', 64, 136 + titleCursor * 16, 3);
+      drawNesText('>', 64, 136 + titleCursor * 16, 0);
     }
   }
 
   // ROM $D247 credits tiles $60–$68 at col=11 row=23 (x=88,y=184) via DrawNametableText
   // Tiles $60–$68 are 9 custom graphic tiles — the NAMCOT/staff-name logo strip
   for (let i = 0; i < 9; i++) {
-    drawCHRTile(0x60 + i, 3, 88 + i * 8, 184, true);
+    drawCHRTile(0x60 + i, 0, 88 + i * 8, 184, true);
   }
 
-  // ROM $D260 copyright: col=4 (x=32), row=25 (y=200); tile $40 = © symbol
-  drawNesText('@ 1980 1985 NAMCO LTD', 32, 200, 3);
+  // ROM $D260 copyright: col=4 (x=32), row=25 (y=200); tile $40=© + tile $69='.' at end ($D2F8)
+  drawNesText('@ 1980 1985 NAMCO LTD.', 32, 200, 0);
   // ROM $D272 "ALL RIGHTS RESERVED": col=6 (x=48), row=27 (y=216)
-  drawNesText('ALL RIGHTS RESERVED', 48, 216, 3);
+  drawNesText('ALL RIGHTS RESERVED', 48, 216, 0);
 }
 
 // ─── Boot  ────────────────────────────────────────────────────────────────────
