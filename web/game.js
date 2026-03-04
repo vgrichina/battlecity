@@ -250,15 +250,15 @@ function drawBigNesText(str, x, y, palIdx) {
 }
 
 // ─── Playfield geometry  ──────────────────────────────────────────────────────
-// ROM $D5FC TileAddrCompute, ROM $F27D LevelMapData comment (16 px origin)
+// ROM $D5FB CalcNametableAddr, ROM $F000 LoadStageData + $F07A StageDataTable (16 px origin)
 const FX   = 16;   // ROM $10 — playfield left edge (NES pixels)
 const FY   = 16;   // ROM $10 — playfield top edge
 const META = 16;   // 2×2 CHR tiles × 8 px = 16 px per metatile
-const GW   = 13;   // ROM $F27D grid columns
-const GH   = 13;   // ROM $F27D grid rows
+const GW   = 13;   // ROM $F000: 13-column grid
+const GH   = 13;   // ROM $F000: 13-row grid
 
 // ─── Key positions  ───────────────────────────────────────────────────────────
-// ROM $E537 PlayerSpawnX  $E539 PlayerSpawnY  $E531 EnemySpawnX  $E3E2 eagle pos
+// ROM $E47A PlayerSpawnX[2]  $E47C PlayerSpawnY[2]  $E474 EnemySpawnX[3]  eagle pos fixed ($78,$D8)
 const P1_SPAWN   = { x: 0x58, y: 0xD8 };   // (88, 216)
 const P2_SPAWN   = { x: 0x98, y: 0xD8 };   // (152, 216)
 const EAGLE      = { x: 0x78, y: 0xD8 };   // (120, 216)
@@ -272,17 +272,17 @@ const EAGLE_WALL = [
   {row:12, col:5, bits:0b1010},  // TR+BR (left leg)
   {row:12, col:7, bits:0b0101},  // TL+BL (right leg)
 ];
-const EN_SPAWN_X = [0x18, 0x78, 0xD8];     // ROM $E531 — 3 X positions (24,120,216)
+const EN_SPAWN_X = [0x18, 0x78, 0xD8];     // ROM $E474 EnemySpawnX[3] — 3 X positions (24,120,216)
 const EN_SPAWN_Y = 0x18;                    // 24
 
 // ─── Direction encoding  ──────────────────────────────────────────────────────
-// ROM $E529 DirDeltaTable  $E50E DecodeDirection
+// ROM $E46C DirDeltaX[4]  $E470 DirDeltaY[4]
 // 0=UP  1=LEFT  2=DOWN  3=RIGHT
 const DX = [ 0, -1,  0,  1];
 const DY = [-1,  0,  1,  0];
 
 // ─── Tile type constants  ─────────────────────────────────────────────────────
-// ROM $DB79 CHR table  extract_level_maps.py
+// ROM $DACB TileTypeTable  extract_level_maps.py
 const T = {
   BRICK_R:0, BRICK_B:1, BRICK_L:2, BRICK_T:3,
   BRICK:4,
@@ -292,26 +292,26 @@ const T = {
   EMPTY:13,
 };
 
-// ROM $DB69 TileAttrTable: tile type → BG palette index (indexed by game.js T values)
+// ROM $DABB TileAttrTable: tile type → BG palette index (indexed by game.js T values)
 const TILE_PAL = [0,0,0,0,0, 3,3,3,3,3, 1,2,3];
 
-// ROM $DB79 TileCHRTable: tile type → [TL,TR,BL,BR] BG CHR tile indices
+// ROM $DACB TileTypeTable: tile type → [TL,TR,BL,BR] BG CHR tile indices
 // Brick types (0–4) are null — handled via brickBits in drawTile().
 const TILE_CHR = [
   null, null, null, null, null,       // T.BRICK_R=0 .. T.BRICK=4
-  [0x20,0x10,0x20,0x10],              // T.STEEL_R=5  ROM $DB8D right-col partial
-  [0x20,0x20,0x10,0x10],              // T.STEEL_B=6  ROM $DB91 bottom-row partial
-  [0x10,0x20,0x10,0x20],              // T.STEEL_L=7  ROM $DB95 left-col partial
-  [0x10,0x10,0x20,0x20],              // T.STEEL_T=8  ROM $DB99 top-row partial
-  [0x10,0x10,0x10,0x10],              // T.STEEL=9     ROM $DB9D full solid
+  [0x20,0x10,0x20,0x10],              // T.STEEL_R=5  (TileTypeTable+20: right-col partial)
+  [0x20,0x20,0x10,0x10],              // T.STEEL_B=6  (TileTypeTable+24: bottom-row partial)
+  [0x10,0x20,0x10,0x20],              // T.STEEL_L=7  (TileTypeTable+28: left-col partial)
+  [0x10,0x10,0x20,0x20],              // T.STEEL_T=8  (TileTypeTable+32: top-row partial)
+  [0x10,0x10,0x10,0x10],              // T.STEEL=9    (TileTypeTable+36: full solid)
   [0x12,0x12,0x12,0x12],              // T.WATER=10
   [0x22,0x22,0x22,0x22],              // T.TREES=11
   [0x21,0x21,0x21,0x21],              // T.ICE=12
 ];
 
 // Brick quadrant CHR tiles from BRICK_FULL metatile [TL,TR,BL,BR]
-// ROM $DB89: BRICK_FULL (type4) = [0x0F, 0x0F, 0x0F, 0x0F] (all solid-brick CHR)
-// (ROM $DB79 is type0 right-col = [0x00,0x0F,0x00,0x0F] — was incorrectly used before)
+// ROM $DACB TileTypeTable type4 (BRICK_FULL) = [0x0F, 0x0F, 0x0F, 0x0F] (all solid-brick CHR)
+// (type0 BRICK_R = [0x00,0x0F,0x00,0x0F] — was incorrectly used before)
 const BRICK_QUAD = [0x0F, 0x0F, 0x0F, 0x0F];
 
 // ─── Passability  ─────────────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ function passable8(px, py) {
 }
 
 // ─── NES color palette approximations  ────────────────────────────────────────
-// ROM $D44A PaletteData  $D475 PaletteColorTable
+// ROM $D555 SpritePaletteData  $D565 BGPaletteTable
 const C = {
   BG:        '#000000',
   FIELD:     '#000000',
@@ -399,7 +399,7 @@ let titleCursor = 0; // menu cursor: 0=1P, 1=2P, 2=CONSTRUCTION
 let titleDownHeld = false, titleUpHeld = false, titleFireHeld = false;
 let demoMode = false; // ROM $6D DemoActive
 let selectKeyHeld = false; // edge-detect for stage selection
-let credits = 0;    // ROM $0104 Credits count (0-99)
+let credits = 0;    // VS System only ($0104 credits); unused in Famicom version
 let numPlayers;     // 1 or 2; set at title screen before game start
 let p1Score;        // ROM $15–$1B P1Score (int; BCD in ROM)
 let p1Lives;        // ROM $51 P1Lives
@@ -408,13 +408,13 @@ let p2Score;        // ROM $1C–$22 P2Score
 let p2Lives;        // ROM $52 P2Lives
 let p2NextLifeScore;
 let hiScore;        // ROM $3D–$43 HiScore (7-digit BCD in ROM; plain int here)
-let newHiScorePlayer; // ROM CompareAndUpdateHiScore ($D9F0): 0=none, 1=P1, 2=P2
+let newHiScorePlayer; // ROM $D97D UpdateHiScore: 0=none, 1=P1, 2=P2
 let enemiesLeft;    // ROM $7F EnemiesRemaining (total to spawn)
 let activeEnemyCount;
 let freezeTimer;    // ROM $0100 EnemyFreezeTimer (Timer power-up)
 let shovelTimer;    // ROM $45 PowerUpTimer for shovel/fortify
 let eagleAlive;
-let eagleExpTimer;   // ROM $68 EagleDestructionTimer: 39→0 over 39 frames; drives EagleStateUpdate ($E386)
+let eagleExpTimer;   // ROM $68 EagleStatus: set to 39 on eagle hit; counts down to 0
 let spawnRot;       // ROM $6A SpawnRotIdx (0→1→2→0 cycling)
 let spawnDelay;     // ROM $82 SpawnDelay countdown
 let phaseTimer;     // stage-start / clear / gameover display timer
@@ -432,7 +432,7 @@ let goScrollY;       // ROM $0106: Y position of in-field "GAME OVER" sprites (2
 let goScrollDir;     // ROM $0107: direction index (0=up,1=left,2=down,3=right) into wiggle tables
 let goScrollTimer;   // ROM $0108: countdown (17→0, decrements every 16 frames; 0=inactive)
 let goScrollFrame;   // frame counter for 16-frame decrement interval
-let killCounts;             // [4] per-type enemy kills this stage  ROM $C625 ClearKillTallies
+let killCounts;             // [4] per-type enemy kills this stage  (cleared at StageStartInit $C331)
 let tallyState;             // tally animation state during 'clear' phase
 let victoryPhase;           // ROM $C44D DrawVictoryScreen phases: 0=peace text, 1=scroll, 2=war-end text, 3=wait
 let victoryTimer;           // frame counter for current victory phase
@@ -440,7 +440,7 @@ let victoryScrollX;         // ROM $4F: horizontal scroll offset (0→240 over 2
 
 // ─── Brick sub-tile init  ─────────────────────────────────────────────────────
 // ROM $D745 SubTileBitmask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
-// ROM $DB79 TileCHRTable types 0–3 are half-wall metatiles (2 of 4 sub-tiles filled):
+// ROM $DACB TileTypeTable types 0–3 are half-wall metatiles (2 of 4 sub-tiles filled):
 //   Type 0 right-col  [00,0F,00,0F] → TR+BR = 0b1010
 //   Type 1 bottom-row [00,00,0F,0F] → BL+BR = 0b1100
 //   Type 2 left-col   [0F,00,0F,00] → TL+BL = 0b0101
@@ -506,8 +506,8 @@ function setEagleWall(steel) {
 }
 
 // ─── Level init  ──────────────────────────────────────────────────────────────
-// ROM $F239 LevelTileLoader  $E4D0 ClearEntitySlots  $E4C6 ClearBulletSlots
-// ROM $C33D LevelStart  $C625 ClearKillTallies
+// ROM $F000 LoadStageData  $E413 ClearEntitySlots2
+// ROM $C331 StageStartInit
 function initLevel(idx) {
   stageIdx          = idx % LEVEL_MAPS.length;  // ROM loops back to stage 1 after stage 35
   frameCount        = 0;
@@ -570,13 +570,13 @@ function initLevel(idx) {
 }
 
 // ─── Player respawn  ──────────────────────────────────────────────────────────
-// ROM $E417 PlayerRespawn (player branch)  $E539 PlayerSpawnX/Y
+// ROM $E363 SpawnEnemy/FinalizeEntitySpawn (player branch)  $E47A PlayerSpawnX[2]  $E47C PlayerSpawnY[2]
 function spawnPlayer(slot) {
   const e   = entities[slot];
   const pos = slot === 0 ? P1_SPAWN : P2_SPAWN;
   e.x           = pos.x;
   e.y           = pos.y;
-  e.dir         = 0;      // UP  ROM $E53B InitState players=$A0
+  e.dir         = 0;      // UP  ROM $E47E EntityInitStatus: players=$A0
   e.alive       = true;
   e.spawnAnim   = 30;     // spawn star anim  ROM $DF09/$DF18: 15 states×2 frames ≈ 30 frames
   e.shieldTimer = 3;      // spawn shield: 3 ticks × 64 frames = 192 frames  ROM $89,X
@@ -585,8 +585,8 @@ function spawnPlayer(slot) {
 }
 
 // ─── Enemy type table  ────────────────────────────────────────────────────────
-// ROM $E5A9 EnemyTypeTable (140 B) + $E6A9 SpeedTable (36 entries × 4 B)
-// EnemySpawn ($E46C): slot counts from SpeedTable[$85-1]; type = EnemyTypeTable[($85-1)*4+slot]
+// ROM $E4EC EntityTypeTable (35×4 type bytes) + $E578 StageEnemyCountTable (35×4 counts)
+// SpawnEnemy ($E363): slot counts from StageEnemyCountTable[$85-1]; type = EntityTypeTable[($85-1)*4+slot]
 // $80=Basic(0), $A0=Fast(1), $C0=Power(2), $E0=Armor(3)
 // 35 stages × 20 enemies; slots emitted in order (slot0 count times, then slot1, etc.)
 // Famicom ROM: EntityTypeTable $E4EC (35x4 type bytes) + StageEnemyCountTable $E578 (35x4 counts)
@@ -631,7 +631,7 @@ const ENEMY_TYPE_TABLE = [
 ];
 
 // ─── Enemy spawn  ─────────────────────────────────────────────────────────────
-// ROM $DBF6 EnemySpawnDispatch  $E417 PlayerRespawn (enemy branch)  $E531 EnemySpawnX
+// ROM $DB48 EnemySpawnTick  $E363 SpawnEnemy (enemy branch)  $E474 EnemySpawnX[3]
 function spawnEnemy() {
   if (enemiesLeft <= 0)        return;
   if (activeEnemyCount >= 4)   return;   // max 4 on screen simultaneously
@@ -640,13 +640,13 @@ function spawnEnemy() {
     const e = entities[i];
     if (e.alive || e.deathTimer > 0) continue;
 
-    e.x          = EN_SPAWN_X[spawnRot % 3];  // ROM $6A SpawnRotIdx → $E531
+    e.x          = EN_SPAWN_X[spawnRot % 3];  // ROM $6A SpawnRotIdx → $E474 EnemySpawnX[3]
     e.y          = EN_SPAWN_Y;
-    e.dir        = 2;     // DOWN  ROM $E53B InitState enemies=$A2
+    e.dir        = 2;     // DOWN  ROM $E47E EntityInitStatus: enemies=$A2
     e.alive      = true;
     e.spawnAnim  = 30;
 
-    // Enemy type: per-stage sequence from ROM $E5A9 EnemyTypeTable + $E6A9 SpeedTable
+    // Enemy type: per-stage sequence from ROM $E4EC EntityTypeTable + $E578 StageEnemyCountTable
     // spawnIdx = enemies already spawned = 20 - enemiesLeft (0..19)
     const typeRow = ENEMY_TYPE_TABLE[Math.min(stageIdx, ENEMY_TYPE_TABLE.length - 1)];
     e.type       = typeRow[20 - enemiesLeft];
@@ -730,11 +730,11 @@ function canMove(e, d) {
   if (nx - 8 < FX || nx - 8 + TANK_SZ > FX + GW * META) return false;
   if (ny - 8 < FY || ny - 8 + TANK_SZ > FY + GH * META) return false;
 
-  // Eagle zone  ROM $E838 eagle tile check ($C8) — 16×16 eagle center at (ex-8, ey-8)
+  // Eagle zone  ROM $DC7C EntityMovementAI: eagle tile block — 16×16 eagle center at (ex-8, ey-8)
   if (eagleAlive && rectsOverlap(nx - 8, ny - 8, TANK_SZ, TANK_SZ, EAGLE.x - 8, EAGLE.y - 8, 16, 16)) return false;
 
   // Tile collision: 2 leading-edge probe points at 8px tile resolution
-  // ROM MoveGridSnap ($DD4B–$DDBC): probes top and bottom of leading edge
+  // ROM $DD30 MoveGridSnap: probes top and bottom of leading edge
   // UP: (nx-8,ny-8),(nx+7,ny-8)  LEFT: (nx-8,ny-8),(nx-8,ny+7)
   // DOWN: (nx-8,ny+7),(nx+7,ny+7)  RIGHT: (nx+7,ny-8),(nx+7,ny+7)
   let p1x, p1y, p2x, p2y;
@@ -950,26 +950,26 @@ function moveBullets() {
     const b = bullets[i];
     if (!b.active) continue;
 
-    // Alternating-frame skip  ROM $E7A9: TXA EOR $0B AND #$01 BEQ skip
+    // Alternating-frame skip  ROM $E604 BulletTerrainCollision: slot^frame parity skip
     // slot index XOR frameLo parity → move only on even (slot^frame) frames
     if ((b.slot ^ frameCount) & 1) continue;
 
     b.x += DX[b.dir] * BULLET_SPD;
     b.y += DY[b.dir] * BULLET_SPD;
 
-    // Out of field bounds  ROM $E838 boundary
+    // Out of field bounds  ROM $E604 BulletTerrainCollision: boundary check
     if (b.x < FX - 4 || b.x > FX + GW * META + 4 ||
         b.y < FY - 4 || b.y > FY + GH * META + 4) {
       b.active = false;
       continue;
     }
 
-    // Eagle hit  ROM $E838: eagle tile $C8 → set $68=$27=39 (eagle-destruction timer)
+    // Eagle hit  ROM $E693 BulletHitCheck: eagle tile $C8 → set $68=$27=39 (eagle-destruction timer)
     if (eagleAlive &&
         Math.abs(b.x - EAGLE.x) < 12 &&
         Math.abs(b.y - EAGLE.y) < 8) {
       eagleAlive    = false;
-      eagleExpTimer = 39;  // ROM $E838 STA #$27 → $68; $27=39 decimal
+      eagleExpTimer = 39;  // ROM $E693: $68 = $27 = 39 decimal
       sfxEagleHit();  // ROM $030B=1
       triggerBulletExplosion(b);
       b.active = false;
@@ -1004,8 +1004,8 @@ function bulletHitsTile(b) {
   const qy = localY >= 8 ? 1 : 0;
   const qbit = 1 << (qy * 2 + qx);  // TL=bit0, TR=bit1, BL=bit2, BR=bit3
 
-  // Steel: stop bullet  ROM $E838 steel check  $030D=1 if player bullet
-  // Armor-piercing (starLevel >= $60): destroy steel  ROM $E83E TileDestroyIfNoEntity ($D77F)
+  // Steel: stop bullet  ROM $E693 BulletHitCheck: steel tile check  $030D=1 if player bullet
+  // Armor-piercing (starLevel >= $60): destroy steel  ROM $E693: BulletHitCheck armor-pierce path
   if (t === T.STEEL || (t >= T.STEEL_R && t <= T.STEEL_T)) {
     if (t >= T.STEEL_R && t <= T.STEEL_T) {
       // Partial steel: open ($20) quadrants are passable — only solid ($10) quadrants block
@@ -1018,7 +1018,7 @@ function bulletHitsTile(b) {
     return true;
   }
 
-  // Water: stop bullet, no destroy  ROM $E838 water check
+  // Water: stop bullet, no destroy  ROM $E693 BulletHitCheck: water tile check
   if (t === T.WATER) { if (b.owner < 2) sfxSteelHit(); return true; }  // ROM $030D=1
 
   // Brick: destroy quarter  ROM $D763 TileDestroyBrick  $D745 SubTileBitmask
@@ -1055,7 +1055,7 @@ function destroyBrick(row, col, bx, by) {
 }
 
 // ─── Bullet–entity collision  ─────────────────────────────────────────────────
-// ROM $E8B1 EnemyBulletPlayerHit: 10×10 px proximity check
+// ROM $E70C EnemyBulletPlayerCollision: 10×10 px proximity check
 function bulletEntityCollision() {
   for (let bi = 0; bi < bullets.length; bi++) {
     const b = bullets[bi];
