@@ -2163,15 +2163,15 @@ function drawGameOver() {
   drawNesText('PRESS START', 76, 172, 3);
 }
 
-// ROM $CAF1 StageClearTallyScreen → TallyScreenInit ($CD04)
-// Full-screen layout matching ROM nametable positions (col×8, row×8):
-//   Row 3: "HI-SCORE" (col 8) + value (col ~18)
-//   Row 5: "STAGE" (col 12) + number (col 14)
-//   Row 7: "I-PLAYER" (col 3)     Row 9: P1 score (col 5)
-//   Rows 12/15/18/21: per-type rows — score (col 1), "PTS" (col 8),
-//     arrow $5B (col 14), enemy sprite (col 15), kill count (col ~13)
-//   Row 22: separator (7× tile $5C at col 12)
-//   Row 23: "TOTAL" (col 6) + total count (col ~13)
+// ROM $8CD4 ResultScreen entry → $CEF7 ResultScreenInit (static strings) → $8D0A per-type tally loop
+// Full-screen layout confirmed against Famicom ROM nametable positions (col×8, row×8):
+//   Row 3:  "HI-SCORE" (col 8, $CF2D) + hi-score value (col 18+skip, $CF34)
+//   Row 5:  "STAGE" (col 12, $CF44) + stage number (col 14+skip, $CF54)
+//   Row 7:  "I-PLAYER" (col 3, $CF67)     Row 9: P1 score (col 5+skip, $CF72)
+//   Rows 12/15/18/21: per-type — result score (col 1+skip, $8D6E), "PTS" (col 8, $D023),
+//     kill count (col 8+skip right-justified, $8D85), arrow $5B (col 14, $CF7A)
+//   Row 22: separator 7× tile $5C at col 12 ($D099, string $D3BB)
+//   Row 23: "TOTAL" (col 6, $D0B2) + total kills (col 8+skip, $8DFE)
 function drawStageClear() {
   // ROM uses full 256×240 screen, black background
   ctx.fillStyle = '#000';
@@ -2179,19 +2179,19 @@ function drawStageClear() {
 
   const PTS = [100, 200, 300, 400];
 
-  // Row 3 (y=24): HI-SCORE label + value  ROM $CD2D: (col 8, row 3)
+  // Row 3 (y=24): HI-SCORE label + value  ROM $CF2D: (col 8, row 3); hi-score at col 18+skip ($CF34)
   drawNesText('HI-SCORE', 64, 24, 3);
   drawNesText(hiScore.toString().padStart(6, ' '), 144, 24, 3);
 
-  // Row 5 (y=40): STAGE + number  ROM $CD48: (col 12, row 5)
+  // Row 5 (y=40): STAGE + number  ROM $CF44: (col 12, row 5); stage num at col 14+skip ($CF54)
   drawNesText('STAGE', 96, 40, 3);
   drawNesText((stageIdx + 1).toString().padStart(2, ' '), 144, 40, 3);
 
-  // Row 7 (y=56): player label  ROM $CD6B: (col 3, row 7)
+  // Row 7 (y=56): player label  ROM $CF67: (col 3, row 7)
   // ROM uses tile $5E (special I glyph) but web uses "I" as approximation
   drawNesText('I-PLAYER', 24, 56, 3);
 
-  // Row 9 (y=72): P1 accumulated score  ROM $CD7A: (col 5, row 9)
+  // Row 9 (y=72): P1 accumulated score  ROM $CF72: (col 5+skip, row 9)
   drawNesText(p1Score.toString().padStart(6, ' '), 40, 72, 3);
 
   if (!tallyState) return;
@@ -2212,27 +2212,27 @@ function drawStageClear() {
       tallied = 0;
     }
 
-    // Per-type score + "PTS" label  ROM $CB87: (col 1, row N), $CE20: (col 8, row N)
+    // Per-type score + "PTS" label  ROM $8D6E: (col 1+skip, row N), $D023: (col 8, row N)
     if (row <= ts.row) {
       const rowScore = tallied * PTS[row];
       drawNesText(rowScore.toString().padStart(5, ' '), 8, ry, 3);
       drawNesText('PTS', 64, ry, 3);
     }
 
-    // Kill count  ROM $CBA2: (col 8+skip, row N) → ends at col ~13 before arrow
+    // Kill count (right-justified 2 digits)  ROM $8D85: (col 8+skip→12/13, row N)
     if (row <= ts.row) {
       drawNesText(tallied.toString().padStart(2, ' '), 96, ry, 3);
     }
 
-    // Arrow tile $5B at col 14 (x=112)  ROM $CD86: (col 14, rows 12/15/18/21)
+    // Arrow tile $5B at col 14 (x=112)  ROM $CF7A: (col 14, rows 12/15/18/21)
     if (chrOff) {
       drawCHRTile(0x5B, 3, 112, ry, false);
     } else {
       drawNesText('<', 112, ry, 3);
     }
 
-    // Enemy type icon (16×16 sprite, facing up)  ROM $CEC4/$CF3C
-    // Positioned at pixel (121, ry-4) to center vertically  ROM: (X=$81=129-8=121, Y varies)
+    // Enemy type icon (16×16 sprite, facing up)  ROM $D0B8: DrawEagleStar (X=$81, Y=tile*$20)
+    // Positioned at pixel (121, ry-4) to center vertically  ROM: X=$81=129, sprite drawn at 129-8=121
     const sprBase = 0x80 + row * 0x20;
     const T = 256 + sprBase;
     if (chrOff) {
@@ -2245,14 +2245,14 @@ function drawStageClear() {
     }
   }
 
-  // Row 22 (y=176): separator line  ROM $CEA2: 7× tile $5C at (col 12, row 22)
+  // Row 22 (y=176): separator line  ROM $D099: 7× tile $5C (string $D3BB) at col 12
   if (chrOff) {
     for (let i = 0; i < 7; i++) drawCHRTile(0x5C, 3, 96 + i * 8, 176, false);
   } else {
     drawNesText('-------', 96, 176, 3);
   }
 
-  // Row 23 (y=184): TOTAL + count  ROM $CEB4: (col 6, row 23), $CC16: (col 8, row 23)
+  // Row 23 (y=184): TOTAL + count  ROM $D0B2: (col 6, row 23); total kills at col 8+skip ($8DFE)
   drawNesText('TOTAL', 48, 184, 3);
   if (ts.done) {
     const totalKills = killCounts.reduce((s, n) => s + n, 0);

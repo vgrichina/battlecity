@@ -167,3 +167,9 @@ bank,addr,name,type,comment
 0,D2F8,str_Copyright,data,str_Copyright: $40+""1980 1985 NAMCO LTD""+$69 FF — copyright line; drawn at col=4 row=25.
 0,D320,str_AllRights,data,str_AllRights: ""ALL RIGHTS RESERVED"" FF — drawn at col=6 row=27.
 0,D3B1,str_CursorArrow,data,str_CursorArrow: $5B FF — cursor/arrow glyph tile used in tally screen and player-select cursor.
+0,8CD4,ResultScreen,,ResultScreen: entry point for stage-clear result/tally screen; sums kills into $7D/$7E; calls CEF7 (static strings init); loops $5A=0–3 per enemy type; JSR D0B8 draws eagle-star sprites; tally animates kill counts; 2P check at $8D99.
+0,CEF7,ResultScreenInit,,ResultScreenInit: draws static strings for result screen; sets $6B=1/$05=$24/$60=$30/$4D=3; calls DrawNametableText for HI-SCORE(col8 row3)/"STAGE"(col12 row5)/"I-PLAYER"(col3 row7); tile $5B arrows at col14 rows 12/15/18/21; "PTS" at col8 rows 12/15/18/21; separator $D3BB at col12 row22; "TOTAL" $D3B5 at col6 row23.
+0,D3BB,str_Separator,data,str_Separator: 7x tile $5C FF — horizontal-rule separator drawn at col=12 row=22 on result screen.
+0,D3B5,str_Total,data,str_Total: "TOTAL" FF — drawn at col=6 row=23 on result screen.
+0,D3B3,str_RightArrow,data,str_RightArrow: $5D FF — right-pointing arrow tile; drawn at col=17 rows 12/15/18/21 in 2P result screen.
+0,D3CB,str_Stage,data,str_Stage: "STAGE" FF — drawn at col=12 row=5 on result screen ($CF44).
