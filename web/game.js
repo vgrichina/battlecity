@@ -1362,7 +1362,7 @@ function tickDemoAI() {
 function update() {
   frameCount++;
 
-  tickPaletteFlash(); // ROM $C31D PaletteFlashTick
+  if (gamePhase === 'play') tickPaletteFlash(); // ROM $C31D PaletteFlashTick — water animation, in-game only
 
   if (demoMode && gamePhase === 'play') tickDemoAI();
 
