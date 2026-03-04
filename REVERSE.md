@@ -53,7 +53,10 @@
 | $D467 | — | — | code | WaitNMI |
 | $D470 | — | — | code | ClearSpriteBuf |
 | $D47E | — | — | code | WriteNametable |
-| $D491–$D501 | — | ~113 | code | Init + CheckSavedState |
+| $C040–$C04F | $0040–$004F | 16 | data | DevSignature: ASCII "RYOUITI OOKUBO  " (developer name used as SRAM magic for soft-reset detection) |
+| $D491–$D4E2 | — | ~82 | code | Init: clear vars; InitRAM; WriteNametable; HideSpritePairs; if !CheckSavedState: set $3F=2/$83=0; InitEntities x2; WriteDefaultConfig; APUSoundInit |
+| $D4E3–$D4EE | — | 12 | code | WriteDefaultConfig: copy DevSignature ($C040) → $0110-$011F in RAM; called at end of Init |
+| $D4EF–$D501 | — | 19 | code | CheckSavedState: compare $0110-$011F vs DevSignature ($C040); A=1 = match (soft-reset); A=0 = no match (first boot) |
 | $D502–$D50D | — | 12 | code | InitRAM entry |
 | $D50E | — | — | code | PaletteUpdate |
 | $D5FB | — | — | code | CalcNametableAddr |
@@ -459,7 +462,7 @@ Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 - [x] Map entity/enemy system: SpawnEnemy ($E363) internals; EntityType table; movement/AI dispatcher; understand $8B-$8E usage in spawn logic. **Done.** Entity state machine: Free(0)→SpawnAnim($F0, 14 ticks via $DE55)→$E0→DeathAnim(14 ticks via $DE64)→FinalizeEntitySpawn($E3B8)→Active($A0/$A2). 8 slots: 0-1=players, 2-7=enemies (2-5 in 1P, 2-7 in 2P). Direction 0=up/1=left/2=down/3=right (dX: $E46C, dY: $E470, ×8 px/frame). Enemy spawns at X=$18/$78/$D8 (round-robin $6A), Y=$18. Type selection: $8F indexes $8B-$8E counts → $E4EC[(stage-1)×4+$8F] ($80=basic $A0=fast $C0=power $E0→$E3=armor). Blink flag at $7F=3/10/17. EntityStateTable($E498): 16 ptrs; AI dispatch at $DC3D. Added 17 new labels, EntityStateTable/EntityTypeTable/spawn tables documented.
 - [x] Extract CHR ROM tiles — identify tiles $5E/$5F/$6B (namcot logo?), $60–$68 (credit names). **Done.** Fixed TILE_SZ bug in extract_tiles.py. CHR tiles extracted to tiles/. BG font: $40=©, $41–$5A=A–Z, $6B="-" dash (used in HI-SCORE/I-PLAYER/II-PLAYER). Tiles $5E=Roman-numeral-I (player-1 indicator), $5F=Roman-numeral-II (player-2 indicator), $6B=dash separator. Tiles $60–$68 = 9 NAMCOT logo graphic tiles (monochrome, plane-1=0), displayed as one row on title screen at $D28F — confirmed by raw string table at $D280. Full string table decoded: "© 1980 1985 NAMCO LTD.", "ALL RIGHTS RESERVED", "OPEN-REACH". Added CHR ROM Tile Map section and corrected Title Screen Layout table.
 - [x] Map sound engine ($D689 and call sites at $EA7E). **Done.** $D689 = ReadControllers (mislabeled "SoundUpdate" — it reads $4016/$4017). The real sound engine: $EA51=APUSoundInit (enables sq1+sq2+tri+noise; $4017=$C0; zeros 28 channel data blocks at $031C–$03FB). $EA7E=SoundEngineTick (NMI-called; $6D→$F5: 1 channel if game, else 28; iterate channels at $031C, each 8B; $ECAF=GetChannelDataPtr reads $F2/$F3 from ChannelPtrTable at $ECFE; $ECBE=ReadChannelByte reads note sequence; writes APU $4000+X×4). $ECE6=NoteFreqTable (12 note periods). $ECFE=ChannelPtrTable (28 × u16le ptrs to note/SFX seq data). $0300[$F4]=channel active status; $0300–$031B=28-byte status array; $031C–$03FB=28 × 8B channel state blocks.
-- [ ] Understand CheckSavedState / DefaultConfig ($D4EF / $C040) — continue feature?
+- [x] Understand CheckSavedState / DefaultConfig ($D4EF / $C040) — continue feature? **Done.** $C040–$C04F = DevSignature "RYOUITI OOKUBO  " (16-byte ASCII dev name as SRAM magic). $D4E3 = WriteDefaultConfig (copies signature to RAM $0110–$011F, called at end of Init). $D4EF = CheckSavedState (compare $0110 vs $C040; A=1→soft-reset, skip $3F/$83 init; A=0→first boot, set $3F=2/$83=0). This is Battle City's "continue" mechanism: on first power-on the RAM won't have the signature so game resets state; on soft-reset the signature survives and state is preserved.
 - [ ] Locate and map level/stage data (35 stages in Famicom vs 40 in VS)
 - [x] Map entity/enemy system (EntityType table, movement, AI) — covered above
 - [ ] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller)

@@ -30,8 +30,9 @@ bank,addr,name,type,comment
 0,D470,ClearSpriteBuf,,
 0,D47E,WriteNametable,,
 0,D491,Init,,Init: clears $60/$6B/$0C/$0D/$6D; $4D=$FF (skip PPU updates); calls InitRAM; $0E=4; $6E=$20; WriteNametable; HideSpritePairs; ZeroSlot x3; if CheckSavedState: $3F=2 $83=0 (1P); WriteNametable x2; InitEntities; SoundResetInit
-0,D4E3,DefaultConfig,data,
-0,D4EF,CheckSavedState,,CheckSavedState: compare $0110-$011F with DefaultConfig at $C040; return A=1 if match (first boot)
+0,C040,DevSignature,data,DevSignature: 16-byte ASCII developer name "RYOUITI OOKUBO  " used as SRAM magic; compared against $0110-$011F to detect soft-reset vs first-boot
+0,D4E3,WriteDefaultConfig,code,WriteDefaultConfig: LDX #$0F; loop: LDA $C040,X → STA $0110,X; DEX; BPL loop; RTS — copies 16-byte DevSignature ($C040) into RAM $0110-$011F; called at end of Init so subsequent soft-resets skip state init
+0,D4EF,CheckSavedState,,CheckSavedState: compare $0110-$011F with DevSignature at $C040; A=1 if match (soft-reset → saved state valid); A=0 if no match (first power-on → init $3F=2/$83=0)
 0,D502,InitRAM,,
 0,D50E,PaletteUpdate,,
 0,D5FB,CalcNametableAddr,,
