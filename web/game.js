@@ -1691,12 +1691,10 @@ function drawBorderTiles() {
     return;
   }
 
-  // ROM ClearNametableSlot ($98EB) always writes tile $FC and zeros attributes (palIdx 0).
-  // However, the HUD area and borders often end up with Palette 3 via HUD draw calls.
-  // By using Palette 3 corrected to gray (indices 1 and 3), the $FC triangles blend
-  // into a solid gray border matching emulator behavior.
+  // ROM ClearNametableSlot ($98EB) always writes tile $FC and zeros attributes (palIdx 0 = BG0).
+  // Famicom nametable attribute byte for border area is $00 → BG palette 0 ([0x0F,0x17,0x06,0x00]).
   const tile = 0xFC;
-  const palIdx = 3; 
+  const palIdx = 0;
 
   // Top 2 rows (rows 0–1, all 32 cols)
   for (let r = 0; r < 2; r++)
@@ -2054,7 +2052,7 @@ function drawHUD() {
   if (chrOff) {
     for (let r = 0; r < 30; r++)
       for (let c = 28; c < 32; c++)
-        drawCHRTile(0xFC, 3, c * 8, r * 8);
+        drawCHRTile(0xFC, 0, c * 8, r * 8);
   } else {
     // Fallback: fill sidebar area with solid gray
     fillRect(hx, 0, 32, 240, '#666666');
@@ -2068,14 +2066,14 @@ function drawHUD() {
     const col = i % 2, row = Math.floor(i / 2);
     if (i < total) {
       if (chrOff) {
-        drawCHRTile(0x6A, 3, hx + 8 + col * 8, 3 * 8 + row * 8, true);
+        drawCHRTile(0x6A, 0, hx + 8 + col * 8, 3 * 8 + row * 8, true);
       } else {
         fillRect(hx + 8 + col * 8, 3 * 8 + row * 8, 8, 6, C.ENEMY);
       }
     } else {
       // ROM $C7AE DrawHUDKillIconB: write tile $11 (steel/blank) for consumed slots
       if (chrOff) {
-        drawCHRTile(0x11, 3, hx + 8 + col * 8, 3 * 8 + row * 8, false);
+        drawCHRTile(0x11, 0, hx + 8 + col * 8, 3 * 8 + row * 8, false);
       }
     }
   }
@@ -2083,9 +2081,9 @@ function drawHUD() {
   // P1 lives  ROM $C72D: "IP" at col 29 row 17; $C6C5: icon $14 at col 29 row 18, digit at col 30
   const p1y = 18 * 8;  // nametable row 18 = pixel 144
   if (chrOff) {
-    drawNesText('IP', hx + 8, 17 * 8, 3);          // ROM col 29, row 17
-    drawCHRTile(0x14, 3, hx + 8, p1y, true);        // ROM col 29, row 18
-    drawNesText(String(p1Lives + 1), hx + 16, p1y, 3); // ROM col 30, row 18
+    drawNesText('IP', hx + 8, 17 * 8, 0);          // ROM col 29, row 17
+    drawCHRTile(0x14, 0, hx + 8, p1y, true);        // ROM col 29, row 18
+    drawNesText(String(p1Lives + 1), hx + 16, p1y, 0); // ROM col 30, row 18
   } else {
     text('IP', hx + 8, p1y - 8, C.P1, 6);
     text(String(p1Lives + 1), hx + 16, p1y + 6, C.HUD_TEXT, 6);
@@ -2095,9 +2093,9 @@ function drawHUD() {
   if (numPlayers === 2) {
     const p2y = 21 * 8;  // nametable row 21 = pixel 168
     if (chrOff) {
-      drawNesText('IIP', hx + 8, 20 * 8, 3);          // ROM col 29, row 20
-      drawCHRTile(0x14, 3, hx + 8, p2y, true);        // ROM col 29, row 21
-      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 16, p2y, 3); // ROM col 30, row 21
+      drawNesText('IIP', hx + 8, 20 * 8, 0);          // ROM col 29, row 20
+      drawCHRTile(0x14, 0, hx + 8, p2y, true);        // ROM col 29, row 21
+      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 16, p2y, 0); // ROM col 30, row 21
     } else {
       text('IIP', hx + 8, p2y - 8, C.P2, 6);
       text(String(Math.max(0, p2Lives + 1)), hx + 16, p2y + 6, C.HUD_TEXT, 6);
@@ -2108,12 +2106,12 @@ function drawHUD() {
   const sty = 23 * 8;  // nametable row 23 = pixel 184
   if (chrOff) {
     // Flag icon: 2×2 tiles at rows 23–24, cols 29–30  ROM $D225/$D228
-    drawCHRTile(0x6C, 3, hx + 8, sty,     true);  // top-left
-    drawCHRTile(0xFC, 3, hx + 16, sty,     true);  // top-right
-    drawCHRTile(0x6D, 3, hx + 8, sty + 8, true);  // bottom-left
-    drawCHRTile(0xFD, 3, hx + 16, sty + 8, true);  // bottom-right
+    drawCHRTile(0x6C, 0, hx + 8, sty,     true);  // top-left
+    drawCHRTile(0xFC, 0, hx + 16, sty,     true);  // top-right
+    drawCHRTile(0x6D, 0, hx + 8, sty + 8, true);  // bottom-left
+    drawCHRTile(0xFD, 0, hx + 16, sty + 8, true);  // bottom-right
     const sn = String(stageIdx + 1).padStart(2);
-    drawNesText(sn, hx + 8, sty + 16, 3);  // ROM row 25
+    drawNesText(sn, hx + 8, sty + 16, 0);  // ROM row 25
   } else {
     text('S' + (stageIdx + 1), hx + 16, sty + 8, C.HUD_TEXT, 6);
   }
