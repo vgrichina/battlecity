@@ -2,8 +2,15 @@ bank,addr,name
 0,C070,Reset
 0,C09C,MainLoop
 0,C0AE,ConstructionEntry
-0,C159,GameInit
+0,C159,StageWrapAround
+0,C0F8,InterStageScreen
+0,C18A,GameplayInit
+0,C29F,GameTickMain
+0,C301,SpawnPlayersInit
 0,C2B3,NewGameSetup
+0,F200,DisplayStageNumber
+0,D14F,str_Battle_sprite,data/string
+0,D156,str_City_sprite,data/string
 0,C3B5,StagePlay
 0,C41D,GameOverLoop
 0,C7AB,TitleWaitLoop
