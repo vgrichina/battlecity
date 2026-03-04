@@ -2492,11 +2492,16 @@ function drawTitleScreen() {
   drawNesText('2 PLAYERS',   88, 152, 0);
   drawNesText('CONSTRUCTION', 88, 168, 0);
 
-  // ROM $CA2F UpdateCursorSprite: sprite cursor at col=8 blinks every 4 frames ($B0 bit2 toggles)
-  // cursor row = 17 + titleCursor*2 → y = 136 + titleCursor*16
+  // ROM $CA2F UpdateCursorSprite: P1 tank sprite (entity slot 0, $A0=$83, dir=$83&$03=3=RIGHT)
+  // at X=$90=$48=72, Y=$98=cursor×16+$8B; blink via $B0 bit2 every 4 frames
+  // $DA73: tileBase = dir×8 + animBase = 3×8+0 = $18; drawn as 2×2 metasprite from sprite bank
   if ((titleFrame >> 2) & 1) {
     if (chrOff) {
-      drawCHRTile(0x5B, 0, 64, 136 + titleCursor * 16, true); // tile $5B = arrow cursor
+      const T = 256 + 0x18; // P1 tank, dir=3 (right), star0, animBit=0
+      drawCHRTile(T,   4, 64, 132 + titleCursor * 16, true); // top-left    SP0=palIdx 4
+      drawCHRTile(T+2, 4, 72, 132 + titleCursor * 16, true); // top-right
+      drawCHRTile(T+1, 4, 64, 140 + titleCursor * 16, true); // bottom-left
+      drawCHRTile(T+3, 4, 72, 140 + titleCursor * 16, true); // bottom-right
     } else {
       drawNesText('>', 64, 136 + titleCursor * 16, 0);
     }
