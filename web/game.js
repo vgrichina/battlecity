@@ -322,7 +322,16 @@ function passable8(px, py) {
     const qy = Math.floor(((py - FY) % META) / 8);
     return !(brickBits[row][col] & (1 << (qy * 2 + qx)));
   }
-  return false;  // STEEL variants, WATER block
+  if (t >= T.STEEL_R && t <= T.STEEL_T) {  // partial steel: open quadrants ($20 tiles) are passable
+    const qx = Math.floor(((px - FX) % META) / 8);
+    const qy = Math.floor(((py - FY) % META) / 8);
+    // Solid-quadrant bitmask (TL=bit0,TR=bit1,BL=bit2,BR=bit3) derived from TILE_CHR $10 entries:
+    // STEEL_R=[0x20,0x10,0x20,0x10]→TR+BR solid=0b1010; STEEL_B=[0x20,0x20,0x10,0x10]→BL+BR=0b1100
+    // STEEL_L=[0x10,0x20,0x10,0x20]→TL+BL solid=0b0101; STEEL_T=[0x10,0x10,0x20,0x20]→TL+TR=0b0011
+    const STEEL_BLOCK = [0b1010, 0b1100, 0b0101, 0b0011]; // indexed by t - T.STEEL_R
+    return !(STEEL_BLOCK[t - T.STEEL_R] & (1 << (qy * 2 + qx)));
+  }
+  return false;  // T.STEEL (full) and WATER block
 }
 
 // ─── NES color palette approximations  ────────────────────────────────────────
