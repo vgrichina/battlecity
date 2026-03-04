@@ -88,12 +88,13 @@
 | $57 | SpriteY | Y position for DrawSpriteString |
 | $5A/$5B | (player slot) | Used during construction setup |
 | $60 | TileOffset | Added to sprite tile indices; $30 for highlighted mode, 0 normal |
-| $6C | StartingParam | 5 for 1P, 7 for 2P/CONSTRUCTION (lives or enemies?) |
+| $6C | MaxEntitySlotIdx | Max zero-page $A0 entity-array index: 5=1P (player slot 1 + 4 enemy slots 2–5), 7=2P (players 1–2 + enemy slots 3–7); set at $C3FF (1P) / $C8AE (2P); read by FindFreeEnemySlot ($DC01) and NMI scroll writer ($97E0: written to PPU $2005 as Y-scroll) |
 | $6D | (game active) | Set to 1 at StagePlay |
 | $83 | PlayerMode | 0=1P, 1=2P, 2=CONSTRUCTION; cycles via SELECT button |
 | $90 | (unknown) | Set to $48 in PlayerSelectLoop |
 | $98 | CursorSpriteIdx | OAM sprite index for cursor: $8B + ($83 × 16) |
-| $A0 | (unknown) | Set to $83 in PlayerSelectLoop |
+| $7F/$80 | EnemiesRemaining | Enemies left to spawn this stage; both initialized to $14 (20) at $C325 (NewGameSetup); DEC'd by FindFreeEnemySlot ($DC12) each spawn |
+| $A0 | EntityStatus[0..N] | Zero-page entity-status array; slots 1–$6C; $A0+idx=0 → slot free, non-zero → occupied |
 | $B0 | BlinkState | XOR'd with $04 every 4 frames for cursor blink |
 
 ---
@@ -155,9 +156,11 @@ Dispatch table (`$CA69`):
 
 | $83 | Target | Action |
 |-----|--------|--------|
-| 0 | $CA6F | 1P: $6C=5; JSR NewGameSetup; JMP GameInit |
-| 1 | $CA74 | 2P: $6C=7; JSR NewGameSetup; JMP GameInit |
-| 2 | $CA7E | CONSTRUCTION: $6C=7; JMP ConstructionEntry |
+| 0 | $CA6F | 1P: → eventually JSR NewGameSetup; $6C set to 5 at $C3FF (within StagePlay $C3B5) |
+| 1 | $CA74 | 2P: → eventually JSR NewGameSetup; $6C set to 7 at $C8AE |
+| 2 | $CA7E | CONSTRUCTION: $6C=7 at $C8AE; JMP ConstructionEntry |
+
+Note: addresses $CA6F/$CA74/$CA7E in the dispatch table are jump targets inside copy-table code and not simple `LDA #$05; STA $6C` sequences. $6C is set later during StagePlay/$C8B6 setup via dedicated sub-routines ($C3FD for 1P, $C8AC for 2P).
 
 ---
 
@@ -182,21 +185,21 @@ Bit layout of $06/$07 (raw) and $08/$09 (new presses):
 | Menu navigation | Fire button → start game | SELECT cycles, START confirms |
 | namcot branding | Not present | CHR tiles $5E/$5F/$6B area |
 | Stage select | Not present | Yes — cheat via P1+P2 combo |
-| Starting lives DIP | Yes ($4016 bit4 → 3 or 5 lives) | No DIP; $6C controls (5 or 7) |
+| Starting lives DIP | Yes ($4016 bit4 → 3 or 5 lives) | No DIP; lives count from separate logic ($6C is entity slot count, NOT lives) |
 | CONSTRUCTION mode | Not present | Yes (menu option 2) |
 
 ---
 
 ## Next Tasks
 
-- [ ] Understand what $6C=5/$6C=7 controls exactly (NewGameSetup $C2B3)
+- [x] Understand what $6C=5/$6C=7 controls exactly (NewGameSetup $C2B3). **Done.** $6C = MaxEntitySlotIdx: upper bound of the $A0 zero-page entity-status array. Set at $C3FF (1P→5) or $C8AE (2P→7). Read by FindFreeEnemySlot ($DC01): loop scans $A0+$6C down to $A0+2 for free enemy slot; 1P gets 4 enemy slots (2–5), 2P gets 5–6 (3–7 with player 2 at slot 2). Also read at $97E0 and written to PPU $2005 (Y-scroll) — same value doubles as a 5 or 7 pixel nametable Y-offset for VS System layout. Enemy-per-stage count is stored separately in $7F/$80 (both = $14=20, set at $C325).
 - [ ] Identify GameInit ($C159) — what does it set up?
 - [ ] Map StagePlay ($C3B5) — level data loading, entity init
 - [ ] Extract CHR ROM tiles — identify tiles $5E/$5F/$6B (namcot logo?), $60–$68 (credit names)
 - [ ] Map sound engine ($D689 and call sites at $EA7E)
 - [ ] Understand CheckSavedState / DefaultConfig ($D4EF / $C040) — continue feature?
 - [ ] Locate and map level/stage data (35 stages in Famicom vs 40 in VS)
-- [ ] Map entity/enemy system (EntityType table, movement, AI)
+- [ ] Map entity/enemy system (EntityType table, movement, AI). Entity status array at $A0 (indexed 1..$6C); FindFreeEnemySlot ($DC01) scans high→low for free slot; $E417 spawns enemy; $7F/$80 = enemies-remaining (init 20); need to map $E417 and EntityType table.
 - [ ] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller)
 - [ ] Map $EA51 and $EA7E (called from Init and NMI respectively)
 - [ ] Locate high score save/load logic
