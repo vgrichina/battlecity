@@ -149,3 +149,9 @@ bank,addr,name,type,comment
 0,9B48,EnemySpawnTick,,EnemySpawnTick: LDA $82; if non-zero DEC and RTS; if $7F==0 RTS; scan $A0+$6C→$A0+2 for free slot; if found: LDA $84→STA $82, JSR SpawnEnemy, DEC $7F, JSR DrawEnemiesLeft; RTS.
 0,8195,StageAdvance1P,,StageAdvance1P: INC $85; LDA $85; CMP #$24; if reached cap → LDA #$23; STA $85 (clamp at stage 35); JMP $C172.
 0,8259,StageAdvance2P,,StageAdvance2P: INC $85; LDA $85; CMP #$47; if ≥71 → reset $85=1 and $46=0 (loop stages 1-70).
+0,8728,ShovelAnimInitCheck,,ShovelAnimInitCheck: if $68=0 (eagle dead) → STA $0105=$70/$0106=$F0/$0107=0/$0108=$11; elif $80=0 (stage clear) fall-through; elif $51+$52=0 → RTS A=0; else RTS A=1. Initiates ShovelAnimTick spiral on game-end.
+0,9E48,ShovelPowerupActivate,,ShovelPowerupActivate: STA $0108=$0D; STA $0106=$D8; STA $0B=0; RTS — starts ShovelAnimTick countdown on shovel pickup.
+0,D130,DrawEagleStar,,DrawEagleStar: STA $53 (tile); LDX #$81; JSR $DA7B — draws 2 sprites horizontally at X=$81/$81-8 for Y in caller. Used for enemy-type HUD icons.
+0,CC27,InitAttrTable,,InitAttrTable: Y=0→$3F; writes 64 bytes from ROM $07C0[Y] to VRAM attribute table ($23C0) via $0180 buffer.
+0,CCB2,InitNametableFromRAM,,InitNametableFromRAM: $63=0; rows $0F→0: JSR $CC5C(row); JSR $CC5C(mirror 29-row); copies nametable RAM shadow ($0400-$05FF) to PPU nametable.
+0,D5FB,CalcNametableAddr,,CalcNametableAddr: Y=tile-row(0-29); X=page(0/1) → A=hi($04/$05); Y=lo; maps to RAM shadow $0400-$05FF.

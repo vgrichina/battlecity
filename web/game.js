@@ -262,8 +262,9 @@ const GH   = 13;   // ROM $F27D grid rows
 const P1_SPAWN   = { x: 0x58, y: 0xD8 };   // (88, 216)
 const P2_SPAWN   = { x: 0x98, y: 0xD8 };   // (152, 216)
 const EAGLE      = { x: 0x78, y: 0xD8 };   // (120, 216)
-// ROM $C912 BrickWallInit / $C9BB SteelWallFortify: Π-shaped wall around eagle
-// Each entry = {row, col, bits} where bits = brickBits mask for partial-brick quadrants
+// Π-shaped brick wall around eagle: 5 cells at metatile rows 11–12, cols 5–7.
+// Eagle at pixel ($78,$D8)=(120,216) → metatile (row=12,col=6); wall confirmed by pixel-position analysis.
+// Each entry = {row, col, bits} where bits = brickBits mask (TL=0,TR=1,BL=2,BR=3)
 const EAGLE_WALL = [
   {row:11, col:5, bits:0b1000},  // BR (top-left corner of Π)
   {row:11, col:6, bits:0b1100},  // BL+BR (top-center bar)
@@ -490,7 +491,7 @@ function triggerBulletExplosion(b) {
   b.edir  = b.dir;
 }
 
-// ROM $C912 BrickWallInit / $C9BB SteelWallFortify: set eagle wall cells in grid
+// setEagleWall: set eagle wall cells in grid (brick or steel)
 // steel=true → T.STEEL (shovel active), steel=false → T.BRICK with partial brickBits
 function setEagleWall(steel) {
   for (const w of EAGLE_WALL) {
@@ -548,7 +549,7 @@ function initLevel(idx) {
     if (t >= T.BRICK_R && t < T.BRICK) grid[ri][ci] = T.BRICK;
   }));
 
-  // ROM $C912 BrickWallInit: add Π-shaped brick wall around eagle to grid+brickBits
+  // add Π-shaped brick wall around eagle to grid+brickBits
   setEagleWall(false);
 
   // Init entity slots  ROM $E4D0 ClearEntitySlots

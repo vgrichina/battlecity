@@ -108,7 +108,7 @@ Do not re-document already-covered addresses. Stop after $TASKS tasks."
   SUMMARY=$(git diff REVERSE.md | grep '^+- \[x\]' | head -1 | sed 's/^+- \[x\] //' || true)
   [[ -z "$SUMMARY" ]] && SUMMARY="session $i progress"
 
-  git add REVERSE.md labels.csv comments.csv web/ *.py
+  git add REVERSE.md labels.csv web/ *.py
   if git diff --cached --quiet; then
     echo "No changes — retrying same task..."
     continue
