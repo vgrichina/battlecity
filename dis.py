@@ -31,7 +31,7 @@ from instruction_set import decode, format_operand, OPCODES
 # Config
 # ---------------------------------------------------------------------------
 
-ROM_FILE = "VS. Battle City (1985)(Namco).nes"
+ROM_FILE = "battlecity_famicom.nes"
 LABELS_FILE   = "labels.csv"
 COMMENTS_FILE = "comments.csv"
 

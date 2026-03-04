@@ -19,7 +19,7 @@ Examples:
 import sys
 import struct
 
-ROM_FILE = "VS. Battle City (1985)(Namco).nes"
+ROM_FILE = "battlecity_famicom.nes"
 
 # Instruction lengths by addressing mode (for context display)
 ABS_MODES  = {'ABS', 'ABX', 'ABY', 'IND'}

@@ -33,12 +33,6 @@
 | $C0AE–$C0BD | — | 16 | code | ConstructionEntry |
 | $C159 | — | — | code | GameInit (entry) |
 | $C2B3 | — | — | code | NewGameSetup |
-| $C0BE–$C0F7 | — | ~58 | code | Stage transition setup (clear state, draw banner, A/B check → $C18A) |
-| $C0F8–$C158 | — | ~97 | code | InterStageScreen: show "STAGE X" BG tiles, UP/DOWN cycle $85 (stage), A/B or 10s timeout → $C18A |
-| $C159–$C15D | — | 5 | code | StageWrapAround: $85=$23 (35) on UP wrap-around; JMP $C0F8 |
-| $C18A–$C224 | — | ~155 | code | GameplayInit: OAM setup, run gameplay subsystems; ends at JMP $C0A6 (tick loop) |
-| $C29F–$C2D8 | — | ~58 | code | GameTickMain: per-frame game tick; calls 14+ subsystems |
-| $C301–$C344 | — | ~68 | code | SpawnPlayersInit: spawns P1/P2 via $E417, sets enemies=20 ($7F/$80), clears counters |
 | $C3B5 | — | — | code | StagePlay entry |
 | $C41D–$C44F | — | 51 | code | GameOverLoop |
 | $C7AB–$C7C7 | — | 29 | code | TitleWaitLoop |
@@ -66,8 +60,6 @@
 | $E413 | — | — | code | (unknown init) |
 | $EA51 | — | — | code | (unknown) |
 | $EA7E | — | — | code | (called from NMI, unknown) |
-| $F200–$F27C | — | ~125 | code | DisplayStageNumber: A=stage(1–35 or $FF=clear); draws digit tiles using lookup table at $F27D |
-| $F27D–$F2?? | — | — | data | Stage-number tile lookup table (BCD digit CHR tile indices) |
 | $FFFA–$FFFF | $3FFA–$3FFF | 6 | vectors | NMI=$D400 RESET=$C070 IRQ=$C070 |
 
 ---
@@ -96,14 +88,12 @@
 | $57 | SpriteY | Y position for DrawSpriteString |
 | $5A/$5B | (player slot) | Used during construction setup |
 | $60 | TileOffset | Added to sprite tile indices; $30 for highlighted mode, 0 normal |
-| $6C | MaxEntitySlotIdx | Max zero-page $A0 entity-array index: 5=1P (player slot 1 + 4 enemy slots 2–5), 7=2P (players 1–2 + enemy slots 3–7); set at $C3FF (1P) / $C8AE (2P); read by FindFreeEnemySlot ($DC01) and NMI scroll writer ($97E0: written to PPU $2005 as Y-scroll) |
+| $6C | StartingParam | 5 for 1P, 7 for 2P/CONSTRUCTION (lives or enemies?) |
 | $6D | (game active) | Set to 1 at StagePlay |
 | $83 | PlayerMode | 0=1P, 1=2P, 2=CONSTRUCTION; cycles via SELECT button |
 | $90 | (unknown) | Set to $48 in PlayerSelectLoop |
 | $98 | CursorSpriteIdx | OAM sprite index for cursor: $8B + ($83 × 16) |
-| $7F/$80 | EnemiesRemaining | Enemies left to spawn this stage; both initialized to $14 (20) at $C325 (NewGameSetup); DEC'd by FindFreeEnemySlot ($DC12) each spawn |
-| $A0 | EntityStatus[0..N] | Zero-page entity-status array; slots 1–$6C; $A0+idx=0 → slot free, non-zero → occupied |
-| $85 | StageNumber | Current stage (1–35). Set to 35 at StagePlay ($C3BF); cycled UP/DOWN during InterStageScreen ($C0F8); INC'd at $C1F8 after stage completion; $F200 (DisplayStageNumber) converts it to tile display |
+| $A0 | (unknown) | Set to $83 in PlayerSelectLoop |
 | $B0 | BlinkState | XOR'd with $04 every 4 frames for cursor blink |
 
 ---
@@ -165,11 +155,9 @@ Dispatch table (`$CA69`):
 
 | $83 | Target | Action |
 |-----|--------|--------|
-| 0 | $CA6F | 1P: → eventually JSR NewGameSetup; $6C set to 5 at $C3FF (within StagePlay $C3B5) |
-| 1 | $CA74 | 2P: → eventually JSR NewGameSetup; $6C set to 7 at $C8AE |
-| 2 | $CA7E | CONSTRUCTION: $6C=7 at $C8AE; JMP ConstructionEntry |
-
-Note: addresses $CA6F/$CA74/$CA7E in the dispatch table are jump targets inside copy-table code and not simple `LDA #$05; STA $6C` sequences. $6C is set later during StagePlay/$C8B6 setup via dedicated sub-routines ($C3FD for 1P, $C8AC for 2P).
+| 0 | $CA6F | 1P: $6C=5; JSR NewGameSetup; JMP GameInit |
+| 1 | $CA74 | 2P: $6C=7; JSR NewGameSetup; JMP GameInit |
+| 2 | $CA7E | CONSTRUCTION: $6C=7; JMP ConstructionEntry |
 
 ---
 
@@ -194,25 +182,22 @@ Bit layout of $06/$07 (raw) and $08/$09 (new presses):
 | Menu navigation | Fire button → start game | SELECT cycles, START confirms |
 | namcot branding | Not present | CHR tiles $5E/$5F/$6B area |
 | Stage select | Not present | Yes — cheat via P1+P2 combo |
-| Starting lives DIP | Yes ($4016 bit4 → 3 or 5 lives) | No DIP; lives count from separate logic ($6C is entity slot count, NOT lives) |
+| Starting lives DIP | Yes ($4016 bit4 → 3 or 5 lives) | No DIP; $6C controls (5 or 7) |
 | CONSTRUCTION mode | Not present | Yes (menu option 2) |
 
 ---
 
 ## Next Tasks
 
-- [x] Understand what $6C=5/$6C=7 controls exactly (NewGameSetup $C2B3). **Done.** $6C = MaxEntitySlotIdx: upper bound of the $A0 zero-page entity-status array. Set at $C3FF (1P→5) or $C8AE (2P→7). Read by FindFreeEnemySlot ($DC01): loop scans $A0+$6C down to $A0+2 for free enemy slot; 1P gets 4 enemy slots (2–5), 2P gets 5–6 (3–7 with player 2 at slot 2). Also read at $97E0 and written to PPU $2005 (Y-scroll) — same value doubles as a 5 or 7 pixel nametable Y-offset for VS System layout. Enemy-per-stage count is stored separately in $7F/$80 (both = $14=20, set at $C325).
-- [x] Identify GameInit ($C159) — what does it set up? **Done.** $C159 ("StageWrapAround") is NOT a true init; it's the UP-wrap code in the InterStageScreen loop ($C0F8). When UP cycles $85 past 35, $C159 resets $85=35 and JMPs back to $C0F8. The real game init is $C18A (GameplayInit). $C0F8 shows "STAGE X" BG tiles, allows UP/DOWN stage cycling, auto-starts after ~10s or A/B press. $85 = stage number (1–35), initialized to 35 at StagePlay, incremented at $C1F8 after each stage. $C29F = GameTickMain (14+ subsystem calls per frame). $C301 = SpawnPlayersInit (spawns tanks, sets enemies=20).
+- [ ] Understand what $6C=5/$6C=7 controls exactly (NewGameSetup $C2B3)
+- [ ] Identify GameInit ($C159) — what does it set up?
 - [ ] Map StagePlay ($C3B5) — level data loading, entity init
 - [ ] Extract CHR ROM tiles — identify tiles $5E/$5F/$6B (namcot logo?), $60–$68 (credit names)
 - [ ] Map sound engine ($D689 and call sites at $EA7E)
 - [ ] Understand CheckSavedState / DefaultConfig ($D4EF / $C040) — continue feature?
 - [ ] Locate and map level/stage data (35 stages in Famicom vs 40 in VS)
-- [ ] Map entity/enemy system (EntityType table, movement, AI). Entity status array at $A0 (indexed 1..$6C); FindFreeEnemySlot ($DC01) scans high→low for free slot; $E417 spawns enemy; $7F/$80 = enemies-remaining (init 20); need to map $E417 and EntityType table.
+- [ ] Map entity/enemy system (EntityType table, movement, AI)
 - [ ] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller)
 - [ ] Map $EA51 and $EA7E (called from Init and NMI respectively)
 - [ ] Locate high score save/load logic
 - [ ] Identify palette data location and format
-- [ ] Map GameTickMain ($C29F) subsystem calls — identify each of the 14+ JSRs ($E235, $C232, PlayerInputUpdate, $DC9F, $E2AE, $E0E2, $E35D, $E330, $E1D6, $E216, $DBF6, $E7A9, $EAB5, $E8B1, $EB17, $C7F8, $DBB9, $C6C5)
-- [ ] Map InterStageScreen ($C0F8) fully — understand $D1CD/$D1DF BG strings (tile encoding?) and $F27D stage-number lookup table; understand $C8B6 sprite rendering
-- [ ] Understand stage data: what index/table selects the level layout when a stage starts? How does $85 map to level data?

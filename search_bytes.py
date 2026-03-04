@@ -18,7 +18,7 @@ import sys
 import os
 import re
 
-ROM_FILE = "VS. Battle City (1985)(Namco).nes"
+ROM_FILE = "battlecity_famicom.nes"
 
 def load_rom_prg(path=None):
     with open(path or ROM_FILE, 'rb') as f:

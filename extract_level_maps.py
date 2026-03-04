@@ -26,7 +26,7 @@ The eagle base is at the bottom-centre (outside the 13×13 interior).
 import os
 import sys
 
-ROM_FILE = "VS. Battle City (1985)(Namco).nes"
+ROM_FILE = "battlecity_famicom.nes"
 # CPU $F27D is in PRG bank 1 ($C000–$FFFF); file offset = 0x4010 + (0xF27D - 0xC000)
 LEVEL_DATA_OFFSET = 0x4010 + (0xF27D - 0xC000)  # = 0x728D
 STAGE_SIZE = 91    # bytes per stage (182 nibbles, 14 per row × 13 rows)
