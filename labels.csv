@@ -173,3 +173,6 @@ bank,addr,name,type,comment
 0,D3B5,str_Total,data,str_Total: "TOTAL" FF — drawn at col=6 row=23 on result screen.
 0,D3B3,str_RightArrow,data,str_RightArrow: $5D FF — right-pointing arrow tile; drawn at col=17 rows 12/15/18/21 in 2P result screen.
 0,D3CB,str_Stage,data,str_Stage: "STAGE" FF — drawn at col=12 row=5 on result screen ($CF44).
+0,DDA0,CalcDirToTarget,,CalcDirToTarget: reads player target pos ($71/$72) and entity pos ($90/$98,X); computes combined direction index $64 (0-8); 50% chance to use set-1 (prefer-X) for enemies; LDA $E486,Y returns direction byte ($A0-$A3).
+0,DE72,SpeedCtrlMove,,SpeedCtrlMove: AI goal selector based on stage difficulty; loads $84>>2 then >>3; compares against $0A; phase1→$B0(chase eagle); phase2→random dir ($A0-$A3 via PRNG&3); phase3→$C0/$D0 (chase player 0/1). Called from EntityMovementAI ($DC7C) on grid tick.
+0,E486,DirToStateTable,data/table,DirToStateTable: 18-byte direction lookup table (2 sets × 9 entries); indexed by (signY+1)*3+(signX+1) ± 9; values $A0-$A3 encode entity direction state. Used by CalcDirToTarget ($DDA0) via LDA $E486,Y.

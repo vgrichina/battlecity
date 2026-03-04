@@ -469,9 +469,9 @@ function makeEntity(slot) {
     blinkFrame: 0,    // armor-hit blink countdown
     spawnAnim: 0,     // spawn star animation frames  ROM $DE55 SpawnAnimTick
     animBit: 0,       // track animation frame: 0 or 4; XOR'd each 8px movement step  ROM $DD18/$DDE1 EOR #$04
-    aiTimer: 0,       // AI direction-change countdown  ROM $DE72 RandomDirChange
+    aiTimer: 0,       // AI direction-change countdown  ROM $DC7C EntityMovementAI rand&$0F==0 trigger
     fireTimer: 0,     // unused; ROM $E162 EnemyFireTick uses per-frame 1/32 check instead
-    deathTimer: 0,    // death explosion countdown: 12→0, drawn even while alive=false  ROM $E073 EntityKillDispatch
+    deathTimer: 0,    // death explosion countdown: 12→0, drawn even while alive=false  ROM $DE64 DeathAnimTick
     lastHitBy: 0,     // player slot that last hit this entity (for score routing in 2P)
     isPlayer: slot < 2,
   };
@@ -753,7 +753,7 @@ function canMove(e, d) {
   return true;
 }
 
-// ROM $E543 DirToStateTable: 2 sets of 9-way direction lookups
+// ROM $E486 DirToStateTable: 2 sets of 9-way direction lookups (raw bytes $A0-$A3 = entity state + dir)
 // Set 0: Prefer-Y (vertical dominant), Set 1: Prefer-X (horizontal dominant)
 // Index: (signY+1)*3 + (signX+1)
 const DIR_TARGET_TABLE = [
@@ -761,7 +761,7 @@ const DIR_TARGET_TABLE = [
   1, 0, 3, 1, 0, 3, 1, 2, 3  // Set 1: LEFT, UP, RIGHT, LEFT, UP, RIGHT, LEFT, DOWN, RIGHT
 ];
 
-// ROM $DE56 CalcDirToTarget: calculates direction toward target with axis preference
+// ROM $DDA0 CalcDirToTarget: calculates direction toward target ($71/$72) with axis preference; lookups via $E486 table
 function calcDirToTarget(e, tx, ty) {
   const dx = tx - e.x, dy = ty - e.y;
   const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
@@ -773,7 +773,7 @@ function calcDirToTarget(e, tx, ty) {
   return DIR_TARGET_TABLE[tableIdx + setOffset];
 }
 
-// ROM $DF26 SpeedCtrlMove: AI goal selector based on level progress (difficulty tiers)
+// ROM $DE72 SpeedCtrlMove: AI goal selector based on stage difficulty ($84>>2 vs $0A); sets entity AI state $B0/$C0/$D0/$A0-$A3
 function speedCtrlMove(e) {
   const frameHi = (frameCount >> 6) & 0xFF; // ROM $0A
   const sdm = Math.max(50, 190 - stageIdx * 4); // approximation of ZP $84
@@ -793,7 +793,7 @@ function speedCtrlMove(e) {
   }
 }
 
-// ROM $DDFC RandomDirChange: forced turn logic (25% L, 25% R, 50% SpeedCtrl)
+// ROM $DDA0 RandomDirChange: enemy direction update — 50% SpeedCtrl; 25% turn L; 25% turn R
 function randomDirChange(e) {
   const r = Math.random();
   if (r < 0.5) {
@@ -1588,8 +1588,8 @@ function update() {
       }
     }
     if (goScrollTimer >= 10) {
-      const WIGGLE_X = [0, -1, 0, 1];   // ROM $D2C6 HUDTankWiggleX
-      const WIGGLE_Y = [-1, 0, 1, 0];   // ROM $D2CA HUDTankWiggleY
+      const WIGGLE_X = [0, -1, 0, 1];   // ROM $D3D5 ShovelTileDX (bytes 0-3)
+      const WIGGLE_Y = [-1, 0, 1, 0];   // ROM $D3D9 ShovelTileDY
       goScrollX += WIGGLE_X[goScrollDir];
       goScrollY += WIGGLE_Y[goScrollDir];
     }
