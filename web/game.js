@@ -978,10 +978,22 @@ function bulletHitsTile(b) {
   if (col < 0 || col >= GW || row < 0 || row >= GH) return false;
 
   const t = grid[row][col];
+  // Sub-quadrant helpers (shared by brick + partial steel checks)
+  const localX = b.x - (FX + col * META);
+  const localY = b.y - (FY + row * META);
+  const qx = localX >= 8 ? 1 : 0;
+  const qy = localY >= 8 ? 1 : 0;
+  const qbit = 1 << (qy * 2 + qx);  // TL=bit0, TR=bit1, BL=bit2, BR=bit3
 
   // Steel: stop bullet  ROM $E838 steel check  $030D=1 if player bullet
   // Armor-piercing (starLevel >= $60): destroy steel  ROM $E83E TileDestroyIfNoEntity ($D77F)
   if (t === T.STEEL || (t >= T.STEEL_R && t <= T.STEEL_T)) {
+    if (t >= T.STEEL_R && t <= T.STEEL_T) {
+      // Partial steel: open ($20) quadrants are passable — only solid ($10) quadrants block
+      // STEEL_BLOCK bitmask same as passable8; matches TILE_CHR $10 entries
+      const STEEL_BLOCK = [0b1010, 0b1100, 0b0101, 0b0011]; // STEEL_R/B/L/T
+      if (!(STEEL_BLOCK[t - T.STEEL_R] & qbit)) return false;
+    }
     if (b.armor) grid[row][col] = T.EMPTY;
     if (b.owner < 2) sfxSteelHit();  // ROM $030D=1 player bullet hits steel
     return true;
@@ -991,7 +1003,9 @@ function bulletHitsTile(b) {
   if (t === T.WATER) { if (b.owner < 2) sfxSteelHit(); return true; }  // ROM $030D=1
 
   // Brick: destroy quarter  ROM $D763 TileDestroyBrick  $D745 SubTileBitmask
+  // Only collide if the specific 8×8 quadrant is still intact (bit set in brickBits)
   if (t === T.BRICK || (t >= T.BRICK_R && t <= T.BRICK_T)) {
+    if (!(brickBits[row][col] & qbit)) return false;  // quadrant already destroyed — pass through
     destroyBrick(row, col, b.x, b.y);
     if (b.owner < 2) sfxBrickHit();  // ROM $030C=1
     return true;
