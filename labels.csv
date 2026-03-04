@@ -2,10 +2,19 @@ bank,addr,name,type,comment
 0,C070,Reset,,Reset: SEI; no $4020 write (no VS protection); wait 2 VBlanks; SP=$7F; JSR Init; STA $4F/$50=0; JSR DrawTitleScreen; STA $4B=0; then MainLoop
 0,C09C,MainLoop,,MainLoop: JSR SetupNametableStage; JSR TitleWaitLoop; JSR PlayerSelectLoop; JSR StagePlay; JSR GameOverLoop; JMP MainLoop
 0,C0AE,ConstructionEntry,,
-0,C159,InterStageScreen,,InterStageScreen: A/B cycle $85 (stage 1-35); Start/timeout → $C1C5 (begin gameplay). Called by Start1P/2P after NewGameSetup.
 0,C2B3,NewGameSetup,,
-0,C3B5,StagePlay,,
-0,C41D,GameOverLoop,,
+0,C1C5,StageStartSetup,,StageStartSetup: if $4B=0 → JSR ConstructionSetup; LDA $85; JSR $F000 (load stage tilemap); JSR $CAF5 (HUD); then JSR $C331 (SpawnPlayersInit); GAME LOOP at $C1F9: WaitVBlank; JSR $C2E6/$E23B/$E0D8/$DEA6; check Start to pause; JSR $C728 CheckGameOver; BEQ loop back. Exits to stage-clear / game-over handling.
+0,C2BD,GameVarsInit,,GameVarsInit: clears $0101/$0102; STA $66=$67=$4C=0; STA $51=$52=$6A=3; if 1P ($83=0) STA $52=0; STA $85=1; STA $46=0; RTS. Sub of NewGameSetup region.
+0,C331,StageStartInit,,StageStartInit: JSR ClearStageCCData; JSR ClearEntitySlots; set $0106/$0108; spawn P1 (if $51!=0) and P2 (if $52!=0) via SpawnEnemy; STA $7F=$80=20 (enemies=20); clear $8F/$0A/$4B/$45/$6F/$70/$89/$8A/$82/$86/$0100/$6A; JSR $C71E/$C8C0/WaitVBlank/$C830/$C859/$E42B; set $68=$80/$0312=$4C=1; calc SpawnDelayBase: $84=$BE-(stage*4); 2P: $84-=$14.
+0,C3B5,StagePlay,,StagePlay: sets $6D=1 (game active); $4D=0; JSR GameVarsInit; STA $52=3; clears $4F/$50/$0A/$0B; JSR ConstructionSetup; JSR $F000(A=$FF) blank map; STA $85=$1E; STA $46=2; draws STAGE sprites; JSR InitEntities; JSR WaitNMI; JSR StageStartInit; JSR DrawHUDInit; JSR WaitVBlank; falls into ResetEntitySlots ($6C=5); RTS.
+0,C41D,GameOverLoop,,GameOverLoop: WaitVBlank; if Start/Select pressed ($08 & $0C) → exit; JSR $C642; JSR GameTickMain ($C2E6); JSR $E23B; JSR $DEA6; JSR $E0D8; JSR $C728; BEQ loop. Post-game animation/wait loop.
+0,C642,DrawScore,,DrawScore (tentative): called from GameOverLoop
+0,C71E,InitSpawnPoints,,InitSpawnPoints (tentative): called from StageStartInit
+0,C728,CheckGameOver,,CheckGameOver: if $68=0 (eagle destroyed) → show explosion sprite → RTS A=1; if $80=0 (no enemies on screen) → RTS A=1 (stage clear); if $51+$52=0 (all lives lost) → RTS A=1 (game over); else RTS A=0 (continue).
+0,C830,DrawHUDScores,,DrawHUDScores (tentative): called after WaitVBlank in stage start
+0,C859,DrawHUDLives,,DrawHUDLives (tentative): called after DrawHUDScores in stage start
+0,C8C0,InitStageHUD,,InitStageHUD (tentative): called from StageStartInit
+0,CAF5,DrawHUDInit,,DrawHUDInit: draws 4 HUD strings to nametable at rows $18-$1B column $0C; also puts a sprite (tile $23/$F3) into OAM via $0180+$0C; clears $07F3; masks $07F4 & $CC; RTS.
 0,C7AB,TitleWaitLoop,,TitleWaitLoop: clears $4F/$50; loops WaitVBlank + INC $4F; checks $08 AND #$04 (SELECT new press); if no press and $4F<$F0 (240 frames)
 0,C9B0,ConstructionSetup,,
 0,C9C0,PlayerSelectLoop,,PlayerSelectLoop: $4D=3; SELECT(bit2/$08)=INC $83 (cycle 0→1→2→0: 1P/2P/CONSTRUCTION); cursor blink every 4 frames; P1-DOWN+P2-A → $4A+=16 (stage skip cheat); P1-RIGHT+P2-B → DEC $4A; START(bit3/$08) → dispatch via SelectDispatchTable
@@ -55,5 +64,32 @@ bank,addr,name,type,comment
 0,C159,InterStageScreen,,InterStageScreen: after NewGameSetup; shows stage number; A=advance/B=go back ($85 cycles 1-35/$23); Start or timeout → begin gameplay at $C1C5; JSR $CA91 draws stage tiles to OAM buffer; loops at $C172
 0,C41A,ResetEntitySlots,,ResetEntitySlots: STA $6C=#$05 (reset to 1P count); RTS; called at stage completion before GameOverLoop
 0,9B48,EnemySpawnTick,,EnemySpawnTick: LDA $82 (spawn delay); if non-zero DEC and RTS; else check $7F (enemies remaining); if >0 scan $A0+$6C down to $A0+2 for free slot; if found LDA $84→STA $82; JSR SpawnEnemy ($E363); DEC $7F; else RTS
-0,E363,SpawnEnemy,,SpawnEnemy: called by EnemySpawnTick with slot index in $5A; spawns enemy entity
+0,E363,SpawnEnemy,,SpawnEnemy: X=slot; if X<2(player) load $E47A[X]→$90,X(posX) $E47C[X]→$98,X(posY); clr $6F,X; JMP $E3A9. If X>=2(enemy): INC $6A(wraps 0-2); posX=$E474[$6A]{$18,$78,$D8}; posY=$E477[$6A]{all $18}; if $7F=3/10/17 set $A8,X=4(blink)+clr $86. Then: STA $A0,X=$F0(spawn anim); PlaceTileBlock at posX/Y with A=$0F(blank).
+0,E3B8,FinalizeEntitySpawn,,FinalizeEntitySpawn: called after spawn/death animation; LDA $E47E[X]→$A0,X($A0 for players, $A2 for enemies); if X<2: STA $89,X=3; load type from $0101,X; JMP $E3FA. If X>=2: find next non-zero type in $8B-$8E via $8F; DEC count; look up EntityTypeTable($E4EC)[(stage-1)*4+$8F]→$A8,X type byte ($80=basic $A0=fast $C0=power $E0→$E3=armor); STA $B0,X=0.
+0,DB75,PlayerMoveTick,,PlayerMoveTick: runs for entity slots 0-1 (players) only; checks $0B timing (every 1-2 frames); if $6F,X>0 DEC delay; else reads $06,X direction bits; calls $E451 to decode direction; aligns pos to 8px; updates $A0,X bits.
+0,DBF1,EntityMainLoop,,EntityMainLoop: X=7..0; for X>=2: checks $0100 invincibility timer; if $A0,X bit7 set and <$E0: dispatch AI via EntityAIDispatch; for X<2 (players): dispatch every 1-2 frames. Dispatches via $DC3D (AI table lookup).
+0,DC3D,EntityAIDispatch,,EntityAIDispatch: Y=(($A0,X)>>3)&$FE; load ptr from EntityStateTable($E498,Y); JMP(ptr). Routes to: $F0-state→$DE55(spawn anim); $E0-state→$DE64(death anim); $A0/$A2-state→$DC7C(movement AI).
+0,DC7C,EntityMovementAI,,EntityMovementAI: if X<2(player) skip direction-change check; else if posX&7=0 AND posY&7=0 AND rand($D44D)&$0F=0: call $DE72(AI choose direction). Then: dir=($A0,X)&$03; dX=$E46C[dir]×8 dY=$E470[dir]×8; $56=posX+dX $57=posY+dY; collision check via $DD6E/$DD76/$D706; update pos.
+0,DE55,SpawnAnimTick,,SpawnAnimTick: INC $A0,X(from $F0 up); after 14 steps(low nibble=$0E): STA $A0,X=$E0(transition to death/2nd-anim state); RTS. First phase of spawn star animation.
+0,DE64,DeathAnimTick,,DeathAnimTick: INC $A0,X(from $E0 up); after 14 steps(low nibble=$0E): JSR FinalizeEntitySpawn($E3B8); RTS. Second phase of spawn anim OR explosion anim → activates entity.
+0,E46C,DirDeltaX,data/table,DirDeltaX[4]: X movement delta per direction. dir0(up)=$00 dir1(left)=$FF(-1) dir2(down)=$00 dir3(right)=$01. Multiplied by 8 for pixel speed.
+0,E470,DirDeltaY,data/table,DirDeltaY[4]: Y movement delta per direction. dir0(up)=$FF(-1) dir1(left)=$00 dir2(down)=$01 dir3(right)=$00. Multiplied by 8 for pixel speed.
+0,E474,EnemySpawnX,data/table,EnemySpawnX[3]: enemy spawn X positions (rotated via $6A 0..2): $18(24) $78(120) $D8(216) = left/center/right spawn columns.
+0,E477,EnemySpawnY,data/table,EnemySpawnY[3]: enemy spawn Y positions: all $18(24) = top row of play area.
+0,E47A,PlayerSpawnX,data/table,PlayerSpawnX[2]: player spawn X: slot0=$58(88) slot1=$98(152).
+0,E47C,PlayerSpawnY,data/table,PlayerSpawnY[2]: player spawn Y: both $D8(216) = bottom area.
+0,E47E,EntityInitStatus,data/table,EntityInitStatus[8]: initial $A0 value per slot after spawn: slots 0-1=$A0(player); slots 2-7=$A2(enemy active).
+0,E498,EntityStateTable,data/table,EntityStateTable[16×2]: AI function pointers indexed by ($A0,X>>3)&$FE. Key: $00→$DBF0(RTS/inactive); $14→$DC7C(movement); $1C→$DE64(death anim); $1E→$DE55(spawn anim).
+0,E4EC,EntityTypeTable,data/table,EntityTypeTable[35×4]: entity type byte per stage per enemy-type-slot. Values: $80=basic $A0=fast $C0=power $E0→$E3=armor(4-hit). Loaded by FinalizeEntitySpawn via $8F index and $8B-$8E counts. 35 stages × 4 enemy types = 140 bytes ($E4EC–$E577).
 0,C8B1,DrawEnemiesLeft,,DrawEnemiesLeft: called after DEC $7F; updates enemy-remaining display
+0,C2E6,GameTickMain,,GameTickMain: 14+ subsystem JSR calls per frame: $E181/$DB75/$DBF1/$E1FA/$E02E/$E2A9/$E27C/$E122/$E162/$DB48(EnemySpawnTick)/$E604/$E910/$E70C/$E972/$C972/$DB0B/$C7C8/$C31D; called from GameOverLoop and StageStartSetup game loop.
+0,D7AA,Add16Ptr,,Add16Ptr: CLC; ADC $11; STA $11; BCC done; INC $12. Adds A to 16-bit ptr at $11/$12.
+0,D80B,PlaceTileBlock,,PlaceTileBlock: takes nibble in A + pixel XY in $56/$57; maps pixel→nametable addr via $D713; looks up attribute in $DABB[nibble]→$04; updates attr table; writes 4 tiles from $DACB[nibble*4] in 2×2 pattern via $D784; advances ptr by 1/$1F/1.
+0,DABB,TileAttrTable,data/table,TileAttrTable[16]: palette attr per block nibble type. Types 0-4→$00(pal0/brick); 5-9→$03(pal3/steel); A→$01; B→$02; C→$03; D-F→$00(empty).
+0,DACB,TileTypeTable,data/table,TileTypeTable[16*4]: 4 tile indices per block nibble type. 0-3=partial brick ($00/$0F patterns); 4=full brick ($0F×4); 5-8=partial steel ($10/$20 patterns); 9=full steel ($10×4); A=water ($12×4); B=forest ($22×4); C=ice ($21×4); D-F=empty ($00×4).
+0,E409,ClearStageCCData,,ClearStageCCData: clears $CC-$D5 (10 bytes; stage-specific counters/vars).
+0,E413,ClearEntitySlots2,,ClearEntitySlots2: clears $A0-$A7 (entity status slots 0-7) and $0103-$010A (entity RAM mirror).
+0,E42B,LoadStageEnemyCounts,,LoadStageEnemyCounts: if $46≠0 use stage 35 ($23) else use $85; Y=(stage-1)*4; load $E578[Y..Y+3]→$8B/$8C/$8D/$8E (4 enemy type counts).
+0,E578,StageEnemyCountTable,data/table,StageEnemyCountTable[35*4]: 4 enemy-type counts per stage (always sum to 20). Stage 1: [18,2,0,0]; Stage 35: [4,6,0,10]. Loaded into $8B-$8E by LoadStageEnemyCounts.
+0,F000,LoadStageData,,LoadStageData: takes stage# in A; $FF→36; ptr=$F07A; advance $5B/stage; decode 13×13 nibble grid (7 bytes/row=13 data+1 pad); call PlaceTileBlock for each nibble at pixel positions (16..208, 16..208) step 16.
+0,F07A,StageDataTable,data/table,StageDataTable: 35 stages × $5B (91) bytes each. Nibble-encoded 13×13 block grid. Each row=7 bytes (13 data nibbles + 1 padding nibble). Starts at $F07A; stage N at $F07A+(N-1)*$5B.

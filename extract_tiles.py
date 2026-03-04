@@ -41,6 +41,7 @@ PALETTE = [
 ]
 
 TILES_W = 32   # tiles per row in output image
+TILE_SZ = 8    # NES tile size in pixels
 BORDER  = 1    # pixel border between tiles
 
 
