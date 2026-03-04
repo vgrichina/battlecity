@@ -16,8 +16,7 @@ Examples:
     python dis.py 1:8000 20       # bank 1, address $8000
 
 Reads:
-    labels.csv    bank,addr,name
-    comments.csv  bank,addr,comment
+    labels.csv    bank,addr,name[,type[,comment]]
 """
 
 import sys
@@ -33,7 +32,6 @@ from instruction_set import decode, format_operand, OPCODES
 
 ROM_FILE = "battlecity_famicom.nes"
 LABELS_FILE   = "labels.csv"
-COMMENTS_FILE = "comments.csv"
 
 # ---------------------------------------------------------------------------
 # iNES ROM loader
@@ -143,7 +141,7 @@ def load_labels(path):
     return labels
 
 def load_comments(path):
-    """Return dict: (bank, addr_int) -> comment."""
+    """Return dict: (bank, addr_int) -> comment, read from col 4 of labels.csv."""
     comments = {}
     if not os.path.exists(path):
         return comments
@@ -151,9 +149,9 @@ def load_comments(path):
         for row in csv.reader(f):
             if not row or row[0].startswith('#'):
                 continue
-            if len(row) < 3:
+            if len(row) < 5 or not row[4].strip():
                 continue
-            bank_s, addr_s, comment = row[0].strip(), row[1].strip(), row[2].strip()
+            bank_s, addr_s, comment = row[0].strip(), row[1].strip(), row[4].strip()
             try:
                 bank = int(bank_s, 16) if bank_s not in ('', '*') else None
                 addr = int(addr_s, 16)
@@ -385,7 +383,7 @@ def main():
         sys.exit(0)
 
     labels   = load_labels(LABELS_FILE)
-    comments = load_comments(COMMENTS_FILE)
+    comments = load_comments(LABELS_FILE)
 
     bank_arg, addr = parse_addr(args[0])
     n_lines = int(args[1]) if len(args) > 1 else 30

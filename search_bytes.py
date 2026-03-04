@@ -107,7 +107,7 @@ def main():
             try:
                 rom = NESRom(rom_file or ROM_FILE)
                 labels   = load_labels("labels.csv")
-                comments = load_comments("comments.csv")
+                comments = load_comments("labels.csv")
                 print()
                 for line in disassemble(rom, cpu, bank, 8, labels, comments):
                     print('    ' + line)

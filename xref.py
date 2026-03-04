@@ -76,7 +76,7 @@ def main():
 
     from dis import load_labels, load_comments
     labels   = load_labels("labels.csv")
-    comments = load_comments("comments.csv")
+    comments = load_comments("labels.csv")
 
     def lbl(addr, bank=None):
         k = (bank, addr)
