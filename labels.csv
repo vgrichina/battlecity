@@ -50,6 +50,10 @@ bank,addr,name,type,comment
 0,D8D2,DrawSpriteString,,DrawSpriteString: reads ($13)
 0,D8F6,WaitVBlank,,WaitVBlank: LDA $0B; CMP $0B; BEQ (spin until frame counter changes)
 0,D8FD,VRAMNametableFlush,,VRAMNametableFlush: terminates VRAM update buffer at $0180[$0C]; iterates triplets (addr_hi, addr_lo, data) from $0180[0..$0C) writing to PPU via $2006/$2006/$2007; resets $0C=0. NOT sprite-related — flushes buffered nametable tile writes to PPU.
+0,D951,DrawHiScore,,DrawHiScore: draws hi-score from $3D-$43 buffer to OAM sprite at X=$10 Y=$64; skips leading zeros (advances X by $20 per zero digit); $60=$30 (score digit tile offset); uses DrawSpriteString.
+0,D97D,UpdateHiScore,,UpdateHiScore: compare P1 score ($15-$1B) to hi-score ($3D-$43); if P1>hi-score copy P1→$3D and set Y=1; then compare P2 ($1D-$23); if P2>hi-score copy P2→$3D Y=$FF; RTS Y=0 if P1 beat it, Y=1 if P2, Y=$FF neither. Called after game-over at $8286.
+0,D9BE,AddScoreDigits,,AddScoreDigits: X=player index (0=P1 score $15, 1=P2 score $1D); adds 7-digit BCD value from scratch buffer $35-$3B into player score; X*8+6=offset into $15-based score array; loop DEX/DEY from digit 6 to 0 with decimal carry.
+0,D9E1,SetupScoreDigits,,SetupScoreDigits: A=BCD score byte; clears scratch buffer $35-$3B via InitEntitySlot($35); if A=0 → STA $38=1 (1000 pts); else lo nibble→$3A (ones of hundreds), hi nibble→$39 (tens of hundreds). E.g. A=$10→100pts, A=$20→200pts, A=$50→500pts.
 0,D9FE,InitEntitySlot,,InitEntitySlot: X=slot index; zero $00,X..$06,X (7 ZP bytes of entity state); STA $FF→$07,X (marks slot inactive/type=-1); RTS. Called from Init with X=$15(P1) and X=$1D(P2).
 0,DA93,HideSpritePairs,,HideSpritePairs: input $0D=current OAM write ptr (4-byte aligned), $0E=sprite stride (4). Negates $0E. Iterates backwards from $0D-4 down to OAM offset 4 (sprite 1), writing $F0 (Y=240, off-screen) to $0200+X each step. Updates $0D=4 on exit. Hides all unused OAM sprite slots after active sprites are written. Called from NMI ($D436) and Init ($94AF). Identical copy at $9A93.
 0,9A47,WriteSpriteToOAM,,WriteSpriteToOAM: LDX $0D; STA $0200+X = $48(Y), $0200+X+1=$53(tile), $0200+X+2=$04(attr), $0200+X+3=$47(X-pos); advance $0D += $0E (stride=4); RTS. Writes one 4-byte OAM entry for the current sprite.
@@ -82,6 +86,8 @@ bank,addr,name,type,comment
 0,DC7C,EntityMovementAI,,EntityMovementAI: if X<2(player) skip direction-change check; else if posX&7=0 AND posY&7=0 AND rand($D44D)&$0F=0: call $DE72(AI choose direction). Then: dir=($A0,X)&$03; dX=$E46C[dir]×8 dY=$E470[dir]×8; $56=posX+dX $57=posY+dY; collision check via $DD6E/$DD76/$D706; update pos.
 0,DE55,SpawnAnimTick,,SpawnAnimTick: INC $A0,X(from $F0 up); after 14 steps(low nibble=$0E): STA $A0,X=$E0(transition to death/2nd-anim state); RTS. First phase of spawn star animation.
 0,DE64,DeathAnimTick,,DeathAnimTick: INC $A0,X(from $E0 up); after 14 steps(low nibble=$0E): JSR FinalizeEntitySpawn($E3B8); RTS. Second phase of spawn anim OR explosion anim → activates entity.
+0,E8BA,EnemyScoreTable,data/table,EnemyScoreTable[4]: BCD score per enemy type indexed by type index 0-3; $10=100pts(basic) $20=200pts(fast) $30=300pts(power) $40=400pts(armor). Read at $A81E (in-game kill score).
+0,D3D1,ResultEnemyScoreTable,data/table,ResultEnemyScoreTable[4]: same score values as EnemyScoreTable but used on result screen ($8D1C); $10/$20/$30/$40 = 100/200/300/400 BCD per enemy type.
 0,E46C,DirDeltaX,data/table,DirDeltaX[4]: X movement delta per direction. dir0(up)=$00 dir1(left)=$FF(-1) dir2(down)=$00 dir3(right)=$01. Multiplied by 8 for pixel speed.
 0,E470,DirDeltaY,data/table,DirDeltaY[4]: Y movement delta per direction. dir0(up)=$FF(-1) dir1(left)=$00 dir2(down)=$01 dir3(right)=$00. Multiplied by 8 for pixel speed.
 0,E474,EnemySpawnX,data/table,EnemySpawnX[3]: enemy spawn X positions (rotated via $6A 0..2): $18(24) $78(120) $D8(216) = left/center/right spawn columns.

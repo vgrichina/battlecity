@@ -67,6 +67,10 @@
 | $D8D2–$D8F5 | — | 36 | code | DrawSpriteString |
 | $D8F6–$D8FC | — | 7 | code | WaitVBlank |
 | $D8FD–$D933 | — | ~55 | code | VRAMNametableFlush: terminates VRAM write buffer at $0180[$0C]; iterates triplets (addrH, addrL, data) writing to PPU via $2006/$2006/$2007; resets $0C=0. NOT sprite-related — flushes buffered nametable tile writes each NMI. |
+| $D951–$D97C | — | ~44 | code | DrawHiScore: draws hi-score from $3D–$43 buffer; skips leading-zero digits; $60=$30 tile offset; uses DrawSpriteString. |
+| $D97D–$D9BD | — | ~65 | code | UpdateHiScore: compare P1 ($15–$1B) then P2 ($1D–$23) against hi-score ($3D–$43); if new record copy to $3D; return Y=1/Y=$FF/Y=0. Called at $8286 post-game. |
+| $D9BE–$D9E0 | — | ~35 | code | AddScoreDigits: X=player index (0=P1,1=P2); adds 7-digit scratch score $35–$3B into $15+X*8 with decimal carry; handles result screen kill bonuses too. |
+| $D9E1–$D9FD | — | ~29 | code | SetupScoreDigits: A=BCD byte; clears $35–$3B; A=0→$38=1(1000pts); else hi-nibble→$39(hundreds),lo-nibble→$3A(tens). Called before AddScoreDigits. |
 | $D9FE–$DA12 | — | ~21 | code | InitEntitySlot (X=slot): zero $00,X..$06,X; set $07,X=$FF (inactive/type marker). |
 | $DA13–$DA2A | — | ~24 | code | Div10 helper: converts A to decimal (quotient→$3A, remainder→$3B). |
 | $DA2B–$DA92 | — | ~104 | code | Sprite helper routines (coord conversion, SetSpriteXY, misc). |
@@ -101,6 +105,8 @@
 | $E47E–$E485 | — | 8 | data | EntityInitStatus[8]: $A0×2 (players), $A2×6 (enemies) |
 | $E498–$E4B7 | — | 32 | data | EntityStateTable[16×ptr16]: AI dispatch; key states $00→RTS $14→movement $1C→death $1E→spawn |
 | $E4EC–$E577 | — | 140 | data | EntityTypeTable[35×4]: entity type byte per stage (0=$80 basic, 1=$A0 fast, 2=$C0 power, 3=$E0→$E3 armor) |
+| $E8BA–$E8BD | — | 4 | data | EnemyScoreTable[4]: BCD score per enemy type (in-game kills $A81E): $10=100, $20=200, $30=300, $40=400 pts |
+| $D3D1–$D3D4 | — | 4 | data | ResultEnemyScoreTable[4]: same BCD values used on result screen ($8D1C): $10/$20/$30/$40 = 100/200/300/400 pts |
 | $E578–$E603 | — | 140 | data | StageEnemyCountTable: 35×4 bytes; enemy type counts per stage (always sum to 20); loaded into $8B-$8E |
 | $FFFA–$FFFF | $3FFA–$3FFF | 6 | vectors | NMI=$D400 RESET=$C070 IRQ=$C070 |
 
@@ -460,6 +466,51 @@ Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 
 ---
 
+## Score System
+
+### Score memory layout (zero-page)
+
+7-byte BCD digit arrays (most-significant digit first):
+
+| ZP Range | Purpose |
+|----------|---------|
+| $15–$1B | P1 score (7 digits) |
+| $1D–$23 | P2 score (7 digits) |
+| $25–$2B | P1 result-screen kill score accumulator |
+| $2D–$33 | P2 result-screen kill score accumulator |
+| $35–$3B | Scratch score value buffer (filled by SetupScoreDigits) |
+| $3D–$43 | Hi-score (7 digits; persistent across soft-resets) |
+
+### Score routines
+
+| Address | Name | Description |
+|---------|------|-------------|
+| $D9E1 | SetupScoreDigits | A=BCD byte → fills $35–$3B; A=0→$38=1(1000pts); lo nibble→$3A, hi nibble→$39 |
+| $D9BE | AddScoreDigits | X=player(0/1); adds scratch $35–$3B to $15+X*8 with decimal carry |
+| $D97D | UpdateHiScore | Compare P1/P2 scores to $3D–$43; copy if new record; post-game only |
+| $D951 | DrawHiScore | Draw $3D–$43 as sprite digit string, skip leading zeros |
+
+### Score per enemy type
+
+| Enemy | BCD byte | Points |
+|-------|----------|--------|
+| Basic ($80) | $10 | 100 |
+| Fast ($A0) | $20 | 200 |
+| Power ($C0) | $30 | 300 |
+| Armor ($E3) | $40 | 400 |
+| Shovel protect | $50 | 500 |
+| 2P winner bonus | 0 (→$38=1) | 1000 |
+
+### Hi-score lifecycle
+
+1. **Init** ($94C1): `LDX #$3D; JSR InitEntitySlot` — zero hi-score on first boot only
+2. **In-game**: score added via `SetupScoreDigits($E8BA[type]); AddScoreDigits(X=player)` at $A81E on each kill
+3. **Post-game** ($8283): `JSR $C5D9` (result screen) → `JSR $D97D` (UpdateHiScore)
+4. **New record**: if Y≠0 after UpdateHiScore, show new-record animation ($C44B)
+5. **Persistence**: hi-score survives soft-reset (RAM retained); lost on power-cycle (NROM = no battery)
+
+---
+
 ## Next Tasks
 
 - [x] Understand what $6C=5/$6C=7 controls exactly. **Done.** $6C = MaxEntityScanIdx (entity slot upper bound). Set at $CA76 to 5 (1P) or 7 (2P/Construction); reset to 5 at $C41A (stage end). Only read by EnemySpawnTick ($DB48): scans $A0+$6C down to $A0+2 for free enemy slot. 1P → 4 enemy slots (2–5); 2P → 6 scan positions (2–7). $7F = enemies remaining, DEC'd on spawn. $E363 = SpawnEnemy.
@@ -472,6 +523,6 @@ Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 - [x] Locate and map level/stage data (35 stages in Famicom vs 40 in VS). **Done.** StageDataTable confirmed at $F07A (Famicom ROM), 36 × 91 bytes = $F07A–$FD44. Entries 0–34 = stages 1–35 (playable). Entry 35 ($FCEB–$FD44) = blank stage loaded via A=$FF (mostly $DD/empty with eagle-area $6D). LoadStageData ($F000): A<$24→use as stage# directly; A≥$24→wrap (A-=$23); A=$FF→force entry 36. web/levels.js confirmed correct (same 35 stage layouts). REVERSE.md had wrong end ($F4C5→$FD44) and wrong count (1092→3276 bytes). web/levels.js header comment and tile type labels fixed.
 - [x] Map entity/enemy system (EntityType table, movement, AI) — covered above
 - [x] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller). **Done.** $DA93 = HideSpritePairs: hides all unused OAM sprite slots each NMI by writing Y=$F0 (off-screen) backwards from $0D-4 down to OAM+4 (sprite 1). Input: $0D=current OAM write ptr (incremented by WriteSpriteToOAM at $9A47), $0E=stride(4). Negates $0E then loops. Identical copy at $9A93 (NROM-128 mirror). $D8FD relabeled: NOT sprite-related — it's VRAMNametableFlush (flushes buffered triplet writes addr_hi/addr_lo/data from $0180 to PPU via $2006/$2007). NMI sequence: OAM-DMA→VRAMFlush→PaletteUpdate→PPUCtrl/scroll→ReadControllers→HideSpritePairs→SoundEngineTick.
-- [ ] Locate high score save/load logic
+- [x] Locate high score save/load logic. **Done.** Score arrays at $15–$1B (P1), $1D–$23 (P2), $3D–$43 (hi-score). Routines: SetupScoreDigits ($D9E1, BCD byte→scratch $35–$3B), AddScoreDigits ($D9BE, scratch→player score with decimal carry), UpdateHiScore ($D97D, compare P1/P2 to $3D on game-over), DrawHiScore ($D951, draw $3D buffer). Enemy kill scores: BCD $10/$20/$30/$40 = 100/200/300/400 pts from EnemyScoreTable ($E8BA/$D3D1). Shovel=500pts, 2P-winner bonus=1000pts. Hi-score zeroed at first boot ($94C1), persists across soft-resets in RAM (no SRAM/battery).
 - [ ] Identify palette data location and format
 - [ ] Understand GameTickMain subsystems ($E181, $E1FA, $E02E, $E2A9, $E27C, $E122, $E162, $DB0B, $C7C8) — bullet/collision/explosion/score logic
