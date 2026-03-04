@@ -1340,8 +1340,8 @@ All three tables are **16 entries × 2 bytes = 32 bytes** each (not 24). Y = (st
 | $00–$0F     | $00 | [0]  | $DC9E (Null) | Dead — skip |
 | $10–$1F     | $02 | [1]  | $DFB1 (DrawSpawnSprite) | Spawn entry OR kill end: tile $F1 → CHR $F0-$F3, 16×16, palIdx 7 |
 | $20–$2F     | $04 | [2]  | $DFE7 (DrawSmallSprite) | Spawn entry OR kill phase: tile $F9 → CHR $F8-$FB, 16×16, palIdx 7 |
-| $30–$3F     | $06 | [3]  | $DFFA (DrawExpandSprite) | Spawn entry OR kill phase: 32×32 damaged eagle $E0-$EF, palIdx 7 |
-| $40–$4F     | $08 | [4]  | $DFFA (DrawExpandSprite) | Spawn entry OR kill phase: 32×32 intact eagle $D0-$DF, palIdx 7 |
+| $30–$3F     | $06 | [3]  | $DFFA (DrawExpandSprite) | 32×32 **damaged/expanded** eagle overlay $E0-$EF (OAM tiles $E1/$E5/$E9/$ED+$DF, odd→PT1), palIdx 7 |
+| $40–$4F     | $08 | [4]  | $DFFA (DrawExpandSprite) | 32×32 **intact/contracted** eagle overlay $D0-$DF (OAM tiles $D1/$D5/$D9/$DD, odd→PT1), palIdx 7 |
 | $50–$5F     | $0A | [5]  | $DF81 (DrawMovingSprite) | Kill start OR spawn entry: CalcSprTile→tile $F9 → CHR $F8-$FB |
 | $60–$6F     | $0C | [6]  | $DF81 | Kill start OR spawn entry: CalcSprTile→tile $F5 → CHR $F4-$F7 |
 | $70–$7F     | $0E | [7]  | $DF81 | Kill start: CalcSprTile→tile $F1 → CHR $F0-$F3 |
@@ -1889,8 +1889,8 @@ These are written to the nametable via `DrawNametableTile ($D82B)` / `PPUQueueTi
 | `$CD` | Destroyed eagle BL | `$D26E` (EagleHit data) | |
 | `$CE` | Destroyed eagle TR | `$D26C` (EagleHit data) | |
 | `$CF` | Destroyed eagle BR | `$D26F` (EagleHit data) | |
-| `$D0`–`$DF` | Eagle HQ emblem — intact form; OAM sprite overlay drawn at eagle base during hit flicker (EagleDrawIntact `$E3E2`, handler Y=8: `$69`=0). **Not** reused by DrawExpandSprite (which draws `$E0–$ED` for states `$30–$3F`) | `$E3F7` (LDA #`$D1`), `$E400` (LDA #`$D5`), `$E409` (LDA #`$D9`), `$E412` (LDA #`$DD`); odd OAM bytes → PT1 | 4×2 grid of 8×16 OAM sprites = 32×32px; exclusively drawn by EagleDrawIntact; NOT the brick/steel wall tiles (those are BG nametable $0F/$10) |
-| `$E0`–`$ED` | Eagle HQ emblem — damaged form (+`$10` tile offset); drawn by EagleDrawDamaged AND by DrawExpandSprite (`$DFFA`) for entity spawn states `$30–$3F` (formula: (`$A0,X`&`$F0`)−`$30` XOR `$10` + base → `$E1`/`$E5`/`$E9`/`$ED`) | `$E3EA` (EagleDrawDamaged: `$69`=`$10`); `$DFFA` (DrawExpandSprite dispatch for states `$30–$3F`; tile bytes always `$E1`,`$E5`,`$E9`,`$ED` → PT1); Y=10 in EagleHandlerTable | Alternates with intact form ($D0–$DF) during eagle base flicker; also the entity spawn 32×32 expansion sprite for kill/spawn states `$30–$3F` |
+| `$D0`–`$DF` | **Kill explosion expand-A** (phase `$4x` of 7-phase kill anim) — DrawExpandSprite (`$DFFA`) for entity states `$40–$4F`; OAM tile bytes `$D1`/`$D5`/`$D9`/`$DD` (odd→PT1), 32×32px. **Same tiles** also used as eagle HQ intact overlay by EagleDrawIntact (`$E3E2`, `$69`=0) — the eagle emblem IS this expand-star graphic. | `$DFFA` (DrawExpandSprite states `$40–$4F`); `$E3F7`/`$E400`/`$E409`/`$E412` (EagleDrawIntact) | 4×2 grid of 8×16 sprites |
+| `$E0`–`$ED` | **Kill explosion expand-B** (phase `$3x` of 7-phase kill anim) — DrawExpandSprite (`$DFFA`) for entity states `$30–$3F`; OAM tile bytes `$E1`/`$E5`/`$E9`/`$ED` (odd→PT1), 32×32px. **Same tiles** also used as eagle HQ damaged overlay by EagleDrawDamaged (`$E3EA`, `$69`=`$10`). | `$DFFA` (DrawExpandSprite states `$30–$3F`); `$E3EA` (EagleDrawDamaged) | 4×2 grid of 8×16 sprites |
 | `$EE`–`$EF` | *Not found in code yet* | — | 2 tiles after eagle-wall open (`$E0`–`$ED`), before kill/spawn anim (`$F0`) |
 | `$F0`–`$F1` | Kill/spawn anim frame 1 + Eagle explosion A | `$DF96` (CalcSprTile state_hi=7: tile=`$F1`); `$E3C6` (EagleAnimA: LDA #`$F1`/STA `$53`) | Smallest star / first eagle explosion frame. Drawn for entity kill end (states `$70`–`$7F`) and eagle hit sequence |
 | `$F4`–`$F5` | Kill/spawn anim frame 2 + Eagle explosion B | `$DF96` (CalcSprTile state_hi=6: tile=`$F5`); `$E3CB` (EagleAnimB: LDA #`$F5`) | Medium star / second eagle explosion |

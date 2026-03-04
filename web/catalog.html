@@ -213,17 +213,18 @@
       { name: "SCORE 400 ($C4)", pal: 6, tiles: [0xC4,0xC6,0xC5,0xC7], pt1: false }, // armor enemy kill
       { name: "SHIELD F1",       pal: 6, tiles: [0x28,0x2A,0x29,0x2B], pt1: false }, // OAM tile $29 (odd→PT1)
       { name: "SHIELD F2",       pal: 6, tiles: [0x2C,0x2E,0x2D,0x2F], pt1: false }, // OAM tile $2D (odd→PT1)
-      // Eagle HQ emblem sprites — BG bank (PT1), palIdx 7 SP3. ROM EagleDrawIntact/EagleDrawDamaged ($E3E2/$E3EA).
-      // Drawn via OAM over the eagle base during the hit/destruction flicker animation.
-      // Also reused by DrawExpandSprite ($DFFA) for the large spawn-star expansion frame.
-      // 4 draw calls each placing 2 sprites → 4 cols × 2 rows of 8×16 = 32×32px total.
-      // OAM tile bytes $D1/$D5/$D9/$DD (L col each row) + $D3/$D7/$DB/$DF (R col); all odd → PT1.
-      { name: "EAGLE HQ INTACT ($D0)", pal: 7, tiles: [0xD0,0xD2,0xD4,0xD6,0xD1,0xD3,0xD5,0xD7,0xD8,0xDA,0xDC,0xDE,0xD9,0xDB,0xDD,0xDF], pt1: false, w:32, h:32 },
-      { name: "EAGLE HQ DAMAGED ($E0)",pal: 7, tiles: [0xE0,0xE2,0xE4,0xE6,0xE1,0xE3,0xE5,0xE7,0xE8,0xEA,0xEC,0xEE,0xE9,0xEB,0xED,0xEF], pt1: false, w:32, h:32 },
-      // Kill explosion static frames (BG bank, palIdx 7 SP3). ROM DrawMovingSprite/DrawSmallSprite.
-      { name: "EXPL SMALL",  pal: 7, tiles: [0xF0,0xF2,0xF1,0xF3], pt1: false }, // T=$F1 ($7x/$1x state)
-      { name: "EXPL MEDIUM", pal: 7, tiles: [0xF4,0xF6,0xF5,0xF7], pt1: false }, // T=$F5 ($6x state)
-      { name: "EXPL LARGE",  pal: 7, tiles: [0xF8,0xFA,0xF9,0xFB], pt1: false }, // T=$F9 ($5x/$2x state)
+      // Kill explosion / spawn-star frames — BG bank (PT1), palIdx 7 SP3.
+      // 7-phase kill sequence (states $7x→$1x): SMALL→MEDIUM→LARGE→EXPAND-A→EXPAND-B→LARGE→SMALL.
+      // Expand phases are ALSO used by EagleDrawIntact/EagleDrawDamaged ($E3E2/$E3EA) as the eagle HQ emblem overlay.
+      // (The eagle emblem is literally the expand-star sprite — same tiles, same 32×32 OAM grid.)
+      { name: "EXPL SMALL",     pal: 7, tiles: [0xF0,0xF2,0xF1,0xF3], pt1: false }, // T=$F1 (states $7x/$1x)
+      { name: "EXPL MEDIUM",    pal: 7, tiles: [0xF4,0xF6,0xF5,0xF7], pt1: false }, // T=$F5 (state $6x)
+      { name: "EXPL LARGE",     pal: 7, tiles: [0xF8,0xFA,0xF9,0xFB], pt1: false }, // T=$F9 (states $5x/$2x)
+      // Expand-star phases: DrawExpandSprite ($DFFA); OAM tile bytes all odd→PT1; 4×2 grid of 8×16 = 32×32px.
+      // State $4x → tiles $D1/$D5/$D9/$DD (odd) → PT1 $D0-$DD. Also = eagle intact overlay (EagleDrawIntact $69=0).
+      // State $3x → tiles $E1/$E5/$E9/$ED (odd) → PT1 $E0-$ED. Also = eagle damaged overlay (EagleDrawDamaged $69=$10).
+      { name: "EXPL EXPAND-A ($D0)", pal: 7, tiles: [0xD0,0xD2,0xD4,0xD6,0xD1,0xD3,0xD5,0xD7,0xD8,0xDA,0xDC,0xDE,0xD9,0xDB,0xDD,0xDF], pt1: false, w:32, h:32 }, // state $4x / eagle intact
+      { name: "EXPL EXPAND-B ($E0)", pal: 7, tiles: [0xE0,0xE2,0xE4,0xE6,0xE1,0xE3,0xE5,0xE7,0xE8,0xEA,0xEC,0xEE,0xE9,0xEB,0xED,0xEF], pt1: false, w:32, h:32 }, // state $3x / eagle damaged
     ],
 
     // --- HUD ELEMENTS ---
