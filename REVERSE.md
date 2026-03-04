@@ -58,7 +58,11 @@
 | $D4E3–$D4EE | — | 12 | code | WriteDefaultConfig: copy DevSignature ($C040) → $0110-$011F in RAM; called at end of Init |
 | $D4EF–$D501 | — | 19 | code | CheckSavedState: compare $0110-$011F vs DevSignature ($C040); A=1 = match (soft-reset); A=0 = no match (first boot) |
 | $D502–$D50D | — | 12 | code | InitRAM entry |
-| $D50E | — | — | code | PaletteUpdate |
+| $D50E–$D53D | — | 48 | code | PaletteUpdate: A=$4D (index 0-8); X=A×16; Y=$10; set PPU $3F00; write 16B from BGPaletteTable($D565)+X; set $4D=$FF. Called from NMI when $4D≥0 (bit7=0). |
+| $D53E–$D554 | — | 23 | code | SpritePaletteInit: X=0; Y=$10; set PPU $3F10; write 16B from SpritePaletteData($D555). One-time init at startup. |
+| $D555–$D564 | — | 16 | data/palette | SpritePaletteData: 4 sub-palettes×4 NES colors → PPU $3F10–$3F1F. SP[0]=0F 18 27 38, SP[1]=0F 0A 1B 3B, SP[2]=0F 0C 10 20, SP[3]=0F 04 16 20. |
+| $D565–$D5F4 | — | 144 | data/palette | BGPaletteTable: 9×16 bytes; indexed by $4D (0-8); written to PPU $3F00–$3F0F. Sets: 0=in-game, 1/2=game-mode variants, 3=player-select/game-over screen, 4=title animation, 5-8=flash animation (loop at $8486 writes $4D=($0B&3)+5 cycling through four flash palettes). |
+| $D5F5–$D5FA | — | 6 | code | WaitVBlank2: LDA $2002; BPL loop (spin for VBlank bit7). Mirror of $D8F6. |
 | $D5FB | — | — | code | CalcNametableAddr |
 | $D689 | — | — | code | ReadControllers (mirror of $9689; reads $4016/$4017 → $06-$09; called from NMI; was mislabeled as SoundUpdate) |
 | $D6B3–$D705 | — | ~83 | code | DrawNametableText variants |
@@ -511,6 +515,50 @@ Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 
 ---
 
+## Palette System
+
+### Sprite Palette — $D555–$D564 (16 bytes → PPU $3F10–$3F1F)
+
+Written once at startup by SpritePaletteInit ($D53E). Format: 4 sub-palettes × 4 NES color indices.
+
+| Sub-palette | Bytes | Colors (hex NES indices) | Usage |
+|-------------|-------|--------------------------|-------|
+| SP[0] | 0F 18 27 38 | black / dark-tan / yellow-tan / cream | player tank, UI elements |
+| SP[1] | 0F 0A 1B 3B | black / yellow / off-white / white | text, digits |
+| SP[2] | 0F 0C 10 20 | black / dark-green / dark-gray / light-gray | misc sprites |
+| SP[3] | 0F 04 16 20 | black / dark-purple / med-purple / light-gray | misc sprites |
+
+### Background Palette Table — $D565–$D5F4 (9×16 bytes → PPU $3F00–$3F0F)
+
+Updated each NMI when `$4D` is ≥ 0 (bit7=0) by PaletteUpdate ($D50E). Index = `$4D`; then `$4D` is set to `$FF` (inhibit).
+
+| Index ($4D) | ROM addr | Context / Usage |
+|-------------|----------|-----------------|
+| 0 | $D565 | Normal in-game palette |
+| 1 | $D575 | Alternate in-game (mode A) |
+| 2 | $D585 | Alternate in-game (mode B) |
+| 3 | $D595 | Player-select / game-over screen |
+| 4 | $D5A5 | Title screen demo animation |
+| 5 | $D5B5 | Flash frame 0 (loop at $8486: `$4D = ($0B & 3) + 5`) |
+| 6 | $D5C5 | Flash frame 1 |
+| 7 | $D5D5 | Flash frame 2 |
+| 8 | $D5E5 | Flash frame 3 |
+
+### Palette update flow
+
+```
+ Game code writes $4D = index (0-8)
+       ↓
+ NMI fires → $D416 LDA $4D; BMI skip
+       ↓ (bit7=0 → index valid)
+ JSR PaletteUpdate ($D50E)
+   A = $4D; X = A × 16; Y = $10
+   PPU addr $3F00 → write 16B from BGPaletteTable[$D565+X]
+   $4D = $FF (inhibit until next write)
+```
+
+---
+
 ## Next Tasks
 
 - [x] Understand what $6C=5/$6C=7 controls exactly. **Done.** $6C = MaxEntityScanIdx (entity slot upper bound). Set at $CA76 to 5 (1P) or 7 (2P/Construction); reset to 5 at $C41A (stage end). Only read by EnemySpawnTick ($DB48): scans $A0+$6C down to $A0+2 for free enemy slot. 1P → 4 enemy slots (2–5); 2P → 6 scan positions (2–7). $7F = enemies remaining, DEC'd on spawn. $E363 = SpawnEnemy.
@@ -524,5 +572,5 @@ Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 - [x] Map entity/enemy system (EntityType table, movement, AI) — covered above
 - [x] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller). **Done.** $DA93 = HideSpritePairs: hides all unused OAM sprite slots each NMI by writing Y=$F0 (off-screen) backwards from $0D-4 down to OAM+4 (sprite 1). Input: $0D=current OAM write ptr (incremented by WriteSpriteToOAM at $9A47), $0E=stride(4). Negates $0E then loops. Identical copy at $9A93 (NROM-128 mirror). $D8FD relabeled: NOT sprite-related — it's VRAMNametableFlush (flushes buffered triplet writes addr_hi/addr_lo/data from $0180 to PPU via $2006/$2007). NMI sequence: OAM-DMA→VRAMFlush→PaletteUpdate→PPUCtrl/scroll→ReadControllers→HideSpritePairs→SoundEngineTick.
 - [x] Locate high score save/load logic. **Done.** Score arrays at $15–$1B (P1), $1D–$23 (P2), $3D–$43 (hi-score). Routines: SetupScoreDigits ($D9E1, BCD byte→scratch $35–$3B), AddScoreDigits ($D9BE, scratch→player score with decimal carry), UpdateHiScore ($D97D, compare P1/P2 to $3D on game-over), DrawHiScore ($D951, draw $3D buffer). Enemy kill scores: BCD $10/$20/$30/$40 = 100/200/300/400 pts from EnemyScoreTable ($E8BA/$D3D1). Shovel=500pts, 2P-winner bonus=1000pts. Hi-score zeroed at first boot ($94C1), persists across soft-resets in RAM (no SRAM/battery).
-- [ ] Identify palette data location and format
+- [x] Identify palette data location and format. **Done.** Two palette data blocks: SpritePaletteData ($D555–$D564, 16B fixed, 4 sub-palettes → PPU $3F10-$3F1F via SpritePaletteInit at $D53E) and BGPaletteTable ($D565–$D5F4, 9×16B, indexed by $4D → PPU $3F00-$3F0F via PaletteUpdate at $D50E). $4D is both the palette set index (0-8) and the "update needed" flag (bit7=0 → update on next NMI; $FF = done). Sets 0-2 = in-game variants, 3 = player-select/game-over, 4 = title animation, 5-8 = flash animation (loop at $8486 cycles $4D=($0B&3)+5). WaitVBlank2 ($D5F5) is a 6-byte routine just after the table. NES palette entries use format $XY where X=brightness, Y=hue.
 - [ ] Understand GameTickMain subsystems ($E181, $E1FA, $E02E, $E2A9, $E27C, $E122, $E162, $DB0B, $C7C8) — bullet/collision/explosion/score logic

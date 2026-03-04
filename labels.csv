@@ -34,7 +34,11 @@ bank,addr,name,type,comment
 0,D4E3,WriteDefaultConfig,code,WriteDefaultConfig: LDX #$0F; loop: LDA $C040,X → STA $0110,X; DEX; BPL loop; RTS — copies 16-byte DevSignature ($C040) into RAM $0110-$011F; called at end of Init so subsequent soft-resets skip state init
 0,D4EF,CheckSavedState,,CheckSavedState: compare $0110-$011F with DevSignature at $C040; A=1 if match (soft-reset → saved state valid); A=0 if no match (first power-on → init $3F=2/$83=0)
 0,D502,InitRAM,,
-0,D50E,PaletteUpdate,,
+0,D50E,PaletteUpdate,,PaletteUpdate: A=$4D (palette set index 0-8). ASL×4 → X=A×16. Y=$10. Set PPU addr $3F00. Write 16 bytes from BGPaletteTable($D565)+X to PPU ($3F00-$3F0F). Then STA $4D=$FF (done flag). Called from NMI when $4D bit7=0 (≥0).
+0,D53E,SpritePaletteInit,,SpritePaletteInit: X=0, Y=$10. Set PPU addr $3F10. Write 16 bytes from SpritePaletteData($D555) to PPU ($3F10-$3F1F). Called once from $9502 at startup (alongside PaletteUpdate index 0).
+0,D555,SpritePaletteData,data/palette,SpritePaletteData: 16 bytes (4 sub-palettes × 4 NES colors), written to PPU $3F10-$3F1F. SP[0]=0F 18 27 38 (black/tan/yellow/cream), SP[1]=0F 0A 1B 3B (black/yellow/off-white/white), SP[2]=0F 0C 10 20 (black/dk-green/dk-gray/lt-gray), SP[3]=0F 04 16 20 (black/dk-purple/med-purple/lt-gray).
+0,D565,BGPaletteTable,data/palette,BGPaletteTable: 9 × 16 bytes = 144 bytes; indexed by $4D (0-8); each entry is 4 BG sub-palettes × 4 NES colors, written to PPU $3F00-$3F0F. Set 0=in-game, 1/2=alt in-game (game mode), 3=player-select/game-over, 4=title animation, 5-8=flash animation (cycled by $4D = ($0B & 3) + 5 in flash loop at $8486).
+0,D5F5,WaitVBlank2,,WaitVBlank2: LDA $2002; BPL loop (spin until VBlank bit7=1). Mirror of WaitVBlank ($D8F6) at lower address. Called before direct PPU writes.
 0,D5FB,CalcNametableAddr,,
 0,D689,ReadControllers2,,ReadControllers mirror at $D689 = same code as $9689; reads $4016/$4017 (P1/P2), edge-detects into $06-$09; called from NMI ($D433) NOT a sound routine despite old label
 0,EA51,APUSoundInit,,APUSoundInit: STA $4015=$0F (enable sq1+sq2+tri+noise); STA $4017=$C0 (5-step frame counter no IRQ); zero 28 channel data blocks at $031C-$03FB (8B each) and $0300-$031B (status array); called at startup
