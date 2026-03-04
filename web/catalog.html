@@ -174,14 +174,24 @@
     ],
 
     // --- TERRAIN ---
-    // BG bank (pt1:false). ROM TILE_CHR ($DB79): full-type CHR indices.
+    // BG bank (pt1:false). ROM TileCHRTable ($DB79, 64 bytes = 16×4): CHR ids [TL,TR,BL,BR].
+    // Partial brick types 0–3: two of four 8×8 quadrants = $0F (solid), other two = $00 (mortar).
+    // Partial steel types 5–8: two quads = $10 (solid steel), other two = $20 (open corner frame).
     terrain: [
-      { name: "BRICK (FULL)",  pal: 0, tiles: [0x0F,0x0F,0x0F,0x0F], pt1: false }, // $DB89
-      { name: "STEEL (FULL)",  pal: 3, tiles: [0x10,0x10,0x10,0x10], pt1: false }, // $DB9D
-      { name: "WATER",         pal: 1, tiles: [0x12,0x12,0x12,0x12], pt1: false }, // $DBA1
-      { name: "TREES",         pal: 2, tiles: [0x22,0x22,0x22,0x22], pt1: false }, // $DBA5
-      { name: "ICE",           pal: 3, tiles: [0x21,0x21,0x21,0x21], pt1: false }, // $DBA9
-      { name: "BORDER ($FC)",  pal: 0, tiles: [0xFC,0xFC,0xFC,0xFC], pt1: false }, // ClearNametableSlot $98EB
+      { name: "BRICK (FULL)",       pal: 0, tiles: [0x0F,0x0F,0x0F,0x0F], pt1: false }, // type4 $DB89
+      { name: "BRICK RIGHT COL",    pal: 0, tiles: [0x00,0x0F,0x00,0x0F], pt1: false }, // type0 $DB79: TR+BR
+      { name: "BRICK BOTTOM ROW",   pal: 0, tiles: [0x00,0x00,0x0F,0x0F], pt1: false }, // type1 $DB7D: BL+BR
+      { name: "BRICK LEFT COL",     pal: 0, tiles: [0x0F,0x00,0x0F,0x00], pt1: false }, // type2 $DB81: TL+BL
+      { name: "BRICK TOP ROW",      pal: 0, tiles: [0x0F,0x0F,0x00,0x00], pt1: false }, // type3 $DB85: TL+TR
+      { name: "STEEL (FULL)",       pal: 3, tiles: [0x10,0x10,0x10,0x10], pt1: false }, // type9 $DB9D
+      { name: "STEEL RIGHT COL",    pal: 3, tiles: [0x20,0x10,0x20,0x10], pt1: false }, // type5 $DB8D: TR+BR solid
+      { name: "STEEL BOTTOM ROW",   pal: 3, tiles: [0x20,0x20,0x10,0x10], pt1: false }, // type6 $DB91: BL+BR solid
+      { name: "STEEL LEFT COL",     pal: 3, tiles: [0x10,0x20,0x10,0x20], pt1: false }, // type7 $DB95: TL+BL solid
+      { name: "STEEL TOP ROW",      pal: 3, tiles: [0x10,0x10,0x20,0x20], pt1: false }, // type8 $DB99: TL+TR solid
+      { name: "WATER",              pal: 1, tiles: [0x12,0x12,0x12,0x12], pt1: false }, // type10 $DBA1
+      { name: "TREES",              pal: 2, tiles: [0x22,0x22,0x22,0x22], pt1: false }, // type11 $DBA5
+      { name: "ICE",                pal: 3, tiles: [0x21,0x21,0x21,0x21], pt1: false }, // type12 $DBA9
+      { name: "BORDER ($FC)",       pal: 0, tiles: [0xFC,0xFC,0xFC,0xFC], pt1: false }, // ClearNametableSlot $98EB
     ],
 
     // --- SPECIALS & POWER-UPS ---
@@ -505,6 +515,7 @@
   // ─── SFX Catalog ────────────────────────────────────────────────
   // Each entry: { name, slotDesc, play: fn }
   const SFX_CATALOG = [
+    { name: "Coin Insert",   slotDesc: "slot 0",        play: () => { playSound(SND.COIN); } },
     { name: "Player Fire",   slotDesc: "slot 8",        play: () => { playSound(SND.PLAYER_FIRE); } },
     { name: "Enemy Fire",    slotDesc: "slot 16",       play: () => { playSound(SND.ENEMY_FIRE); } },
     { name: "Brick Hit",     slotDesc: "slot 12",       play: () => { playSound(SND.BRICK_HIT); } },
