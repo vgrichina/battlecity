@@ -20,8 +20,8 @@ import re
 
 ROM_FILE = "VS. Battle City (1985)(Namco).nes"
 
-def load_rom_prg():
-    with open(ROM_FILE, 'rb') as f:
+def load_rom_prg(path=None):
+    with open(path or ROM_FILE, 'rb') as f:
         raw = f.read()
     if raw[:4] != b'NES\x1a':
         raise ValueError("Not an iNES ROM")
@@ -43,6 +43,13 @@ def main():
         print(__doc__)
         sys.exit(1)
 
+    # strip --rom before positional parsing
+    rom_file = None
+    if '--rom' in args:
+        idx = args.index('--rom')
+        rom_file = args[idx + 1]
+        args = args[:idx] + args[idx + 2:]
+
     pattern_str = args[0].replace(' ', '')
     try:
         pattern = bytes.fromhex(pattern_str)
@@ -61,7 +68,7 @@ def main():
         else:
             i += 1
 
-    prg, prg_banks = load_rom_prg()
+    prg, prg_banks = load_rom_prg(rom_file)
 
     matches = []
     pos = 0
@@ -98,7 +105,7 @@ def main():
         if do_disasm:
             from dis import NESRom, load_labels, load_comments, disassemble
             try:
-                rom = NESRom(ROM_FILE)
+                rom = NESRom(rom_file or ROM_FILE)
                 labels   = load_labels("labels.csv")
                 comments = load_comments("comments.csv")
                 print()

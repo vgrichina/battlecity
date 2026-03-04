@@ -27,8 +27,8 @@ REL_MODES  = {'REL'}
 
 from instruction_set import OPCODES
 
-def load_prg():
-    with open(ROM_FILE, 'rb') as f:
+def load_prg(path=None):
+    with open(path or ROM_FILE, 'rb') as f:
         raw = f.read()
     if raw[:4] != b'NES\x1a':
         raise ValueError("Not iNES")
@@ -56,6 +56,12 @@ def main():
         print(__doc__)
         sys.exit(1)
 
+    rom_file = None
+    if '--rom' in args:
+        idx = args.index('--rom')
+        rom_file = args[idx + 1]
+        args = args[:idx] + args[idx + 2:]
+
     target_str = args[0].lstrip('$')
     target = int(target_str, 16)
     filter_bank = None
@@ -66,7 +72,7 @@ def main():
         else:
             i += 1
 
-    prg, prg_banks = load_prg()
+    prg, prg_banks = load_prg(rom_file)
 
     from dis import load_labels, load_comments
     labels   = load_labels("labels.csv")

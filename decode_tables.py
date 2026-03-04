@@ -207,13 +207,19 @@ def main():
         print("Usage: python3 decode_tables.py <bank> <addr> <count> <format> [--follow]")
         sys.exit(1)
 
+    rom_file = ROM_FILE
+    if '--rom' in args:
+        idx = args.index('--rom')
+        rom_file = args[idx + 1]
+        args = args[:idx] + args[idx + 2:]
+
     bank_n  = int(args[0], 16)
     addr    = parse_addr(args[1])
     count   = int(args[2])
     fmt_str = args[3]
     follow  = '--follow' in args
 
-    rom    = NESRom(ROM_FILE)
+    rom    = NESRom(rom_file)
     labels = load_labels(LABELS_FILE)
     fmt_fn = get_formatter(fmt_str)
     esize  = entry_size(fmt_str)
@@ -236,7 +242,7 @@ def main():
             target = raw[0] | (raw[1] << 8)
             try:
                 from dis import NESRom as _NR, load_labels as _ll, load_comments as _lc, disassemble
-                _rom      = _NR(ROM_FILE)
+                _rom      = _NR(rom_file)
                 _labels   = _ll(LABELS_FILE)
                 _comments = _lc("comments.csv")
                 print()
