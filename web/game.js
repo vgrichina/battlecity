@@ -894,7 +894,10 @@ function tryFire(e) {
   if (b.active) {
     // Double-shot: starLevel >= $40  ROM $D6,X bit0  $0101,X >= $40
     if (e.starLevel < 0x40) return;
-    const sec = e.slot < 2 ? 8 + e.slot : null;
+    // Secondary slot must have opposite (slot^frameCount)&1 parity so both bullets
+    // alternate frames rather than skipping together.  ROM slots are adjacent → odd/even pairs.
+    // P1: primary=0 (even) → secondary=9 (odd); P2: primary=1 (odd) → secondary=8 (even).
+    const sec = e.slot < 2 ? 8 + (e.slot ^ 1) : null;
     if (sec === null || bullets[sec].active) return;
     b = bullets[sec];
   }
