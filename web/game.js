@@ -676,7 +676,7 @@ const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyM') toggleSound();  // M = mute/unmute
-  if (e.code === 'KeyC') { credits = Math.min(99, credits + 1); playSound(SND.COIN); } // C = insert coin
+  // KeyC: no-op (VS arcade coin insert removed — Famicom has no coin slot)
   if (e.code === 'KeyE' && gamePhase === 'title') { 
     gamePhase = 'edit'; 
     initLevel(0); 
@@ -1363,33 +1363,43 @@ function update() {
 
   if (demoMode && gamePhase === 'play') tickDemoAI();
 
-  // ROM $C65C AttractWait: loop until credits, blinking title sprite
+  // ROM $C9C0 PlayerSelectLoop: SELECT cycles cursor 0→1→2→0 (1P/2P/CONSTRUCTION)
+  // START dispatches via SelectDispatchTable based on $83 (cursor position)
   if (gamePhase === 'title') {
     titleFrame++;
     titleTimer++;
-    
-    // Reset timer on any meaningful input
-    if (keys['KeyC'] || keys['Digit1'] || keys['Key1'] || keys['Digit2'] || keys['Key2'] || keys['Space'] || keys['Enter']) titleTimer = 0;
 
-    // Start handling
-    let requestedPlayers = 0;
-    if (keys['Digit1'] || keys['Key1'] || keys['Space'] || keys['Enter']) requestedPlayers = 1;
-    if (keys['Digit2'] || keys['Key2']) requestedPlayers = 2;
+    // Reset demo timer on any input
+    if (keys['ArrowUp'] || keys['ArrowDown'] || keys['Space'] || keys['Enter'] ||
+        keys['Digit1'] || keys['Digit2']) titleTimer = 0;
 
-    if (requestedPlayers > 0 && credits >= requestedPlayers) {
-      initAudio();  // Web Audio requires user gesture
-      credits -= requestedPlayers;
-      numPlayers = requestedPlayers;
-      p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
-      p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
-      newHiScorePlayer = 0;
-      gamePhase = 'curtain';
-      curtainTarget = 'select';
-      curtainRow = 0;
-      selectedStage = 0;
-    } else if (titleTimer > 600) { // 10 seconds of inactivity -> Demo Mode
+    // D-pad up/down (SELECT in ROM cycles $83: 0→1→2→0) — throttle to once per 8 frames
+    if (titleFrame % 8 === 1) {
+      if (keys['ArrowUp'])   titleCursor = (titleCursor + 2) % 3; // up = prev item
+      if (keys['ArrowDown']) titleCursor = (titleCursor + 1) % 3; // down = next item
+    }
+
+    // START: dispatch based on cursor (ROM $CA58–$CA62 SelectDispatchTable)
+    if (keys['Space'] || keys['Enter']) {
+      initAudio();
+      if (titleCursor === 2) { // CONSTRUCTION
+        gamePhase = 'edit';
+        initLevel(0);
+        grid.forEach(r => r.fill(13));
+        brickBits.forEach(r => r.fill(0));
+      } else {
+        numPlayers = titleCursor === 1 ? 2 : 1; // 0=1P, 1=2P
+        p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
+        p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
+        newHiScorePlayer = 0;
+        gamePhase = 'curtain';
+        curtainTarget = 'select';
+        curtainRow = 0;
+        selectedStage = 0;
+      }
+    } else if (titleTimer > 600) { // 10 seconds inactivity → Demo Mode
       demoMode = true;
-      numPlayers = 2; // Demo is 2 players
+      numPlayers = 2;
       p1Score = 0; p1Lives = 2;
       p2Score = 0; p2Lives = 2;
       initLevel(34); // Stage 35
@@ -2431,37 +2441,45 @@ function drawTitleScreen() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // ROM $CFAA PreGameDraw: score strip at nametable row 3 (y=24)
+  // ROM $D17F DrawTitleScreen: score strip at nametable row 3 (y=24)
+  // $D2A5 str_TilePairA: tile $5E at col=2 (x=16), tile $6B at col=3 (x=24)
+  // P1 score via DrawNametableTextOffset with $60=$30: col=4 (x=32)
   if (chrOff) {
-    drawCHRTile(0x5E, 3, 16, 24, true); // 'I-' icon
+    drawCHRTile(0x5E, 3, 16, 24, true); // tile $5E = 1P icon
+    drawCHRTile(0x6B, 3, 24, 24, true); // tile $6B = dash
   } else {
     drawNesText('I-', 16, 24, 3);
   }
-  drawNesText(p1Score.toString().padStart(6, ' '), 24, 24, 3);  // ROM: 6 digits, leading-zero suppressed
-  drawNesText('HI-' + hiScore.toString().padStart(6, ' '), 88, 24, 3);
+  drawNesText(p1Score.toString().padStart(6, ' '), 32, 24, 3); // col=4 (x=32)
+  // $D2B1 str_HI: "HI" $6B at col=11 (x=88); HI score at col=14 (x=112)
+  drawNesText('HI-', 88, 24, 3);                               // col=11 (x=88)
+  drawNesText(hiScore.toString().padStart(6, ' '), 112, 24, 3); // col=14 (x=112)
 
-  // ROM $CFAA: "BATTLE" at (26,46), "CITY" at (60,86) via DrawSpriteString ($D14F/$D156)
+  // ROM $D199/$D1AC: "BATTLE" at sprite (x=26,y=46), "CITY" at (x=60,y=86)
   drawBigNesText('BATTLE', 26, 46, 0);
   drawBigNesText('CITY', 60, 86, 0);
 
-  // ROM $C69A BlinkTitleSprite alternates $D1A7 "PLEASE INSERT COIN" / $D1BA (18 spaces)
-  // or "PUSH START BUTTON" if credits > 0
-  if (titleFrame & 0x20) { // Blink every 32 frames
-    if (credits === 0) {
-      drawNesText('PLEASE INSERT COIN', 56, 144, 3);
+  // ROM $D221 "1 PLAYER" at col=11 row=17 (x=88,y=136)
+  // ROM $D230 "2 PLAYERS" at col=11 row=19 (x=88,y=152)
+  // ROM $D23F "CONSTRUCTION" at col=11 row=21 (x=88,y=168)
+  drawNesText('1 PLAYER',    88, 136, 3);
+  drawNesText('2 PLAYERS',   88, 152, 3);
+  drawNesText('CONSTRUCTION', 88, 168, 3);
+
+  // ROM $CA2F UpdateCursorSprite: sprite cursor at col=8 blinks every 4 frames ($B0 bit2 toggles)
+  // cursor row = 17 + titleCursor*2 → y = 136 + titleCursor*16
+  if ((titleFrame >> 2) & 1) {
+    if (chrOff) {
+      drawCHRTile(0x5B, 3, 64, 136 + titleCursor * 16, true); // tile $5B = arrow cursor
     } else {
-      drawNesText('PUSH START BUTTON', 64, 144, 3);
+      drawNesText('>', 64, 136 + titleCursor * 16, 3);
     }
   }
 
-  // ROM $D0F4 draws "CREDIT" at row 21 (y=168)
-  drawNesText('CREDIT ' + credits.toString().padStart(2, '0'), 88, 168, 3);
-
-  // ROM $D1E7 copyright at nametable col 5, row 25 → (40,200); '@'=CHR tile $40=©
-  drawNesText('@ 1980 1985 NAMCO LTD', 40, 200, 3);
-  drawNesText('PRESS E FOR EDIT', 64, 232, 0);
-  // ROM $D1FE "ALL RIGHTS RESERVED" at col 7, row 27 → (56,216)
-  drawNesText('ALL RIGHTS RESERVED', 56, 216, 3);
+  // ROM $D260 copyright: col=4 (x=32), row=25 (y=200); tile $40 = © symbol
+  drawNesText('@ 1980 1985 NAMCO LTD', 32, 200, 3);
+  // ROM $D272 "ALL RIGHTS RESERVED": col=6 (x=48), row=27 (y=216)
+  drawNesText('ALL RIGHTS RESERVED', 48, 216, 3);
 }
 
 // ─── Boot  ────────────────────────────────────────────────────────────────────
