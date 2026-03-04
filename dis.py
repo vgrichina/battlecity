@@ -311,18 +311,21 @@ def disassemble(rom, cpu_start, bank, n_lines, labels, comments):
     label_res = {a: entry[0] for (b, a), entry in labels.items()
                  if b is None or b == bank}
 
-    for _ in range(n_lines):
+    for lines_done in range(n_lines):
         file_off = rom.cpu_to_file_offset(addr, bank)
         if file_off is None or file_off >= len(rom.prg):
             yield f"  ${addr:04X}  ; <out of PRG range>"
             break
 
-        # Label line (mid-stream: show type annotation for data labels)
+        # Label line (mid-stream: switch to data dump for non-code labels)
         lbl = resolve_label(labels, bank, addr)
         if lbl:
             name, dtype = lbl
-            type_ann = f'  ; [{dtype}]' if dtype != 'code' else ''
-            yield f"\n{name}:{type_ann}"
+            if dtype != 'code':
+                yield f"\n{name}:  ; [{dtype}]"
+                yield from dump_data(rom, addr, bank, n_lines - lines_done, dtype, labels, comments)
+                return
+            yield f"\n{name}:"
 
         # Comment
         cmt = comments.get((bank, addr)) or comments.get((None, addr))

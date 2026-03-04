@@ -100,7 +100,7 @@
 1,E53B,InitState,data/table:1
 1,E543,DirToStateTable,data/table:1
 1,E555,MovementDispatch
-1,E575,MoveUpdateDispatch
+1,E575,MoveUpdateDispatch,data/ptr
 1,E595,BulletDispatchTable,data/table
 1,E6A9,SpeedTable,data/table
 1,E7A9,BulletMoveCollision
