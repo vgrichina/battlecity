@@ -225,7 +225,7 @@ function drawNesText(str, x, y, palIdx) {
       const ch = s[i];
       const tile = NES_TILE_OVERRIDE[ch] ?? s.charCodeAt(i);
       if ((tile >= 0x21 && tile <= 0x5F) || tile >= 0x60) {
-        drawCHRTile(tile, palIdx, x + i * 8, y, true);
+        drawCHRTile(tile, palIdx, x + i * 8, y, false);
       }
     }
   } else {
@@ -1714,9 +1714,10 @@ function drawBorderTiles() {
     return;
   }
 
-  // ROM ClearNametableSlot ($98EB) always writes tile $FC and zeros attributes (palIdx 0 = BG0).
-  // Famicom nametable attribute byte for border area is $00 → BG palette 0 ([0x0F,0x17,0x06,0x00]).
-  const tile = 0xFC;
+  // ROM ClearEntitySlots ($D7CC): fills entire nametable buffer ($0400-$07FF) with $11, then
+  // zeros attribute table ($07C0-$07FF → all BG palette 0). Border area is never overwritten,
+  // so it stays tile $11 throughout gameplay. Tile $FC only appears inside the flag icon graphic.
+  const tile = 0x11;
   const palIdx = 0;
 
   // Top 2 rows (rows 0–1, all 32 cols)
@@ -2071,11 +2072,11 @@ function drawHUD() {
   const hx = 28 * 8;                 // pixel X = 224 (nametable col 28)
   const hy = FY;                     // pixel Y = 16  (row 2)
 
-  // Clear HUD area (cols 28–31) with the authentic $FC background tile
+  // Clear HUD area (cols 28–31) with tile $11 (same as rest of nametable — set by ClearEntitySlots).
   if (chrOff) {
     for (let r = 0; r < 30; r++)
       for (let c = 28; c < 32; c++)
-        drawCHRTile(0xFC, 0, c * 8, r * 8);
+        drawCHRTile(0x11, 0, c * 8, r * 8);
   } else {
     // Fallback: fill sidebar area with solid gray
     fillRect(hx, 0, 32, 240, '#666666');
@@ -2089,7 +2090,7 @@ function drawHUD() {
     const col = i % 2, row = Math.floor(i / 2);
     if (i < total) {
       if (chrOff) {
-        drawCHRTile(0x6A, 0, hx + 8 + col * 8, 3 * 8 + row * 8, true);
+        drawCHRTile(0x6A, 0, hx + 8 + col * 8, 3 * 8 + row * 8, false);
       } else {
         fillRect(hx + 8 + col * 8, 3 * 8 + row * 8, 8, 6, C.ENEMY);
       }
@@ -2105,7 +2106,7 @@ function drawHUD() {
   const p1y = 18 * 8;  // nametable row 18 = pixel 144
   if (chrOff) {
     drawNesText('IP', hx + 8, 17 * 8, 0);          // ROM col 29, row 17
-    drawCHRTile(0x14, 0, hx + 8, p1y, true);        // ROM col 29, row 18
+    drawCHRTile(0x14, 0, hx + 8, p1y, false);        // ROM col 29, row 18
     drawNesText(String(p1Lives + 1), hx + 16, p1y, 0); // ROM col 30, row 18
   } else {
     text('IP', hx + 8, p1y - 8, C.P1, 6);
@@ -2117,7 +2118,7 @@ function drawHUD() {
     const p2y = 21 * 8;  // nametable row 21 = pixel 168
     if (chrOff) {
       drawNesText('IIP', hx + 8, 20 * 8, 0);          // ROM col 29, row 20
-      drawCHRTile(0x14, 0, hx + 8, p2y, true);        // ROM col 29, row 21
+      drawCHRTile(0x14, 0, hx + 8, p2y, false);        // ROM col 29, row 21
       drawNesText(String(Math.max(0, p2Lives + 1)), hx + 16, p2y, 0); // ROM col 30, row 21
     } else {
       text('IIP', hx + 8, p2y - 8, C.P2, 6);
@@ -2129,10 +2130,10 @@ function drawHUD() {
   const sty = 23 * 8;  // nametable row 23 = pixel 184
   if (chrOff) {
     // Flag icon: 2×2 tiles at rows 23–24, cols 29–30  ROM $D225/$D228
-    drawCHRTile(0x6C, 0, hx + 8, sty,     true);  // top-left
-    drawCHRTile(0xFC, 0, hx + 16, sty,     true);  // top-right
-    drawCHRTile(0x6D, 0, hx + 8, sty + 8, true);  // bottom-left
-    drawCHRTile(0xFD, 0, hx + 16, sty + 8, true);  // bottom-right
+    drawCHRTile(0x6C, 0, hx + 8, sty,     false);  // top-left
+    drawCHRTile(0xFC, 0, hx + 16, sty,     false);  // top-right
+    drawCHRTile(0x6D, 0, hx + 8, sty + 8, false);  // bottom-left
+    drawCHRTile(0xFD, 0, hx + 16, sty + 8, false);  // bottom-right
     const sn = String(stageIdx + 1).padStart(2);
     drawNesText(sn, hx + 8, sty + 16, 0);  // ROM row 25
   } else {
@@ -2168,8 +2169,7 @@ function drawGameOver() {
     drawNesText('HISCORE', 88, 148, flashPal);
     drawNesText(fmtScore(hiScore), 88, 158, flashPal);
   }
-  // Retry hint (web-only; ROM returns to attract loop via $C0A6)
-  drawNesText('PRESS START', 76, 172, 3);
+  // Retry hint handled by external controls-hint div (web-only; ROM returns to attract loop via $C0A6)
 }
 
 // ROM $8CD4 ResultScreen entry → $CEF7 ResultScreenInit (static strings) → $8D0A per-type tally loop
@@ -2269,9 +2269,31 @@ function drawStageClear() {
   }
 }
 
+// ─── Controls hint (web-only)  ────────────────────────────────────────────────
+const _hint = document.getElementById('controls-hint');
+function hb(key, label) { return `<span class="hb"><kbd>${key}</kbd>${label}</span>`; }
+const HINTS = {
+  title:   [hb('↑ ↓', 'Select'), hb('Enter', 'Confirm'), hb('1 / 2', 'Players')],
+  select:  [hb('↑ ↓', 'Stage'), hb('Enter', 'Start')],
+  curtain: [],
+  start:   [hb('↑↓←→', 'Move'), hb('Space', 'Fire'), hb('M', 'Mute')],
+  play:    [hb('↑↓←→', 'Move'), hb('Space', 'Fire'), hb('M', 'Mute')],
+  clear:   [],
+  gameover:[hb('Enter', 'Retry')],
+  victory: [],
+  edit:    [hb('↑↓←→', 'Move'), hb('Space', 'Place'), hb('T', 'Cycle tile'), hb('Enter', 'Save')],
+};
+let _lastPhase = null;
+function updateControlsHint() {
+  if (!_hint || gamePhase === _lastPhase) return;
+  _lastPhase = gamePhase;
+  _hint.innerHTML = (HINTS[gamePhase] || []).join('');
+}
+
 // ─── Main render  ─────────────────────────────────────────────────────────────
 // ROM $D96D FlushPPUQueue  NMI OAM DMA
 function render() {
+  updateControlsHint();
   // ROM $C65C AttractWait: title screen is a separate full-screen render
   if (gamePhase === 'title')   { drawTitleScreen();   return; }
   if (gamePhase === 'curtain') { drawCurtain();       return; }
@@ -2333,13 +2355,6 @@ function render() {
 
   if (gamePhase === 'start')    drawStageBanner();
   if (gamePhase === 'gameover') drawGameOver();
-
-  // Controls hint in bottom border row (Row 28)
-  if (gamePhase === 'edit') {
-    drawNesText('ARROWS MOVE SPACE PLACE T CYCLE ENTER SAVE', 8, 228, 0);
-  } else {
-    drawNesText('ARROWS MOVE SPACE FIRE', 40, 228, 0);
-  }
 
   // ROM $EBBC grenade palette flash: NES flips all palette colours for ~8 frames.
   // Approximated as a fading white overlay over the entire canvas.

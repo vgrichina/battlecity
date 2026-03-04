@@ -33,11 +33,35 @@
       font-size: 11px;
       color: #555;
     }
+    #controls-hint {
+      display: flex;
+      gap: 12px;
+      margin-top: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+      min-height: 22px;
+    }
+    .hb { display: flex; align-items: center; gap: 5px; color: #666; font-size: 11px; }
+    .hb kbd {
+      display: inline-block;
+      padding: 2px 7px;
+      background: #1e1e1e;
+      border: 1px solid #3a3a3a;
+      border-bottom: 2px solid #2a2a2a;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #bbb;
+      line-height: 1.5;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
   <h1>BATTLE CITY</h1>
   <canvas id="game"></canvas>
+  <div id="controls-hint"></div>
   <p>RE ref: commit 973e914 &nbsp;|&nbsp; VS. Battle City (1985) Namco</p>
   <script src="levels.js"></script>
   <script src="sound.js"></script>
