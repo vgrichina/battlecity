@@ -651,12 +651,12 @@ function spawnEnemy() {
     const typeRow = ENEMY_TYPE_TABLE[Math.min(stageIdx, ENEMY_TYPE_TABLE.length - 1)];
     e.type       = typeRow[20 - enemiesLeft];
 
-    // Power-up tank: flag at 17/10/3 remaining  ROM $E417 $7F==17/10/3
+    // Power-up tank: flag at 17/10/3 remaining  ROM $E363 SpawnEnemy: $7F==17/10/3
     e.powerUpTank = (enemiesLeft === 17 || enemiesLeft === 10 || enemiesLeft === 3);
 
     // Armor hits: only type 3 gets armor (bits 0-1 of $A8,X; set at $E4B5: ORA #$03)
     // ROM $E4B1: CMP #$E0; only type 3 gets ORA #$03. Types 0/1/2 have 0 armor bits.
-    // Armor check at $E989: AND #$03; BEQ kill; DEC. Start=3 → 4 total hits.
+    // Armor check at $E70C: AND #$03; BEQ kill; DEC. Start=3 → 4 total hits.
     e.armorHits  = e.type >= 3 ? 3 : 0;
     e.shieldTimer = 0;
     e.aiTimer    = 40 + Math.floor(Math.random() * 80);
@@ -1069,7 +1069,7 @@ function bulletEntityCollision() {
       if ((ei < 2) === isPlayerBullet) continue;  // same team
       if (ei === b.owner) continue;
 
-      // 10×10 px hit check  ROM $E8B1  (e.x/e.y are center coords)
+      // 10×10 px hit check  ROM $E70C  (e.x/e.y are center coords)
       if (Math.abs(b.x - e.x) >= 10) continue;
       if (Math.abs(b.y - e.y) >= 10) continue;
 
@@ -1077,15 +1077,15 @@ function bulletEntityCollision() {
       b.active = false;
 
       if (!isPlayerBullet) {
-        // Enemy bullet → player  ROM $E8B1
+        // Enemy bullet → player  ROM $E70C
         if (e.shieldTimer > 0) continue;  // shield deflects
         killEntity(e);
       } else {
-        // Player bullet → enemy  ROM $E8B1 armor check  $EA63 flash
+        // Player bullet → enemy  ROM $E70C: armor check, blink on partial hit
         e.lastHitBy = b.owner;  // track which player gets the kill score
         if (e.armorHits > 0) {
           e.armorHits--;
-          e.blinkFrame = 20;   // brief blink to signal hit  ROM $EA63
+          e.blinkFrame = 20;   // brief blink to signal hit
           sfxArmorHit();  // ROM $030E=1 player bullet hits armored tank
         } else {
           killEntity(e);
@@ -1096,9 +1096,9 @@ function bulletEntityCollision() {
 }
 
 // ─── Bullet–bullet cancel  ────────────────────────────────────────────────────
-// ROM $EAB5 BulletVsBulletCancel: player bullet vs enemy bullet within 6 px
+// ROM $E910 BulletBulletCollision: player bullet vs enemy bullet within 6 px
 function bulletBulletCancel() {
-  // Player bullet slots: 0, 8 (P1), 1, 9 (P2)  ROM $EAB5: slot&$06==0
+  // Player bullet slots: 0, 8 (P1), 1, 9 (P2)  ROM $E910: slot&$06==0
   const playerSlots = numPlayers === 2 ? [0, 1, 8, 9] : [0, 8];
   for (const pi of playerSlots) {
     const pb = bullets[pi];
@@ -1162,12 +1162,12 @@ function killEntity(e) {
   e.deathTimer = 24;  // ROM state $73→$00: ~24 countdown steps (3 per phase × 8 phases)
 
   if (e.isPlayer) {
-    // ROM $DEBA/$DEBC: DEC $51/$52 lives for P1/P2
+    // ROM $DE0D: DEC $51,X lives for P1/P2 (X=slot)
     const slot = e.slot;
     if (slot === 0) {
       p1Lives--;
       if (p1Lives < 0) {
-        if (numPlayers === 2) startPlayerDeathScroll(0);  // ROM $DECC: P1 dead in 2P
+        if (numPlayers === 2) startPlayerDeathScroll(0);  // ROM $DE26: P1 dead in 2P → goScroll right
         checkGameOverScroll();
       } else {
         playerRespawnTimer[0] = 120;
@@ -1175,7 +1175,7 @@ function killEntity(e) {
     } else {
       p2Lives--;
       if (p2Lives < 0) {
-        if (numPlayers === 2) startPlayerDeathScroll(1);  // ROM $DECC: P2 dead in 2P
+        if (numPlayers === 2) startPlayerDeathScroll(1);  // ROM $DE38: P2 dead in 2P → goScroll left
         checkGameOverScroll();
       } else {
         playerRespawnTimer[1] = 120;
@@ -1289,11 +1289,11 @@ function tickTimers() {
     if (e.shieldTimer > 0 && (frameCount & 63) === 0) e.shieldTimer--;
   }
   if (freezeTimer > 0 && (frameCount & 63) === 0) freezeTimer--;
-  // ROM $EBA0/$E3E8: $45 decremented every 16 frames; <4 ticks flash steel↔brick
+  // ROM $E2A9 ShovelEagleTick: $45 decremented every 16 frames; <4 ticks flash steel↔brick
   if (shovelTimer > 0 && (frameCount & 15) === 0) {
     shovelTimer--;
     if (shovelTimer === 0) {
-      setEagleWall(false);  // ROM $C912 RevertBricks: timer expired → permanent brick
+      setEagleWall(false);  // timer expired → revert to brick
     } else if (shovelTimer < 4) {
       // ROM flashing: alternate steel/brick every 16 frames via FrameLo AND $10
       setEagleWall(!!((frameCount >> 4) & 1));
@@ -1542,8 +1542,8 @@ function update() {
     return;
   }
 
-  // ── Active gameplay subsystems  ROM $C29F GameUpdate2 order ──────────────
-  soundTick();                    // ROM $EC23 SoundEngine per-frame
+  // ── Active gameplay subsystems  ROM $C2E6 GameTickMain order ──────────────
+  soundTick();                    // ROM $EA7E SoundEngineTick per-frame
   tickBGM();                      // ROM $C18A re-trigger BGM channels
   tickTimers();                   // shield/freeze/spawn timers
   moveEntities();                 // ROM $DC7C EntityMovementAI
@@ -1555,7 +1555,7 @@ function update() {
   handleEnemyFire();              // ROM $E162 EnemyFireTick
   checkPowerUpCollision();        // ROM $E972 PowerupCollectTick
 
-  // ROM $C62F CheckGameOver: eagle destroyed ($68→0) → start in-field scroll
+  // ROM $C728 CheckGameOver: eagle destroyed ($68→0) → start in-field scroll
   if (!eagleAlive && eagleExpTimer === 0 && goScrollTimer === 0 && gamePhase === 'play') {
     if (demoMode) { enterTitle(); return; }
     goScrollX     = 0x70;  // ROM $0105 = $70 (center)
@@ -1565,7 +1565,7 @@ function update() {
     goScrollFrame = 0;
   }
 
-  // ROM $C7F8 GameOverBannerAnim: 4-direction wiggle scroll for "GAME OVER" sprites
+  // ROM $C972 ShovelAnimTick (doubles as GAME OVER scroll): 4-direction wiggle for "GAME OVER" sprites
   // $0108 decrements every 16 frames; while ≥$0A, direction delta applied each frame
   // WiggleX $D2C6: {0,-1,0,+1}  WiggleY $D2CA: {-1,0,+1,0}
   if (goScrollTimer > 0) {
@@ -1595,7 +1595,7 @@ function update() {
     }
   }
 
-  checkStageClear();              // ROM $DEC9 EnemyKillsPool → 0
+  checkStageClear();              // ROM $C728 CheckGameOver: $80=0 → stage clear
 }
 
 // ─── Rendering helpers  ───────────────────────────────────────────────────────
@@ -1627,7 +1627,7 @@ function drawTile(col, row) {
   if (chrOff) {
     if (t <= T.BRICK) {
       // Brick (full or partial): draw ALL 4 quadrants
-      // ROM $DB79 TileCHRTable: set bit → tile $0F (solid brick), clear bit → tile $00 (shadow/mortar)
+      // ROM $DACB TileTypeTable: set bit → tile $0F (solid brick), clear bit → tile $00 (shadow/mortar)
       // Tile $00 is NOT blank — 23 non-zero pixels; must be drawn with brick palette (same as render_level.py)
       const bits = brickBits[row][col];
       for (let q = 0; q < 4; q++) {
@@ -1728,7 +1728,7 @@ function drawBorderTiles() {
       drawCHRTile(tile, palIdx, c * 8, r * 8);
 }
 
-// ROM $F239 LevelTileLoader: draws all 13×13 metatiles
+// ROM $F000 LoadStageData / $F07A StageDataTable: renders all 13×13 metatiles
 function drawField() {
   // NES PPU nametable: playfield is pure black, border gets tile $FC (ClearNametableSlot $98EB)
   fillRect(FX, FY, GW * META, GH * META, C.FIELD);
@@ -2152,7 +2152,7 @@ function drawGameOver() {
   fillRect(32, 76, 192, 100, '#000');
   drawBigNesText('GAME', 64, 84, 3);
   drawBigNesText('OVER', 64, 116, 3);
-  // ROM $D9F0 CompareAndUpdateHiScore → NewHiScoreDisplay ($C4E9)
+  // ROM $D97D UpdateHiScore → post-game hi-score display
   if (newHiScorePlayer > 0) {
     // ROM $C527: JSR RNG; AND #$3F; JSR QueuePaletteWrite — random NES color each frame
     const flashPal = Math.floor(Math.random() * 8);  // random palette each frame
@@ -2284,13 +2284,13 @@ function render() {
   drawPowerUp();
   drawTreesOverlay();  // re-draw tree tiles over entities/bullets (z-order fix)
 
-  // ROM $C7CD DrawGameOverBanner: in-field "GAME OVER" sprites (PT1 tiles $78–$7F are letter art)
+  // In-field "GAME OVER" sprites: PT1 tiles $78–$7F letter art, drawn while $0108>0 at pos $0105/$0106
   // 4 OAM 8×16 sprites from BG bank: $79/$7B = left 16×16, $7D/$7F = right 16×16
   // DrawTank places at (X-8,Y-8) and (X,Y-8); second call at (X+8,Y-8) and (X+16,Y-8)
   // Palette SP3 = palIdx 7. Drawn while goScrollTimer > 0 (ROM $0108 > 0).
   if (chrOff && goScrollTimer > 0 && goScrollY < 0xF0) {
     const goX = goScrollX;  // ROM $0105 (variable X position)
-    // ROM $C7CD DrawGameOverBanner: odd tile bytes ($79,$7B,$7D,$7F) → PT1 letter-art tiles
+    // odd tile bytes ($79,$7B,$7D,$7F) → PT1 letter-art tiles
     drawCHRTile(0x78, 7, goX - 8,  goScrollY - 8,  true);  // TL
     drawCHRTile(0x7A, 7, goX,      goScrollY - 8,  true);  // TR
     drawCHRTile(0x79, 7, goX - 8,  goScrollY,      true);  // BL
@@ -2489,10 +2489,10 @@ function drawTitleScreen() {
 }
 
 // ─── Boot  ────────────────────────────────────────────────────────────────────
-// ROM $C070 Reset  $EBF6 SoundResetInit  $D3BF Init
+// ROM $C070 Reset  $EA51 APUSoundInit  $D491 Init
 p1Score  = 0;
 p1Lives  = 2;  // display shows +1 (3 lives)
-p1NextLifeScore = 20000;  // ROM $CF44 LivesGrantCheck: first bonus-life threshold
+p1NextLifeScore = 20000;  // ROM: first bonus-life threshold at 20000 pts
 hiScore  = 20000;   // ROM $3D–$43: default starting hi-score
 selectedStage = 0;
 newHiScorePlayer = 0;
@@ -2500,7 +2500,7 @@ frameCount = 0;
 enterTitle();
 initCHR();     // load single Famicom CHR ROM sheet (chr_all.png)
 
-// ROM $C402 GameFrame loop — requestAnimationFrame at 60 fps
+// ROM $C09C MainLoop — requestAnimationFrame at 60 fps
 (function loop() {
   update();
   render();
