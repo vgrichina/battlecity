@@ -522,7 +522,7 @@ function initLevel(idx) {
   puFlashPos        = null;
   grenadeFlash      = 0;
   spawnRot          = 0;     // ROM $6A SpawnRotIdx
-  spawnDelay        = Math.max(50, 190 - stageIdx * 4); // ROM $84 SpawnDelayMax: 190 - stageNum*4, min 50
+  spawnDelay        = Math.max(50, 186 - stageIdx * 4); // ROM $84=$BE-$85*4: stageNum(1-based)*4; stageIdx=stageNum-1 → 186-stageIdx*4
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
   activeEnemyCount  = 0;
   playerRespawnTimer = [0, 0];
@@ -1276,7 +1276,7 @@ function tickEnemySpawn() {
   if (enemiesLeft <= 0 || activeEnemyCount >= 4) return;
   if (spawnDelay > 0) { spawnDelay--; return; }
   spawnEnemy();
-  spawnDelay = Math.max(50, 190 - stageIdx * 4); // ROM $84 SpawnDelayMax
+  spawnDelay = Math.max(50, 186 - stageIdx * 4); // ROM $84=$BE-$85*4 (stageNum 1-based)
 }
 
 // ─── Shield + freeze tick  ────────────────────────────────────────────────────

@@ -145,3 +145,7 @@ bank,addr,name,type,comment
 0,DB0B,PlayerActiveCheck,,PlayerActiveCheck: checks if P1 and/or P2 are pressing directional buttons ($06/$07 &$F0≠0) and have active entity ($A0,X≠0); sets $0311=1 if only P1 is active, =0 if both/neither. Used to manage 2-player movement priority.
 0,C7C8,LivesDisplayTick,,LivesDisplayTick: draws P1 lives count (and P2 in 2P mode) to HUD sprite area. Reads $51+X (lives), SUB 1, converts via $DA13(Div10), draws life-icon sprites + digit sprites at Y=$36 row. Loops for both players.
 0,C31D,PaletteFlashTick,,PaletteFlashTick (inlined at $C31D): every 64 frames ($0B&$3F==$20) → $4D=1(alt palette A); every 64 frames ($0B&$3F==$00) → $4D=2(alt palette B). Cycles in-game BG palette variants to create subtle color animation.
+0,839C,SpawnDelayInit,,SpawnDelayInit: LDA $85; ASL; ASL; STA $00; LDA #$BE; SEC; SBC $00; STA $84 → $84 = 190 - stageNum*4 (stageNum 1-based). If $83≠0 (2P): SBC #$14 → subtract 20 more. Min delay at stage 35=50.
+0,9B48,EnemySpawnTick,,EnemySpawnTick: LDA $82; if non-zero DEC and RTS; if $7F==0 RTS; scan $A0+$6C→$A0+2 for free slot; if found: LDA $84→STA $82, JSR SpawnEnemy, DEC $7F, JSR DrawEnemiesLeft; RTS.
+0,8195,StageAdvance1P,,StageAdvance1P: INC $85; LDA $85; CMP #$24; if reached cap → LDA #$23; STA $85 (clamp at stage 35); JMP $C172.
+0,8259,StageAdvance2P,,StageAdvance2P: INC $85; LDA $85; CMP #$47; if ≥71 → reset $85=1 and $46=0 (loop stages 1-70).
