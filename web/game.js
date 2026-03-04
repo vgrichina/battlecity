@@ -2,7 +2,7 @@
 /* ================================================================
  * Battle City — Web Port  (v1)
  * RE reference commit: 973e914
- * ROM: VS. Battle City (1985)(Namco).nes  iNES mapper 99  32KB PRG  16KB CHR
+ * ROM: Battle City (1985)(Namco)[Famicom].nes  iNES mapper 0  32KB PRG  8KB CHR
  * All ROM addresses cited as // ROM $XXXX  label
  * ================================================================ */
 
@@ -17,9 +17,8 @@ const ctx     = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
 
 // ─── CHR tile engine ──────────────────────────────────────────────────────────
-// Tile sheets: tiles/chr_all.png (banks 0+1) + tiles/chr_all_alt.png (banks 2+3)
-// 512 tiles each in 32×16 grid, 9px cell (8px+1px border). Mapper 99 per-stage bank switch.
-// BG tile N: col=N%32 row=N/32   Sprite tile N: abs=N+256
+// Tile sheet: tiles/chr_all.png — single 8KB CHR ROM, 512 tiles in 32×16 grid.
+// 9px cell (8px+1px border). BG tile N: col=N%32 row=N/32; Sprite tile N: abs=N+256.
 const CHR_CELL = 9, CHR_BORDER = 1;
 
 
@@ -61,44 +60,19 @@ const tileCache = new Map();      // cached offscreen canvases keyed by "abs_pal
       NES_PAL[si][i] = NES_MASTER_HEX[ROM_PALETTE_DATA[si][i] & 0x3F];
 })();
 
-// Mapper 99 per-stage CHR bank select via StageFlagsTable ($80B6).
-// Bit 2: 1 -> banks 0+1 (default, index 0), 0 -> banks 2+3 (alt, index 1).
-// ROM $80B6: 04 04 04 00 04 04 04 04 04 00 00 04 00 00 2E 00 00 24 00 00 28 00 00 26 00 00 24 00 00 24 00 00 28 00 01
-// D2 bit: 1=banks 0+1 (default), 0=banks 2+3 (alt). All 35 stages listed.
-const STAGE_CHR_BANK = [0,0,0,1,0,0,0,0,0,1,1,0,1,1,0,1,1,0,1,1,1,1,1,0,1,1,0,1,1,0,1,1,1,1,1];
-
-const chrSheets = [null, null];   // [0]=default (banks 0+1), [1]=alt (banks 2+3)
-let chrBankIdx = 0;               // which bank pair is currently active
-
 function initCHR() {
-  const paths = ['tiles/chr_all.png', 'tiles/chr_all_alt.png'];
-  paths.forEach((src, idx) => {
-    const img = new Image();
-    img.src = src;
-    img.onload = () => {
-      const oc = document.createElement('canvas');
-      oc.width = img.width; oc.height = img.height;
-      const octx = oc.getContext('2d');
-      octx.imageSmoothingEnabled = false;
-      octx.drawImage(img, 0, 0);
-      chrSheets[idx] = octx;
-      // Activate default bank on first load
-      if (idx === chrBankIdx) {
-        chrOff = octx;
-        tileCache.clear();
-        render(); // Force redraw now that tiles are ready
-      }
-    };
-  });
-}
-
-function setCHRBank(stageIdx) {
-  const bankIdx = STAGE_CHR_BANK[stageIdx % STAGE_CHR_BANK.length];
-  if (bankIdx !== chrBankIdx || chrOff !== chrSheets[bankIdx]) {
-    chrBankIdx = bankIdx;
-    chrOff = chrSheets[bankIdx];
+  const img = new Image();
+  img.src = 'tiles/chr_all.png';
+  img.onload = () => {
+    const oc = document.createElement('canvas');
+    oc.width = img.width; oc.height = img.height;
+    const octx = oc.getContext('2d');
+    octx.imageSmoothingEnabled = false;
+    octx.drawImage(img, 0, 0);
+    chrOff = octx;
     tileCache.clear();
-  }
+    render();
+  };
 }
 
 // Draw one 8×8 CHR tile at NES pixel (destX, destY).
@@ -496,7 +470,6 @@ function setEagleWall(steel) {
 // ROM $C33D LevelStart  $C625 ClearKillTallies
 function initLevel(idx) {
   stageIdx          = idx % LEVEL_MAPS.length;  // ROM loops back to stage 1 after stage 35
-  setCHRBank(stageIdx);                         // Mapper 99: select CHR bank pair per stage
   frameCount        = 0;
   gamePhase         = 'start';
   phaseTimer        = 180;   // ~3 s stage-start banner  ROM $CFAA PreGameDraw
@@ -2463,7 +2436,7 @@ selectedStage = 0;
 newHiScorePlayer = 0;
 frameCount = 0;
 enterTitle();
-initCHR();     // load both CHR tile sheets (chr_all.png + chr_all_alt.png); setCHRBank() selects per stage
+initCHR();     // load single Famicom CHR ROM sheet (chr_all.png)
 
 // ROM $C402 GameFrame loop — requestAnimationFrame at 60 fps
 (function loop() {
