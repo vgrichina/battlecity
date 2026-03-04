@@ -112,6 +112,30 @@
 | $E8BA–$E8BD | — | 4 | data | EnemyScoreTable[4]: BCD score per enemy type (in-game kills $A81E): $10=100, $20=200, $30=300, $40=400 pts |
 | $D3D1–$D3D4 | — | 4 | data | ResultEnemyScoreTable[4]: same BCD values used on result screen ($8D1C): $10/$20/$30/$40 = 100/200/300/400 pts |
 | $E578–$E603 | — | 140 | data | StageEnemyCountTable: 35×4 bytes; enemy type counts per stage (always sum to 20); loaded into $8B-$8E |
+| $E604–$E68B | — | ~136 | code | BulletTerrainCollision: loops slots 9→0; if $CC,X&$F0=$40 (active): compute next pos ($B8+EA49[dir]×4, $C2+EA4D[dir]×4); JSR BulletHitCheck ($E693) |
+| $E693–$E70B | — | ~121 | code | BulletHitCheck: get nametable ptr; read tile; if eagle tile→$68=$27 damage countdown; if brick→clear bit/erase; if steel&power→erase; set SFX flags $030B-$030D; $CC,X=$33 on hit |
+| $E70C–$E77A | — | ~110 | code | EnemyBulletPlayerCollision: loops players 0-1; scan enemy bullets 7→2; proximity check <10px; if hit+no-invincibility: kill player, DEC lives |
+| $E910–$E971 | — | ~98 | code | BulletBulletCollision: for slots where $5A&$06==0 (player-owned): inner loop Y=9→0; if |$B8,X-$B8,Y|<6 and |$C2,X-$C2,Y|<6: destroy both bullets |
+| $E972–$E9E0 | — | ~111 | code | PowerupCollectTick: checks entity proximity to powerup pos ($86/$87); on pickup: $62=50 duration; adds 500pts; triggers powerup effect |
+| $EA49–$EA4C | — | 4 | data | BulletDirDX[4]: bullet X delta per direction (0/-1/0/+1) |
+| $EA4D–$EA50 | — | 4 | data | BulletDirDY[4]: bullet Y delta per direction (-1/0/+1/0) |
+| $E181–$E1F9 | — | ~121 | code | EntityTileRead: for each active entity, reads nametable ptr at (X-8,Y-8) via $D706 → $E0,X/$E8,X; detects ice tiles |
+| $E1FA–$E239 | — | ~64 | code | EntityTileRestore: for each active entity, restores background tile bytes (clear bit7) at offsets $21/$20/$01 |
+| $E02E–$E12D | — | ~256 | code | BulletStateMachine: loops 9→0; dispatches bullet state via $E4D8 table; handles move/countdown/explosion states |
+| $E4D8–$E4E1 | — | 10 | data | BulletDispatch[5×ptr16]: bullet state dispatch table; indexed by ($CC>>3)&$FE |
+| $E2A9–$E27B | — | ~210 | code | ShovelEagleTick: shovel timer countdown + eagle damage animation via $E306 table |
+| $E27C–$E2A8 | — | ~45 | code | InvincibilityTick: loops players; if $89,X: DEC/64 frames; draw shield sprite |
+| $E122–$E161 | — | ~64 | code | PlayerFireTick: loops players; on A/B press, fire bullet via $E08C; power tank supports 2-bullet save/restore |
+| $E162–$E180 | — | ~31 | code | EnemyFireTick: loops enemy slots 7→2; PRNG&$1F==0 → JSR FireBullet |
+| $DB0B–$DB47 | — | ~61 | code | PlayerActiveCheck: checks $06/$07 directional bits + $A0,X≠0; sets $0311=1 if only P1 pressing direction |
+| $C7C8–$C971 | — | ~426 | code | LivesDisplayTick + related HUD routines: draw P1/P2 life count sprites |
+| $C972–$C9AF | — | ~62 | code | ShovelAnimTick: if $0108 countdown active: update eagle-border tiles from $D3D5/$D3D9 table; JSR $C947 |
+| $D3D5–$D3D8 | — | 4 | data | ShovelTileDX: X offsets for shovel eagle-border tile animation |
+| $D3D9–$D3DC | — | 4 | data | ShovelTileDY: Y offsets for shovel eagle-border tile animation |
+| $D706–$D71D | — | ~24 | code | GetNametablePtr + PixelToTile: pixel(X,Y)→tile(col,row) (>>3 each) → nametable addr in $11/$12 |
+| $D784–$D7A9 | — | ~38 | code | WriteNametableByte: STA($11),Y + buffer triplet to VRAM flush queue ($0180+$0C×4) for NMI |
+| $D743–$D783 | — | ~65 | code | ClearTileBit + related: clears specific tile bits (partial brick destruction) |
+| $E306–$E361 | — | ~92 | data/code | EagleAnimTable: ptr16 dispatch table for eagle damage animation routines |
 | $FFFA–$FFFF | $3FFA–$3FFF | 6 | vectors | NMI=$D400 RESET=$C070 IRQ=$C070 |
 
 ---
@@ -162,6 +186,34 @@
 | $A0 | EntityStatus[] | Entity state byte ($A0,X); 0=free; $F0=spawn-anim; $E0=death-anim; $A0/$A2=active. AI dispatch: (val>>3)&$FE indexes EntityStateTable ($E498) |
 | $A8 | EntityType[] | Entity type byte ($A8,X); hi nibble: $8x=basic $Ax=fast $Cx=power $Ex=armor; bit2=blink/bonus flag |
 | $B0 | EntityAnimState[] | Entity animation state / frame counter ($B0,X); cleared on activation |
+| $B8,X | BulletPosX[] | Bullet X pixel position per slot (array $B8–$BF) |
+| $C2,X | BulletPosY[] | Bullet Y pixel position per slot (array $C2–$C9) |
+| $CC,X | BulletState[] | Bullet state per slot ($CC–$D3): 0=none, $40=active, $33=impact countdown, $60-$70=explosion anim |
+| $D6,X | BulletPower[] | Bullet power tier ($D6–$DD): 0=basic, 1=enhanced (breaks bricks), 3=triple (breaks steel) |
+| $D4,X | Bullet2State[] | 2nd bullet state save for power-tank double-fire ($D4–$DB); mirrors $CC format |
+| $C0,X | Bullet2PosX[] | 2nd bullet X position ($C0–$C7) |
+| $CA,X | Bullet2PosY[] | 2nd bullet Y position ($CA–$D1) |
+| $DE,X | Bullet2Power[] | 2nd bullet power ($DE–$E5) |
+| $E0,X | TilePtrLo[] | Background tile nametable ptr lo under entity ($E0–$E7); set by EntityTileRead |
+| $E8,X | TilePtrHi[] | Background tile nametable ptr hi + attr flags ($E8–$EF); bit7=ice tile flag |
+| $0F | PRNGSeed | PRNG current value; updated by $D44D each call |
+| $10 | PRNGCounter | PRNG counter; indexes zero-page entropy table |
+| $45 | ShovelTimer | Shovel power-up timer; counts down; used in ShovelEagleTick to restore eagle base tiles |
+| $46 | GameMode | Game variant flag; $02=construction mode |
+| $62 | PowerupDuration | Powerup pickup effect duration countdown (set to 50 on collect) |
+| $86 | PowerupPosX | X pixel position of active power-up item on screen |
+| $87 | PowerupPosY | Y pixel position of active power-up item on screen |
+| $88 | PowerupType | Power-up type byte; negative ($80) = no powerup |
+| $0100 | EnemyFireInhibit | If non-zero: enemy fire is suppressed (EnemyFireTick skips); set/cleared by game state logic |
+| $0105 | ShovelTileAccX | Shovel animation accumulated tile X for eagle border |
+| $0106 | ShovelTileAccY | Shovel animation accumulated tile Y (also set to $F0 on shovel expire) |
+| $0107 | ShovelTileIdx | Index into ShovelTileDX/DY tables |
+| $0108 | ShovelCountdown | Shovel active frame countdown; DEC'd every 16 frames; $0A..→tiles animate; 0=expired |
+| $030B | SFX_EagleHit | SFX trigger: set to 1 when eagle is hit; triggers explosion/eagle SFX |
+| $030C | SFX_BrickBreak | SFX trigger: set to 1 on brick destruction or power-bullet steel hit |
+| $030D | SFX_Ricochet | SFX trigger: set to 1 when bullet bounces off steel tile |
+| $030F | SFX_PlayerFire | SFX trigger: set to 1 when player fires bullet |
+| $0311 | P1ActiveFlag | Set to 1 if only P1 pressing direction (P2 not); 0 if both or neither; managed by PlayerActiveCheck |
 
 ---
 
@@ -559,6 +611,62 @@ Updated each NMI when `$4D` is ≥ 0 (bit7=0) by PaletteUpdate ($D50E). Index = 
 
 ---
 
+## GameTickMain Subsystems (`$C2E6`)
+
+Called every frame from the main game loop (StageStartSetup at $C1F9). 18 sequential JSR calls:
+
+| # | Address | Name | Description |
+|---|---------|------|-------------|
+| 1 | $E181 | EntityTileRead | For each active entity: read nametable tile ptr at (X-8,Y-8) → $E0,X/$E8,X; detect ice ($21) |
+| 2 | $DB75 | PlayerMoveTick | Move player tanks from D-pad input |
+| 3 | $DBF1 | EntityMainLoop | Run AI state machine for all 8 entity slots |
+| 4 | $E1FA | EntityTileRestore | Restore background tiles saved by EntityTileRead (clear bit7) |
+| 5 | $E02E | BulletStateMachine | Dispatch bullet state per slot via $E4D8 table: move/countdown/explosion |
+| 6 | $E2A9 | ShovelEagleTick | Shovel timer countdown; eagle damage animation via $E306 ptr table |
+| 7 | $E27C | InvincibilityTick | Flash invincibility shield sprite for players ($89,X countdown) |
+| 8 | $E122 | PlayerFireTick | Fire bullet on A/B press; power tank: save/restore 2nd bullet |
+| 9 | $E162 | EnemyFireTick | Random enemy fire (PRNG &$1F==0, ≈1/32 chance per frame per slot) |
+| 10 | $DB48 | EnemySpawnTick | Decrement spawn delay; spawn next enemy from spawn queue |
+| 11 | $E604 | BulletTerrainCollision | Move active bullets; collision check vs nametable tiles via $E693 |
+| 12 | $E910 | BulletBulletCollision | Destroy bullet pairs within 6px (player bullets canceling enemy bullets) |
+| 13 | $E70C | EnemyBulletPlayerCollision | Enemy bullet hits player: check proximity <10px; kill if not invincible |
+| 14 | $E972 | PowerupCollectTick | Entity near powerup (<12px): collect, add 500pts, apply effect |
+| 15 | $C972 | ShovelAnimTick | Eagle-border steel animation while $0108 countdown active |
+| 16 | $DB0B | PlayerActiveCheck | Track which players are pressing direction buttons → $0311 |
+| 17 | $C7C8 | LivesDisplayTick | Draw P1/P2 remaining life count HUD sprites |
+| 18 | $C31D | PaletteFlashTick | (inlined) Every 64 frames alternate $4D=1/2 (palette animation) |
+
+### Bullet state machine (`$CC,X`)
+
+| Value | State | Handler |
+|-------|-------|---------|
+| $00 | No bullet | RTS (skip) |
+| $10–$30 | Cooldown countdown | $E076: DEC lo nibble; wrap hi nibble -$10 each 4 ticks |
+| $40 | Active (flying) | $E051: move 2px/frame via BulletApplyDelta |
+| $33 | Impact / stop | $E076: count down to $00 over 9 frames |
+| $60–$70 | Explosion animation | $E112: draw explosion sprite at $B8,$C2 |
+
+Bullet fired by `FireBullet` ($E08C): $CC,X = $40 | dir; $B8,X = X+dX×8; $C2,X = Y+dY×8.
+
+### Bullet power (`$D6,X`)
+
+| Value | Type | Effect |
+|-------|------|--------|
+| 0 | Basic | Stops on brick tile; stopped by steel |
+| 1 | Enhanced | Destroys brick AND steel tiles |
+| 3 | Triple | Same as enhanced + may pierce (from $60-type tank) |
+
+### SFX trigger flags (page 3 RAM)
+
+| Address | Trigger |
+|---------|---------|
+| $030B | Eagle hit (explosion + eagle damage SFX) |
+| $030C | Brick broken or power-bullet steel hit |
+| $030D | Bullet ricochets off steel |
+| $030F | Player fires bullet |
+
+---
+
 ## Next Tasks
 
 - [x] Understand what $6C=5/$6C=7 controls exactly. **Done.** $6C = MaxEntityScanIdx (entity slot upper bound). Set at $CA76 to 5 (1P) or 7 (2P/Construction); reset to 5 at $C41A (stage end). Only read by EnemySpawnTick ($DB48): scans $A0+$6C down to $A0+2 for free enemy slot. 1P → 4 enemy slots (2–5); 2P → 6 scan positions (2–7). $7F = enemies remaining, DEC'd on spawn. $E363 = SpawnEnemy.
@@ -573,4 +681,4 @@ Updated each NMI when `$4D` is ≥ 0 (bit7=0) by PaletteUpdate ($D50E). Index = 
 - [x] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller). **Done.** $DA93 = HideSpritePairs: hides all unused OAM sprite slots each NMI by writing Y=$F0 (off-screen) backwards from $0D-4 down to OAM+4 (sprite 1). Input: $0D=current OAM write ptr (incremented by WriteSpriteToOAM at $9A47), $0E=stride(4). Negates $0E then loops. Identical copy at $9A93 (NROM-128 mirror). $D8FD relabeled: NOT sprite-related — it's VRAMNametableFlush (flushes buffered triplet writes addr_hi/addr_lo/data from $0180 to PPU via $2006/$2007). NMI sequence: OAM-DMA→VRAMFlush→PaletteUpdate→PPUCtrl/scroll→ReadControllers→HideSpritePairs→SoundEngineTick.
 - [x] Locate high score save/load logic. **Done.** Score arrays at $15–$1B (P1), $1D–$23 (P2), $3D–$43 (hi-score). Routines: SetupScoreDigits ($D9E1, BCD byte→scratch $35–$3B), AddScoreDigits ($D9BE, scratch→player score with decimal carry), UpdateHiScore ($D97D, compare P1/P2 to $3D on game-over), DrawHiScore ($D951, draw $3D buffer). Enemy kill scores: BCD $10/$20/$30/$40 = 100/200/300/400 pts from EnemyScoreTable ($E8BA/$D3D1). Shovel=500pts, 2P-winner bonus=1000pts. Hi-score zeroed at first boot ($94C1), persists across soft-resets in RAM (no SRAM/battery).
 - [x] Identify palette data location and format. **Done.** Two palette data blocks: SpritePaletteData ($D555–$D564, 16B fixed, 4 sub-palettes → PPU $3F10-$3F1F via SpritePaletteInit at $D53E) and BGPaletteTable ($D565–$D5F4, 9×16B, indexed by $4D → PPU $3F00-$3F0F via PaletteUpdate at $D50E). $4D is both the palette set index (0-8) and the "update needed" flag (bit7=0 → update on next NMI; $FF = done). Sets 0-2 = in-game variants, 3 = player-select/game-over, 4 = title animation, 5-8 = flash animation (loop at $8486 cycles $4D=($0B&3)+5). WaitVBlank2 ($D5F5) is a 6-byte routine just after the table. NES palette entries use format $XY where X=brightness, Y=hue.
-- [ ] Understand GameTickMain subsystems ($E181, $E1FA, $E02E, $E2A9, $E27C, $E122, $E162, $DB0B, $C7C8) — bullet/collision/explosion/score logic
+- [x] Understand GameTickMain subsystems ($E181, $E1FA, $E02E, $E2A9, $E27C, $E122, $E162, $DB0B, $C7C8) — bullet/collision/explosion/score logic. **Done.** 18 subsystems fully mapped: EntityTileRead($E181), EntityTileRestore($E1FA), BulletStateMachine($E02E), ShovelEagleTick($E2A9), InvincibilityTick($E27C), PlayerFireTick($E122), EnemyFireTick($E162), BulletTerrainCollision($E604), BulletBulletCollision($E910), EnemyBulletPlayerCollision($E70C), PowerupCollectTick($E972), ShovelAnimTick($C972), PlayerActiveCheck($DB0B), LivesDisplayTick($C7C8), PaletteFlashTick($C31D). Bullet arrays at $B8/$C2 (pos), $CC (state: 0/active$40/impact$33/explosion$60), $D6 (power 0/1/3). SFX flags at $030B-$030D/$030F. FireBullet at $E08C, BulletHitCheck at $E693, PRNG at $D44D.
