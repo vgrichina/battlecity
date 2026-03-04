@@ -25,6 +25,13 @@
     .sfx-info { text-align: left; }
     .sfx-name { font-size: 12px; color: #eee; font-weight: bold; }
     .sfx-slot { font-size: 10px; color: #888; margin-top: 2px; }
+    /* Direction buttons */
+    .dir-btns { display: flex; gap: 3px; justify-content: center; margin: 6px 0 2px; }
+    .dir-btn { width: 22px; height: 22px; background: #1a1a1a; border: 1px solid #555; color: #888;
+               font-size: 13px; cursor: pointer; border-radius: 3px; display: flex; align-items: center;
+               justify-content: center; padding: 0; line-height: 1; }
+    .dir-btn:hover { border-color: #f8e800; color: #f8e800; }
+    .dir-btn.active { border-color: #f8e800; background: #2a2500; color: #f8e800; }
   </style>
 </head>
 <body>
@@ -150,46 +157,20 @@
     // --- PLAYERS & ENEMIES ---
     // Sprite bank (pt1:true). Tank formula: base + dir*8 + animBit.
     // dirs: 0=UP, 1=LEFT, 2=DOWN, 3=RIGHT → base offsets 0x00/0x08/0x10/0x18
-    // P1 base=0x00, P2 base=0x20; enemy tier bases: 0x80/0xA0/0xC0/0xE0
-    // tiles array = [tl, tr, bl, br] = [T, T+2, T+1, T+3]
-    entities: [
-      // P1 tier 0 (no upgrades) — base $00; dir*8 = UP$00/LEFT$08/DOWN$10/RIGHT$18
-      { name: "P1 (UP)",         pal: 4, tiles: [0x00,0x02,0x01,0x03], pt1: true },
-      { name: "P1 (LEFT)",       pal: 4, tiles: [0x08,0x0A,0x09,0x0B], pt1: true },
-      { name: "P1 (DOWN)",       pal: 4, tiles: [0x10,0x12,0x11,0x13], pt1: true },
-      { name: "P1 (RIGHT)",      pal: 4, tiles: [0x18,0x1A,0x19,0x1B], pt1: true },
-      // P1 star upgrades — base $20/$40/$60; sprite bank. ROM $E06A + $EBAC EntityStarLevel
-      { name: "P1 ★1 (UP)",      pal: 4, tiles: [0x20,0x22,0x21,0x23], pt1: true },
-      { name: "P1 ★2 (UP)",      pal: 4, tiles: [0x40,0x42,0x41,0x43], pt1: true },
-      { name: "P1 ★3 (UP)",      pal: 4, tiles: [0x60,0x62,0x61,0x63], pt1: true },
-      // P2 tier 0 — base $00 (ROM $E0A4: $A8,X & $F0 = 0 at spawn $E419); SP1 palette (green).
-      // P1 and P2 share the same tile ranges; palette SP0/SP1 distinguishes them.
-      { name: "P2 (UP)",         pal: 5, tiles: [0x00,0x02,0x01,0x03], pt1: true },
-      { name: "P2 (LEFT)",       pal: 5, tiles: [0x08,0x0A,0x09,0x0B], pt1: true },
-      { name: "P2 (DOWN)",       pal: 5, tiles: [0x10,0x12,0x11,0x13], pt1: true },
-      { name: "P2 (RIGHT)",      pal: 5, tiles: [0x18,0x1A,0x19,0x1B], pt1: true },
-      // Enemy T0 (basic) — base $80; all 4 dirs
-      { name: "ENEMY T0 (UP)",    pal: 6, tiles: [0x80,0x82,0x81,0x83], pt1: true },
-      { name: "ENEMY T0 (LEFT)",  pal: 6, tiles: [0x88,0x8A,0x89,0x8B], pt1: true },
-      { name: "ENEMY T0 (DOWN)",  pal: 6, tiles: [0x90,0x92,0x91,0x93], pt1: true },
-      { name: "ENEMY T0 (RIGHT)", pal: 6, tiles: [0x98,0x9A,0x99,0x9B], pt1: true },
-      // Enemy T1 (fast) — base $A0; all 4 dirs
-      { name: "ENEMY T1 (UP)",    pal: 6, tiles: [0xA0,0xA2,0xA1,0xA3], pt1: true },
-      { name: "ENEMY T1 (LEFT)",  pal: 6, tiles: [0xA8,0xAA,0xA9,0xAB], pt1: true },
-      { name: "ENEMY T1 (DOWN)",  pal: 6, tiles: [0xB0,0xB2,0xB1,0xB3], pt1: true },
-      { name: "ENEMY T1 (RIGHT)", pal: 6, tiles: [0xB8,0xBA,0xB9,0xBB], pt1: true },
-      // Enemy T2 (power) — base $C0; all 4 dirs
-      { name: "ENEMY T2 (UP)",    pal: 6, tiles: [0xC0,0xC2,0xC1,0xC3], pt1: true },
-      { name: "ENEMY T2 (LEFT)",  pal: 6, tiles: [0xC8,0xCA,0xC9,0xCB], pt1: true },
-      { name: "ENEMY T2 (DOWN)",  pal: 6, tiles: [0xD0,0xD2,0xD1,0xD3], pt1: true },
-      { name: "ENEMY T2 (RIGHT)", pal: 6, tiles: [0xD8,0xDA,0xD9,0xDB], pt1: true },
-      // Enemy T3 (armor) — base $E0; all 4 dirs
-      { name: "ENEMY T3 (UP)",    pal: 6, tiles: [0xE0,0xE2,0xE1,0xE3], pt1: true },
-      { name: "ENEMY T3 (LEFT)",  pal: 6, tiles: [0xE8,0xEA,0xE9,0xEB], pt1: true },
-      { name: "ENEMY T3 (DOWN)",  pal: 6, tiles: [0xF0,0xF2,0xF1,0xF3], pt1: true },
-      { name: "ENEMY T3 (RIGHT)", pal: 6, tiles: [0xF8,0xFA,0xF9,0xFB], pt1: true },
-      // Bonus (power-up) tank — same tile base as T0 but SP3 palette (flashing)
-      { name: "BONUS TANK (UP)",  pal: 7, tiles: [0x80,0x82,0x81,0x83], pt1: true },
+    // P1 base=0x00, P2 base=0x00 (same tiles, diff palette); stars at $20/$40/$60.
+    // Enemy tier bases: T0=$80, T1=$A0, T2=$C0, T3=$E0. BONUS TANK same base as T0 but pal 7.
+    // tiles computed: T=base+dir*8 → [T, T+2, T+1, T+3]. dirIdx state drives display.
+    entityGroups: [
+      { name: "P1",         pal: 4, pt1: true, base: 0x00, dirIdx: 0 },
+      { name: "P1 ★1",     pal: 4, pt1: true, base: 0x20, dirIdx: 0 },
+      { name: "P1 ★2",     pal: 4, pt1: true, base: 0x40, dirIdx: 0 },
+      { name: "P1 ★3",     pal: 4, pt1: true, base: 0x60, dirIdx: 0 },
+      { name: "P2",         pal: 5, pt1: true, base: 0x00, dirIdx: 0 },
+      { name: "ENEMY T0",   pal: 6, pt1: true, base: 0x80, dirIdx: 0 },
+      { name: "ENEMY T1",   pal: 6, pt1: true, base: 0xA0, dirIdx: 0 },
+      { name: "ENEMY T2",   pal: 6, pt1: true, base: 0xC0, dirIdx: 0 },
+      { name: "ENEMY T3",   pal: 6, pt1: true, base: 0xE0, dirIdx: 0 },
+      { name: "BONUS TANK", pal: 7, pt1: true, base: 0x80, dirIdx: 0 },
     ],
 
     // --- TERRAIN ---
@@ -291,10 +272,7 @@
       { name: "SPAWN STAR",         type: "spawn" },
       { name: "TANK EXPLOSION",     type: "explosion",  w: 32, h: 32 },
       { name: "SHIELD BLINK",       type: "shield" },
-      { name: "BULLET EXP (UP)",    type: "bullet_exp", dir: 0 },
-      { name: "BULLET EXP (LEFT)",  type: "bullet_exp", dir: 1 },
-      { name: "BULLET EXP (DOWN)",  type: "bullet_exp", dir: 2 },
-      { name: "BULLET EXP (RIGHT)", type: "bullet_exp", dir: 3 },
+      { name: "BULLET EXP", type: "bullet_exp", dirIdx: 0 },
       // GAME OVER banner sprite: PT1 tiles $78–$7F spell "GAME" (top 8px) + "OVER" (bottom 8px).
       // ROM $C7CD DrawGameOverBanner: 4 OAM 8×16 entries side-by-side = 32×16px total (no alternation).
       // GameOverBannerAnim ($C7F8) scrolls it in via HUDTankWiggleX/Y ($D2C6/$D2CA).
@@ -306,6 +284,58 @@
   // Catalog rendering
   // -------------------------------------------------------------------------
 
+  const DIR_LABELS = ['↑', '←', '↓', '→'];
+
+  function addDirButtons(div, item) {
+    const row = document.createElement('div');
+    row.className = 'dir-btns';
+    DIR_LABELS.forEach((sym, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'dir-btn' + (i === item.dirIdx ? ' active' : '');
+      btn.textContent = sym;
+      btn.addEventListener('click', () => {
+        item.dirIdx = i;
+        row.querySelectorAll('.dir-btn').forEach((b, j) => b.classList.toggle('active', j === i));
+      });
+      row.appendChild(btn);
+    });
+    div.appendChild(row);
+  }
+
+  // Entity groups: use base + dirIdx to compute tiles
+  function getEntityTiles(base, dirIdx) {
+    const T = base + dirIdx * 8;
+    return [T, T + 2, T + 1, T + 3];
+  }
+
+  function createEntitySection(id, groups) {
+    const container = document.getElementById(id);
+    groups.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'item';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 16 * SCALE;
+      canvas.height = 16 * SCALE;
+      div.appendChild(canvas);
+
+      addDirButtons(div, item);
+
+      const tag = document.createElement('div');
+      tag.className = 'tag tag-spr';
+      tag.textContent = 'Sprite';
+      div.appendChild(tag);
+
+      const lbl = document.createElement('div');
+      lbl.className = 'label';
+      lbl.textContent = item.name;
+      div.appendChild(lbl);
+
+      container.appendChild(div);
+      item.ctx = canvas.getContext('2d');
+    });
+  }
+
   function createSection(id, list) {
     const container = document.getElementById(id);
     list.forEach(item => {
@@ -316,6 +346,11 @@
       canvas.width  = (item.w || 16) * SCALE;
       canvas.height = (item.h || 16) * SCALE;
       div.appendChild(canvas);
+
+      // Direction buttons for directional anim items
+      if (item.dirIdx !== undefined) {
+        addDirButtons(div, item);
+      }
 
       // Bank tag (skip for animations — they span banks)
       if (item.tiles) {
@@ -336,7 +371,7 @@
   }
 
   function createCatalog() {
-    createSection('gridEntities', CATALOG.entities);
+    createEntitySection('gridEntities', CATALOG.entityGroups);
     createSection('gridTerrain',  CATALOG.terrain);
     createSection('gridSpecials', CATALOG.specials);
     createSection('gridHUD',      CATALOG.hud);
@@ -352,8 +387,9 @@
 
     // --- Entities: tread animation toggles between animBit=0 and animBit=4 every 10 frames ---
     const animOffset = (Math.floor(frame / 10) % 2) * 4;
-    CATALOG.entities.forEach(item => {
-      drawMetasprite(item.ctx, item.tiles.map(t => t + animOffset), item.pal, item.pt1);
+    CATALOG.entityGroups.forEach(item => {
+      const tiles = getEntityTiles(item.base, item.dirIdx);
+      drawMetasprite(item.ctx, tiles.map(t => t + animOffset), item.pal, item.pt1);
     });
 
     // --- Terrain: static ---
@@ -436,7 +472,7 @@
       } else if (item.type === "bullet_exp") {
         // ROM BulletExplode ($E1AF): single 8×16 OAM entry, tile $B1+dir*2 (ODD → PT1 = BG bank).
         // Top = T&$FE, bottom = top+1. Centered horizontally on 16×16 canvas.
-        const T = 0xB1 + item.dir * 2;
+        const T = 0xB1 + item.dirIdx * 2;
         const top = T & 0xFE;
         const cx = 4 * SCALE; // center 8px tile in 16px canvas
         drawCHRTile(ctx, top,     7, cx,  0,         true);
