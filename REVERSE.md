@@ -34,6 +34,8 @@
 | $C159 | — | — | code | GameInit (entry) |
 | $C2B3 | — | — | code | NewGameSetup |
 | $C3B5 | — | — | code | StagePlay entry |
+| $C159–$C1C4 | — | ~108 | code | InterStageScreen: shows stage# ($85), A=next/B=prev (1–35), Start/timeout→$C1C5; draws stage tiles via $CA91 |
+| $C1C5–$C1FF | — | ~59 | code | StageStartSetup: sets up nametables, JSR $F000 (load stage?), JSR ConstructionSetup or $CB5D, then JSR $CC27/$CCB2, clear $0C, enable PPU |
 | $C41D–$C44F | — | 51 | code | GameOverLoop |
 | $C7AB–$C7C7 | — | 29 | code | TitleWaitLoop |
 | $C9B0–$C9BF | — | 16 | code | ConstructionSetup |
@@ -88,12 +90,16 @@
 | $57 | SpriteY | Y position for DrawSpriteString |
 | $5A/$5B | (player slot) | Used during construction setup |
 | $60 | TileOffset | Added to sprite tile indices; $30 for highlighted mode, 0 normal |
-| $6C | StartingParam | 5 for 1P, 7 for 2P/CONSTRUCTION (lives or enemies?) |
+| $6C | MaxEntityScanIdx | Entity slot upper bound: 1P=5, 2P/Construction=7. Set at $CA76; reset to 5 at $C41A. Read by EnemySpawnTick ($DB48): scans $A0+$6C down to $A0+2 for free slot. 1P → 4 enemy slots (2–5); 2P → 6 scan positions (2–7). |
 | $6D | (game active) | Set to 1 at StagePlay |
+| $7F | EnemiesRemaining | Enemies left to spawn this stage; DEC'd by EnemySpawnTick ($DB48) on each spawn; compared to 0 to stop spawning |
 | $83 | PlayerMode | 0=1P, 1=2P, 2=CONSTRUCTION; cycles via SELECT button |
 | $90 | (unknown) | Set to $48 in PlayerSelectLoop |
 | $98 | CursorSpriteIdx | OAM sprite index for cursor: $8B + ($83 × 16) |
-| $A0 | (unknown) | Set to $83 in PlayerSelectLoop |
+| $82 | SpawnDelay | Enemy spawn cooldown counter; loaded from $84 on each spawn; DEC'd each tick |
+| $84 | SpawnDelayBase | Loaded into $82 after each enemy spawn (controls rate) |
+| $85 | StageNumber | Current stage (1–35). Set to 1 in NewGameSetup ($C2DF); cycled A/B during InterStageScreen ($C159); gameplay starts when Start pressed |
+| $A0 | EntityStatus[] | Zero-page entity status array; slots 1..$6C; 0=free, non-zero=occupied |
 | $B0 | BlinkState | XOR'd with $04 every 4 frames for cursor blink |
 
 ---
@@ -155,9 +161,9 @@ Dispatch table (`$CA69`):
 
 | $83 | Target | Action |
 |-----|--------|--------|
-| 0 | $CA6F | 1P: $6C=5; JSR NewGameSetup; JMP GameInit |
-| 1 | $CA74 | 2P: $6C=7; JSR NewGameSetup; JMP GameInit |
-| 2 | $CA7E | CONSTRUCTION: $6C=7; JMP ConstructionEntry |
+| 0 | $CA6F | 1P: LDA #$05, JMP $CA76 (shared STA $6C; JSR NewGameSetup; JMP InterStageScreen) |
+| 1 | $CA74 | 2P: LDA #$07, fall-through to STA $6C at $CA76 |
+| 2 | $CA7E | CONSTRUCTION: LDA #$07; STA $6C=$CA80; JMP ConstructionEntry |
 
 ---
 
@@ -182,15 +188,15 @@ Bit layout of $06/$07 (raw) and $08/$09 (new presses):
 | Menu navigation | Fire button → start game | SELECT cycles, START confirms |
 | namcot branding | Not present | CHR tiles $5E/$5F/$6B area |
 | Stage select | Not present | Yes — cheat via P1+P2 combo |
-| Starting lives DIP | Yes ($4016 bit4 → 3 or 5 lives) | No DIP; $6C controls (5 or 7) |
+| Starting lives DIP | Yes ($4016 bit4 → 3 or 5 lives) | No DIP; lives stored separately; $6C=5/7 is entity slot bound, not lives |
 | CONSTRUCTION mode | Not present | Yes (menu option 2) |
 
 ---
 
 ## Next Tasks
 
-- [ ] Understand what $6C=5/$6C=7 controls exactly (NewGameSetup $C2B3)
-- [ ] Identify GameInit ($C159) — what does it set up?
+- [x] Understand what $6C=5/$6C=7 controls exactly. **Done.** $6C = MaxEntityScanIdx (entity slot upper bound). Set at $CA76 to 5 (1P) or 7 (2P/Construction); reset to 5 at $C41A (stage end). Only read by EnemySpawnTick ($DB48): scans $A0+$6C down to $A0+2 for free enemy slot. 1P → 4 enemy slots (2–5); 2P → 6 scan positions (2–7). $7F = enemies remaining, DEC'd on spawn. $E363 = SpawnEnemy.
+- [x] Identify GameInit ($C159) — what does it set up? **Done.** $C159 is InterStageScreen, NOT a generic init. Called by Start1P/2P after NewGameSetup. Shows current stage; A button increments $85 (stage), B decrements; $85 wraps between 1 and 35. Pressing Start (or $4C≠0 timeout) exits at $C1C5 to begin actual gameplay. Real game subsystem init happens at $C1C5 onward (JSR ConstructionSetup/$CB5D, $CC27, $CCB2). NewGameSetup itself ($C2B3) initializes $66/$67/$4C/$51/$52/$6A/$85, then returns.
 - [ ] Map StagePlay ($C3B5) — level data loading, entity init
 - [ ] Extract CHR ROM tiles — identify tiles $5E/$5F/$6B (namcot logo?), $60–$68 (credit names)
 - [ ] Map sound engine ($D689 and call sites at $EA7E)

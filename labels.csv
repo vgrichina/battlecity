@@ -2,7 +2,7 @@ bank,addr,name,type,comment
 0,C070,Reset,,Reset: SEI; no $4020 write (no VS protection); wait 2 VBlanks; SP=$7F; JSR Init; STA $4F/$50=0; JSR DrawTitleScreen; STA $4B=0; then MainLoop
 0,C09C,MainLoop,,MainLoop: JSR SetupNametableStage; JSR TitleWaitLoop; JSR PlayerSelectLoop; JSR StagePlay; JSR GameOverLoop; JMP MainLoop
 0,C0AE,ConstructionEntry,,
-0,C159,GameInit,,
+0,C159,InterStageScreen,,InterStageScreen: A/B cycle $85 (stage 1-35); Start/timeout → $C1C5 (begin gameplay). Called by Start1P/2P after NewGameSetup.
 0,C2B3,NewGameSetup,,
 0,C3B5,StagePlay,,
 0,C41D,GameOverLoop,,
@@ -52,3 +52,8 @@ bank,addr,name,type,comment
 0,D2F8,str_Copyright,data/string,"str_Copyright: ""@1980 1985 NAMCO LTD"" $69 FF — copyright line ($40='@'=copyright symbol tile)"
 0,D320,str_AllRights,data/string,"str_AllRights: ""ALL RIGHTS RESERVED"" FF"
 0,D341,str_LivesTile,data/string,str_LivesTile: $14 FF — single tile for lives display
+0,C159,InterStageScreen,,InterStageScreen: after NewGameSetup; shows stage number; A=advance/B=go back ($85 cycles 1-35/$23); Start or timeout → begin gameplay at $C1C5; JSR $CA91 draws stage tiles to OAM buffer; loops at $C172
+0,C41A,ResetEntitySlots,,ResetEntitySlots: STA $6C=#$05 (reset to 1P count); RTS; called at stage completion before GameOverLoop
+0,9B48,EnemySpawnTick,,EnemySpawnTick: LDA $82 (spawn delay); if non-zero DEC and RTS; else check $7F (enemies remaining); if >0 scan $A0+$6C down to $A0+2 for free slot; if found LDA $84→STA $82; JSR SpawnEnemy ($E363); DEC $7F; else RTS
+0,E363,SpawnEnemy,,SpawnEnemy: called by EnemySpawnTick with slot index in $5A; spawns enemy entity
+0,C8B1,DrawEnemiesLeft,,DrawEnemiesLeft: called after DEC $7F; updates enemy-remaining display
