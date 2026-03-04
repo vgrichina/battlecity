@@ -42,15 +42,15 @@ Nametable shadow layout (CPU RAM $0400–$07FF, 1024 bytes):
     $07C0–$07FF   64 bytes: attribute table (4×4-tile blocks, 8×8 grid)
     Same logical layout as NES PPU nametable 0 ($2000–$23FF).
 
-CHR bank mapping (banks 0+1, D2=1 stages incl. stage 1):
-    chr_data[0x0000–0x0FFF]  = Sprite tiles 0–255 (file $8010–$8FFF, bank 0 = PT0)
-    chr_data[0x1000–0x1FFF]  = BG  tiles 0–255 (file $9010–$9FFF, bank 1 = PT1)
-    D2=1 selects banks 0+1 (inverted polarity from naive A13 mapping).
+CHR bank mapping (Famicom, mapper 0 — no bank switching):
+    PT0 ($0000–$0FFF, file 0x4010–0x500F): sprite tiles 0–255
+    PT1 ($1000–$1FFF, file 0x5010–0x600F): BG tiles 0–255
+    PPUCTRL=$B0: bit4=1 → BG uses PT1, sprites use PT0.
 """
 
 import os, sys, struct, zlib, argparse
 
-ROM_PATH = "VS. Battle City (1985)(Namco).nes"
+ROM_PATH = "battlecity_famicom.nes"
 OUT_DIR  = "output_gfx"
 
 # ── NES master palette (NTSC) ─────────────────────────────────────────────────
@@ -345,13 +345,9 @@ def main():
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
-    # Load CHR data from banks 0+1 (D2=1 stages incl. stage 1): BG=$9010, spr=$8010
-    chr_off   = 0x8010
-    chr_data  = rom[chr_off : chr_off + 0x2000]  # 8KB
-
-    # Bank 0 ($8010) = PT0 sprites, Bank 1 ($9010) = PT1 BG
-    chr_pt0 = [decode_tile(chr_data, i * 16)          for i in range(256)]  # bank 0 = PT0
-    chr_pt1 = [decode_tile(chr_data, 0x1000 + i * 16) for i in range(256)]  # bank 1 = PT1
+    # Famicom: PT0=sprites @ 0x4010, PT1=BG @ 0x5010 (mapper 0, 8KB CHR)
+    chr_pt0 = [decode_tile(rom, 0x4010 + i * 16) for i in range(256)]  # sprites
+    chr_pt1 = [decode_tile(rom, 0x5010 + i * 16) for i in range(256)]  # BG
 
     if args.ram:
         with open(args.ram, 'rb') as f:

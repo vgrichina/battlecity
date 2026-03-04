@@ -2,12 +2,13 @@
 """Dump raw bytes from ROM at a given CPU address."""
 import sys
 
-ROM_PATH = "battlecity.nes"
+ROM_PATH = "battlecity_famicom.nes"
 HEADER_SIZE = 16
 
 def cpu_to_file(addr):
-    """Convert CPU address to file offset (mapper 99, single PRG bank)."""
-    return addr - 0x8000 + HEADER_SIZE
+    """Convert CPU address to file offset (mapper 0, 16KB PRG mirrored at $8000 and $C000)."""
+    base = 0xC000 if addr >= 0xC000 else 0x8000
+    return addr - base + HEADER_SIZE
 
 def main():
     addr = int(sys.argv[1], 16)

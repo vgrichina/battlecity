@@ -18,7 +18,7 @@ import os
 import struct
 import zlib
 
-ROM_PATH = "VS. Battle City (1985)(Namco).nes"
+ROM_PATH = "battlecity_famicom.nes"
 OUT_PATH = "output_gfx/sprite_test.png"
 
 # ---------------------------------------------------------------------------
@@ -56,17 +56,6 @@ ROM_PAL_BYTES = [
 ]
 NES_PAL = [[NES_MASTER[c & 0x3F] for c in slot] for slot in ROM_PAL_BYTES]
 
-# Compare vs current game.js NES_PAL
-GAMEJS_PAL_HEX = [
-    ['#000000','#8A4600','#7B0E00','#626262'],
-    ['#000000','#B3F9E1','#ABABAB','#424DC6'],
-    ['#000000','#84CC00','#1E5200','#006A18'],
-    ['#000000','#626262','#ABABAB','#FFFFFF'],
-    ['#000000','#616300','#F48F25','#F0E070'],
-    ['#000000','#006000','#008F38','#B2FCBA'],
-    ['#000000','#005E52','#ABABAB','#FFFFFF'],
-    ['#000000','#730D68','#AF2B1C','#FFFFFF'],
-]
 PAL_NAMES = ['BG0-brick','BG1-trees','BG2-water','BG3-steel',
              'SP0-P1yel','SP1-P2grn','SP2-enemy','SP3-spcl']
 
@@ -174,33 +163,16 @@ def main():
         rom = f.read()
     assert rom[:4] == b'NES\x1a'
 
-    # Banks 0+1 (D2=1 stages incl. stage 1): BG=bank1($9010), spr=bank0($8010)
-    # Read BG first so tiles[0-255] = BG, tiles[256-511] = sprites
-    chr_data  = rom[0x9010:0x9010 + 0x1000] + rom[0x8010:0x8010 + 0x1000]
+    # Famicom: PT0=sprites @ 0x4010, PT1=BG @ 0x5010 (mapper 0, no bank switching)
+    # Read BG (PT1) first so tiles[0-255]=BG, tiles[256-511]=sprites
+    chr_data = rom[0x5010:0x5010 + 0x1000] + rom[0x4010:0x4010 + 0x1000]
 
     total_tiles = len(chr_data) // 16
     tiles = [decode_tile(chr_data, i * 16) for i in range(total_tiles)]
-    # tiles[0..255]   = BG bank
-    # tiles[256..511] = Sprite bank
+    # tiles[0..255]   = BG bank (PT1)
+    # tiles[256..511] = Sprite bank (PT0)
 
-    print(f"Decoded {total_tiles} tiles from CHR-ROM (BG=$9010, spr=$8010)")
-
-    # ── Palette diff report ──────────────────────────────────────────────
-    print("\n=== NES_PAL comparison: ROM $D44A vs game.js hardcoded ===")
-    for si in range(8):
-        rom_rgb  = NES_PAL[si]
-        js_hexes = GAMEJS_PAL_HEX[si]
-        diffs = []
-        for ci in range(4):
-            rr,rg,rb = rom_rgb[ci]
-            jh = js_hexes[ci]
-            jr = int(jh[1:3],16); jg = int(jh[3:5],16); jb = int(jh[5:7],16)
-            if (rr,rg,rb) != (jr,jg,jb):
-                diffs.append(f"  [{ci}] ROM=({rr},{rg},{rb}) JS=({jr},{jg},{jb})")
-        tag = "OK  " if not diffs else "DIFF"
-        print(f"  {tag} {PAL_NAMES[si]}")
-        for d in diffs:
-            print(d)
+    print(f"Decoded {total_tiles} tiles from CHR-ROM (BG=PT1@0x5010, spr=PT0@0x4010)")
 
     # ── Tank tile summary ────────────────────────────────────────────────
     print("\n=== Tank tile groups (sprite bank = tile+256) ===")

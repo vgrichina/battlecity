@@ -18,7 +18,7 @@ import os
 import struct
 import zlib
 
-ROM_PATH  = "VS. Battle City (1985)(Namco).nes"
+ROM_PATH  = "battlecity_famicom.nes"
 OUT_DIR   = "output_gfx/levels"
 
 # ── Level data constants ────────────────────────────────────────────────────
@@ -281,9 +281,9 @@ def main():
     with open(ROM_PATH, 'rb') as f:
         rom = f.read()
 
-    # Banks 0+1 (D2=1 stages incl. stage 1): BG=bank1($9010), spr=bank0($8010)
-    # Read BG first so tiles[0-255] = BG (matching NES tile indices)
-    chr_data  = rom[0x9010:0x9010 + 0x1000] + rom[0x8010:0x8010 + 0x1000]
+    # Famicom: PT0=sprites @ 0x4010, PT1=BG @ 0x5010 (mapper 0, no bank switching)
+    # BG first so tiles[0-255]=BG, tiles[256-511]=sprites
+    chr_data  = rom[0x5010:0x5010 + 0x1000] + rom[0x4010:0x4010 + 0x1000]
     chr_tiles = [decode_tile(chr_data, i * 16) for i in range(len(chr_data) // 16)]
     print(f"Decoded {len(chr_tiles)} CHR tiles  |  rendering stages: {stages}")
 

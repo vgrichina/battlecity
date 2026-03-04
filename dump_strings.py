@@ -2,16 +2,18 @@
 """Dump ROM string data for title screen text elements."""
 import sys
 
-rom = open('battlecity.nes', 'rb').read()
+rom = open('battlecity_famicom.nes', 'rb').read()
 
-# Bank 3 = $C000-$FFFF, file offset = addr - 0xC000 + 0x4010
+# Famicom: $C000-$FFFF → file offset = addr - 0xC000 + 0x0010 (header=16, PRG=16KB)
+# Also: $8000-$BFFF → same physical bytes (mirror) → addr - 0x8000 + 0x0010
 addrs = [
-    ('D145', 0xD145, 'copyright line 1?'),
-    ('D15B', 0xD15B, 'P1 score label'),
-    ('D15E', 0xD15E, 'P2 score label'),
-    ('D167', 0xD167, 'HI score label'),
-    ('D1E7', 0xD1E7, 'menu line 1?'),
-    ('D1FE', 0xD1FE, 'menu line 2?'),
+    ('D280', 0xD280, 'title screen strings start'),
+    ('D299', 0xD299, '"BATTLE" sprite string'),
+    ('D2A0', 0xD2A0, '"CITY" sprite string'),
+    ('D2C6', 0xD2C6, '"1 PLAYER" menu option'),
+    ('D2CF', 0xD2CF, '"2 PLAYERS" menu option'),
+    ('D2EB', 0xD2EB, '"CONSTRUCTION" menu option'),
+    ('D2F8', 0xD2F8, '"@1980 1985 NAMCO LTD"'),
 ]
 
 # NES Battle City tile → char mapping
@@ -27,7 +29,8 @@ def tile_to_char(b):
     return '[%02X]' % b
 
 for name, addr, desc in addrs:
-    off = addr - 0xC000 + 0x4010
+    base = 0xC000 if addr >= 0xC000 else 0x8000
+    off = addr - base + 0x0010
     data = rom[off:off+30]
     hexstr = ' '.join('%02X' % b for b in data)
     chars = []
