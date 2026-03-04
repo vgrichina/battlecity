@@ -2,7 +2,7 @@
 /* ================================================================
  * Battle City — Web Port  (v1)
  * RE reference commit: 973e914
- * ROM: Battle City (1985)(Namco)[Famicom].nes  iNES mapper 0  32KB PRG  8KB CHR
+ * ROM: Battle City (1985)(Namco)[Famicom].nes  iNES mapper 0  16KB PRG mirrored  8KB CHR
  * All ROM addresses cited as // ROM $XXXX  label
  * ================================================================ */
 
@@ -483,11 +483,11 @@ function makeBullet(slot) {
   return { slot, x: 0, y: 0, dir: 0, active: false, armor: false, owner: -1, explodeTimer: 0, ex: 0, ey: 0, edir: 0 };
 }
 
-// ROM $E1AF BulletExplode: 4-frame explosion sprite at bullet hit position
+// ROM $E112 BulletExplode: explosion sprite drawn from $B8/$C2 bullet position
 function triggerBulletExplosion(b) {
   b.explodeTimer = 12;
-  b.ex    = b.x - 5;   // ROM $DAF3: OAM X = bullet.x − 5
-  b.ey    = b.y - 8;   // ROM $DABA DrawEntityTile: OAM Y = bullet.y − 8
+  b.ex    = b.x - 5;   // explosion sprite offset from bullet center
+  b.ey    = b.y - 8;   // OAM Y = bullet.y − 8
   b.edir  = b.dir;
 }
 
@@ -671,7 +671,7 @@ function spawnEnemy() {
 }
 
 // ─── Input  ───────────────────────────────────────────────────────────────────
-// ROM $D68A NMI_Sub2  $DC23 PlayerInputUpdate
+// ROM $9689/$D689 ReadControllers
 const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
@@ -744,7 +744,7 @@ function canMove(e, d) {
   else              { p1x = nx + 7; p1y = ny - 8; p2x = nx + 7; p2y = ny + 7; }  // RIGHT
   if (!passable8(p1x, p1y) || !passable8(p2x, p2y)) return false;
 
-  // Entity–entity collision  ROM $DC23 position-snap prevents overlap
+  // Entity–entity collision  ROM $DC7C EntityMovementAI: position-snap prevents overlap
   for (let i = 0; i < 8; i++) {
     const o = entities[i];
     if (!o.alive || o === e || o.spawnAnim > 0) continue;
@@ -805,7 +805,7 @@ function randomDirChange(e) {
 }
 
 // ─── Entity movement  ─────────────────────────────────────────────────────────
-// ROM $DC23 PlayerInputUpdate  $E06A MoveTank  $DD30 MoveGridSnap
+// ROM $DB75 PlayerMoveTick  $DC7C EntityMovementAI  $DD30 MoveGridSnap
 function moveEntities() {
   for (let i = 0; i < 8; i++) {
     const e = entities[i];
@@ -819,7 +819,7 @@ function moveEntities() {
     if (e.isPlayer) {
       // Skip P2 slot in 1P mode
       if (e.slot === 1 && numPlayers === 1) continue;
-      // ROM $DC23 frame throttle: process on 3 of every 4 frames
+      // ROM $DB75 PlayerMoveTick: process on 3 of every 4 frames
       if ((frameCount & 3) === 2) continue;
 
       const d = e.slot === 0 ? p1Dir() : p2Dir();
@@ -827,7 +827,7 @@ function moveEntities() {
         // Off ice: normal input — stop if no key, allow direction change
         if (d === -1) continue;
         // Direction change: snap to 8-px grid only for perpendicular turns
-        // ROM $DC77-$DC93: same dir → skip; 180° (EOR #$02) → skip; else snap
+        // ROM $DB75 PlayerMoveTick: same dir → skip; 180° (EOR #$02) → skip; else snap
         if (d !== e.dir) {
           if (d !== (e.dir ^ 2)) {  // perpendicular turn → snap
             e.x = (e.x + 4) & 0xF8;
@@ -847,10 +847,10 @@ function moveEntities() {
       // Enemy: frozen during Timer power-up  ROM $0100 EnemyFreezeTimer
       if (freezeTimer > 0) continue;
 
-      // ROM $DC9F: Fast type ($A0, EntityType&$F0==$A0) always processes; others alternate
+      // ROM $DC7C EntityMovementAI: Fast type ($A0, EntityType&$F0==$A0) always processes; others alternate
       if (e.type !== 1 && ((i ^ frameCount) & 1)) continue;
 
-      // AI: logic from ROM $DD30 MoveGridSnap and $DDFC RandomDirChange
+      // AI: logic from ROM $DD30 MoveGridSnap and $DE72 RandomDirChange
       if (!onIce) {
         // 1. If grid-aligned (8px), small chance to re-evaluate goal (SpeedCtrlMove)
         if ((e.x & 7) === 0 && (e.y & 7) === 0) {
@@ -882,7 +882,7 @@ function moveEntities() {
 }
 
 // ─── Firing  ──────────────────────────────────────────────────────────────────
-// ROM $E140 FireBullet  $E1D6 PlayerFireCheck  $E216 EnemyFireCheck
+// ROM $E08C FireBullet  $E122 PlayerFireTick  $E162 EnemyFireTick
 let fireHeld = [false, false];  // per-player fire-held state
 
 function handlePlayerFire() {
@@ -905,7 +905,7 @@ function handlePlayerFire() {
   }
 }
 
-// ROM $E216 EnemyFireCheck: for each active enemy, fire if RNG & $1F == 0 (1/32 per frame)
+// ROM $E162 EnemyFireTick: for each active enemy, fire if RNG & $1F == 0 (1/32 per frame)
 function handleEnemyFire() {
   if (freezeTimer > 0) return;
   for (let i = 2; i <= 7; i++) {
@@ -915,7 +915,7 @@ function handleEnemyFire() {
   }
 }
 
-// ROM $E140 FireBullet: set $CC,X = dir|$40; compute start pos from entity center
+// ROM $E08C FireBullet: set $CC,X = dir|$40; compute start pos from entity center
 function tryFire(e) {
   // Primary bullet slot = entity index  ROM $CC,X BulletState
   let b = bullets[e.slot];
@@ -931,7 +931,7 @@ function tryFire(e) {
   }
   // Bullet spawn position: from entity center toward direction  ROM $E140
   // e.x/e.y are center coords (ROM convention)
-  b.x      = e.x + DX[e.dir] * 8;  // ROM $E156: ASL×3 = ×8
+  b.x      = e.x + DX[e.dir] * 8;  // ROM $E0A5: ASL×3 = ×8
   b.y      = e.y + DY[e.dir] * 8;
   b.dir    = e.dir;
   b.active       = true;
@@ -942,8 +942,8 @@ function tryFire(e) {
 }
 
 // ─── Bullet movement + tile collision  ────────────────────────────────────────
-// ROM $E7A9 BulletMoveCollision  $E838 BulletTileCollision
-const BULLET_SPD = 4;   // ROM $E117 BulletDelta: applies delta × 4
+// ROM $E604 BulletTerrainCollision  $E693 BulletHitCheck
+const BULLET_SPD = 4;   // ROM $E02E BulletStateMachine: active state $40 → move 4px/frame
 
 function moveBullets() {
   for (let i = 0; i < bullets.length; i++) {
@@ -976,7 +976,7 @@ function moveBullets() {
       continue;
     }
 
-    // Tile collision  ROM $E838 BulletTileCollision
+    // Tile collision  ROM $E693 BulletHitCheck
     if (bulletHitsTile(b)) {
       triggerBulletExplosion(b);
       b.active = false;
@@ -989,7 +989,7 @@ function moveBullets() {
   }
 }
 
-// ROM $E838 BulletTileCollision: checks tile at bullet position
+// ROM $E693 BulletHitCheck: checks tile at bullet position
 // Returns true if bullet should be stopped
 function bulletHitsTile(b) {
   const col = Math.floor((b.x - FX) / META);
