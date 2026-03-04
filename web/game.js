@@ -464,13 +464,13 @@ function makeEntity(slot) {
     type: 0,          // ROM $A8,X enemy tier 0-3 (affects score + armor)
     starLevel: 0,     // ROM $0101,X  0/$20/$40/$60 — player weapon upgrade
     shieldTimer: 0,   // ROM $89,X  countdown; >0 = shielded
-    armorHits: 0,     // remaining armor hits before death  ROM $E8B1
-    powerUpTank: false,// flashing tank carrying power-up  ROM $E417 $7F==17/10/3
+    armorHits: 0,     // remaining armor hits before death  ROM $E70C EnemyBulletPlayerCollision
+    powerUpTank: false,// flashing tank carrying power-up  ROM $E363 SpawnEnemy $7F==17/10/3
     blinkFrame: 0,    // armor-hit blink countdown
-    spawnAnim: 0,     // spawn star animation frames  ROM $DF09 StateIncSlot
+    spawnAnim: 0,     // spawn star animation frames  ROM $DE55 SpawnAnimTick
     animBit: 0,       // track animation frame: 0 or 4; XOR'd each 8px movement step  ROM $DD18/$DDE1 EOR #$04
-    aiTimer: 0,       // AI direction-change countdown  ROM $DDFC RandomDirChange
-    fireTimer: 0,     // unused; ROM $E216 uses per-frame 1/32 check instead
+    aiTimer: 0,       // AI direction-change countdown  ROM $DE72 RandomDirChange
+    fireTimer: 0,     // unused; ROM $E162 EnemyFireTick uses per-frame 1/32 check instead
     deathTimer: 0,    // death explosion countdown: 12→0, drawn even while alive=false  ROM $E073 EntityKillDispatch
     lastHitBy: 0,     // player slot that last hit this entity (for score routing in 2P)
     isPlayer: slot < 2,
@@ -532,16 +532,16 @@ function initLevel(idx) {
   goScrollDir   = 0;     // ROM $0107 = 0 (up)
   goScrollTimer = 0;     // inactive
   goScrollFrame = 0;
-  killCounts = [0, 0, 0, 0];   // ROM $C625 ClearKillTallies: four counters reset each stage
+  killCounts = [0, 0, 0, 0];   // ROM $C331 StageStartInit: four per-type kill counters reset each stage
   tallyState = null;
 
-  // Copy level grid from ROM data  ROM $F27D LevelMapData
+  // Copy level grid from ROM data  ROM $F07A StageDataTable
   let raw = LEVEL_MAPS[stageIdx];
   if (stageIdx === 0 && customMap) raw = customMap;
   
   grid      = raw.map(r => [...r]);
 
-  // Brick sub-tile bits  ROM $D745
+  // Brick sub-tile bits  ROM $D743 ClearTileBit
   brickBits = grid.map(r => r.map(t => brickInitBits(t)));
   // Normalize partial-brick display types 0–3 → T.BRICK (4) in the grid;
   // brickBits already captures the correct 2-quadrant pattern above.
@@ -552,7 +552,7 @@ function initLevel(idx) {
   // add Π-shaped brick wall around eagle to grid+brickBits
   setEagleWall(false);
 
-  // Init entity slots  ROM $E4D0 ClearEntitySlots
+  // Init entity slots  ROM $E413 ClearEntitySlots2
   entities = Array.from({ length: 8 }, (_, i) => {
     const e = makeEntity(i);
     e.demoDir = 0;
@@ -561,10 +561,10 @@ function initLevel(idx) {
     return e;
   });
 
-  // Init bullet slots  ROM $E4C6 ClearBulletSlots
+  // Init bullet slots  ROM $E413 ClearEntitySlots2 (also clears bullet state area)
   bullets  = Array.from({ length: 10 }, (_, i) => makeBullet(i));
 
-  // Spawn players  ROM $E417 PlayerRespawn
+  // Spawn players  ROM $C331 StageStartInit → SpawnEnemy ($E363, player branch)
   spawnPlayer(0);
   if (numPlayers === 2) spawnPlayer(1);
 }
@@ -1116,7 +1116,7 @@ function bulletBulletCancel() {
   }
 }
 
-// ROM $C62F/$C63E CheckGameOver: start in-field "GAME OVER" scroll
+// ROM $C728 CheckGameOver: eagle destroyed ($68=0) or all lives lost → trigger "GAME OVER" scroll
 // Center-up when both players dead; called from main gameplay loop
 function checkGameOverScroll() {
   if (demoMode) { enterTitle(); return; }
@@ -1131,12 +1131,12 @@ function checkGameOverScroll() {
   }
 }
 
-// ROM $DECC: Single-player death in 2P mode — scroll from dead player's side
+// 2P mode: when one player's lives run out, scroll "GAME OVER" from their side of the screen
 // P1 dies (playerIdx=0): scroll from X=$20 moving right toward P2
 // P2 dies (playerIdx=1): scroll from X=$C0 moving left toward P1
 function startPlayerDeathScroll(playerIdx) {
   if (goScrollTimer > 0) return;  // already scrolling
-  if (!eagleAlive) return;        // ROM $DECC: only when eagle intact ($68=$80)
+  if (!eagleAlive) return;        // only scroll "GAME OVER" when eagle still intact
   if (playerIdx === 0 && p2Lives >= 0) {
     // P1 out of lives, P2 still alive → scroll from left moving right
     goScrollDir   = 3;     // ROM $0107 = 3 (right)
@@ -1155,7 +1155,7 @@ function startPlayerDeathScroll(playerIdx) {
 }
 
 // ─── Entity death  ────────────────────────────────────────────────────────────
-// ROM $DEBA PlayerKilled  $DEC9 EnemyKilled
+// Player death: EnemyBulletPlayerCollision ($E70C); Enemy death: bulletEntityCollision → killEntity
 function killEntity(e) {
   if (!e.alive) return;
   e.alive = false;
@@ -1182,7 +1182,7 @@ function killEntity(e) {
       }
     }
   } else {
-    // ROM $DEC9: DEC $80 EnemyKillsPool; ROM $D2C2 KillScoreTable
+    // ROM $E70C EnemyBulletPlayerCollision (enemy death path): DEC $80 EnemyKillsPool
     activeEnemyCount--;
     const pts = (1 + Math.min(e.type, 3)) * 100;  // 100/200/300/400
     // Award score to whichever player's bullet killed this enemy
@@ -1195,11 +1195,11 @@ function killEntity(e) {
       p2Score += pts;
       while (p2Score >= p2NextLifeScore) { p2Lives++; sfxLifeUp(1); p2NextLifeScore += 20000; }
     }
-    killCounts[Math.min(e.type, 3)]++;  // ROM $CD04 TallyScreenInit: per-type kill counter
+    killCounts[Math.min(e.type, 3)]++;  // ROM $8D10 ResultScreen tally loop: per-type kill counter
 
     sfxEntityKill();  // ROM $030A=1 entity kill explosion + noise burst
 
-    // Power-up tank drops power-up  ROM $E35D PowerUpSpawn
+    // Power-up tank drops power-up  ROM $E363 SpawnEnemy: blink flag → powerup spawn on kill
     if (e.powerUpTank && !powerUp) {
       spawnPowerUp();
     }
@@ -1207,10 +1207,10 @@ function killEntity(e) {
 }
 
 // ─── Power-ups  ───────────────────────────────────────────────────────────────
-// ROM $E35D PowerUpSpawn  $EB17 PowerUpCollision  $EB87 dispatch table
-// ROM $EA9F PowerUpTypeRNG weight table: 8 entries, types 0–4 only; type 5 (1-Up) never random
+// ROM $E972 PowerupCollectTick: proximity check; dispatch on $88 type
+// PowerUpTypeRNG weight table: 8 entries, types 0–4 only; type 5 (1-Up) never random
 const POWERUP_RNG = [0, 1, 2, 3, 4, 0, 4, 3];
-// ROM $EA63 PowerUpSpawnPickPos: RNG & 0x03 → RNGToCoord: coord = ((A+1)*6)*8
+// PowerUpSpawnPickPos: RNG & 0x03 → coord = ((A+1)*6)*8
 // → 4 possible values: {48, 96, 144, 192} for both X and Y, independent of entity position
 // Collision retry if new position overlaps existing power-up.
 const POWERUP_COORDS = [48, 96, 144, 192];
@@ -1243,36 +1243,36 @@ function checkPowerUpCollision() {
   }
 }
 
-// ROM $EB87 power-up dispatch: 6 handlers indexed by $88
+// ROM $E9E2 PowerUpDispatchTable: 6 u16le ptrs; JMP via $11/$12 indexed by $88*2
 function applyPowerUp(e, type) {
   switch (type) {
-    case 0:  // Helmet   ROM $EB95: $89,X = 10 (10 ticks × 64 frames = 640 frames shield)
+    case 0:  // Helmet   ROM $E9F0: STA $89,X=#$0A (10 ticks × 64 frames = 640 frames shield)
       e.shieldTimer = 10;
       break;
-    case 1:  // Timer/Clock  ROM $EB9A: $0100 = 10 (~640 frames freeze)
+    case 1:  // Timer/Clock  ROM $E9F5: STA $0100=#$0A (~640 frames freeze)
       freezeTimer = 10;
       break;
-    case 2:  // Shovel  ROM $EBA0: $45=20 tick counter, dec every 16 frames → 320 frames total
+    case 2:  // Shovel  ROM $E9FB: STA $45=#$14 (20 ticks), JSR $CB9E (eagle wall→steel)
       shovelTimer = 20;
-      setEagleWall(true);  // ROM $C9BB SteelWallFortify
+      setEagleWall(true);  // ROM $CB9E SteelWallFortify (called from $E9FB ShovelPowerUp)
       break;
-    case 3:  // Star  ROM $EBAC: $0101,X += $20 (max $60)
+    case 3:  // Star  ROM $EA07: $0101,X += $20 (max $60); STA $A8,X=type
       e.starLevel = Math.min(e.starLevel + 0x20, 0x60);
       break;
-    case 4:  // Grenade  ROM $EBBC: all 8 entities → state $73 (instant kill-all) + palette flash
+    case 4:  // Grenade  ROM $EA17: entities 7→2 → STA $A0,Y=$73; STA $030A=1 ($030A=kill SFX)
       for (let i = 2; i <= 7; i++) {
         if (entities[i].alive) killEntity(entities[i]);
       }
       grenadeFlash = 8;  // ~8 frames white flash over playfield
       break;
-    case 5:  // Tank/1-Up  ROM $EBE3: INC $51/$52
+    case 5:  // Tank/1-Up  ROM $EA3E: INC $51,X; STA $0304=$0305=1
       if (e.slot === 0) { p1Lives++; sfxLifeUp(0); } else { p2Lives++; sfxLifeUp(1); }
       break;
   }
 }
 
 // ─── Enemy spawn dispatch  ────────────────────────────────────────────────────
-// ROM $DBF6 EnemySpawnDispatch: dec $82 SpawnDelay; if $7F>0 find free slot
+// ROM $DB48 EnemySpawnTick: dec $82 SpawnDelay; if $7F>0 find free slot
 function tickEnemySpawn() {
   if (enemiesLeft <= 0 || activeEnemyCount >= 4) return;
   if (spawnDelay > 0) { spawnDelay--; return; }
@@ -1281,8 +1281,8 @@ function tickEnemySpawn() {
 }
 
 // ─── Shield + freeze tick  ────────────────────────────────────────────────────
-// ROM $E330 DrawPlayerShield: shieldTimer decremented every 64 frames
-// ROM $DC9F EnemyFreezeDecrement: freezeTimer dec every 64 frames
+// ROM $E27C InvincibilityTick: shieldTimer decremented every 64 frames
+// ROM $DC7C EntityMovementAI: freezeTimer check skips enemy movement when $0100 set
 function tickTimers() {
   for (let i = 0; i < 2; i++) {
     const e = entities[i];
@@ -1310,15 +1310,15 @@ function tickTimers() {
     if (playerRespawnTimer[pi] > 0) {
       playerRespawnTimer[pi]--;
       if (playerRespawnTimer[pi] === 0 && !entities[pi].alive) {
-        spawnPlayer(pi);  // ROM $DEE8 SpawnP1/$DEEB SpawnP2
+        spawnPlayer(pi);  // ROM $C331 StageStartInit → SpawnEnemy (player branch)
       }
     }
   }
-  if (eagleExpTimer > 0) eagleExpTimer--;  // ROM $E390 DEC $68
+  if (eagleExpTimer > 0) eagleExpTimer--;  // ROM $E2A9 ShovelEagleTick: DEC $68 eagle-destruction timer
 }
 
 // ─── Stage-clear check  ───────────────────────────────────────────────────────
-// ROM $DEC9: when $80 EnemyKillsPool → 0 → stage clear
+// ROM $C728 CheckGameOver: $80 EnemyKillsPool → 0 → stage clear
 function checkStageClear() {
   if (gamePhase !== 'play') return;
   if (enemiesLeft === 0 && activeEnemyCount === 0) {
@@ -1355,11 +1355,11 @@ function tickDemoAI() {
 }
 
 // ─── Main update  ─────────────────────────────────────────────────────────────
-// ROM $C402 GameFrame  $C29F GameUpdate2 — 18-subsystem sequence
+// ROM $C2E6 GameTickMain — 18-subsystem sequence called every frame from game loop $C1F9
 function update() {
   frameCount++;
 
-  tickPaletteFlash(); // ROM $C2D5/$C1E9
+  tickPaletteFlash(); // ROM $C31D PaletteFlashTick
 
   if (demoMode && gamePhase === 'play') tickDemoAI();
 
@@ -1379,7 +1379,7 @@ function update() {
       if (keys['ArrowDown']) titleCursor = (titleCursor + 1) % 3; // down = next item
     }
 
-    // START: dispatch based on cursor (ROM $CA58–$CA62 SelectDispatchTable)
+    // START: dispatch based on cursor (ROM $CA69 SelectDispatchTable)
     if (keys['Space'] || keys['Enter']) {
       initAudio();
       if (titleCursor === 2) { // CONSTRUCTION
@@ -1546,14 +1546,14 @@ function update() {
   soundTick();                    // ROM $EC23 SoundEngine per-frame
   tickBGM();                      // ROM $C18A re-trigger BGM channels
   tickTimers();                   // shield/freeze/spawn timers
-  moveEntities();                 // ROM $DC9F EntityMovement
-  moveBullets();                  // ROM $E7A9 BulletMoveCollision
-  bulletBulletCancel();           // ROM $EAB5 BulletVsBulletCancel
-  bulletEntityCollision();        // ROM $E8B1 EnemyBulletPlayerHit
-  tickEnemySpawn();               // ROM $DBF6 EnemySpawnDispatch
-  handlePlayerFire();             // ROM $E1D6 PlayerFireCheck
-  handleEnemyFire();              // ROM $E216 EnemyFireCheck
-  checkPowerUpCollision();        // ROM $EB17 PowerUpCollision
+  moveEntities();                 // ROM $DC7C EntityMovementAI
+  moveBullets();                  // ROM $E604 BulletTerrainCollision
+  bulletBulletCancel();           // ROM $E910 BulletBulletCollision
+  bulletEntityCollision();        // ROM $E70C EnemyBulletPlayerCollision
+  tickEnemySpawn();               // ROM $DB48 EnemySpawnTick
+  handlePlayerFire();             // ROM $E122 PlayerFireTick
+  handleEnemyFire();              // ROM $E162 EnemyFireTick
+  checkPowerUpCollision();        // ROM $E972 PowerupCollectTick
 
   // ROM $C62F CheckGameOver: eagle destroyed ($68→0) → start in-field scroll
   if (!eagleAlive && eagleExpTimer === 0 && goScrollTimer === 0 && gamePhase === 'play') {
@@ -1615,7 +1615,7 @@ function text(str, nx, ny, color, sz = 7) {
 }
 
 // ─── Tile rendering  ──────────────────────────────────────────────────────────
-// ROM $D82B DrawNametableTile  $DB79 CHR tile table  $D745 SubTileBitmask
+// ROM $D784 WriteNametableByte  $DACB TileTypeTable  $D743 ClearTileBit
 function drawTile(col, row) {
   const t  = grid[row][col];
   const px = FX + col * META;
