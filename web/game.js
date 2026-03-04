@@ -2476,6 +2476,12 @@ function drawTitleScreen() {
     }
   }
 
+  // ROM $D247 credits tiles $60–$68 at col=11 row=23 (x=88,y=184) via DrawNametableText
+  // Tiles $60–$68 are 9 custom graphic tiles — the NAMCOT/staff-name logo strip
+  for (let i = 0; i < 9; i++) {
+    drawCHRTile(0x60 + i, 3, 88 + i * 8, 184, true);
+  }
+
   // ROM $D260 copyright: col=4 (x=32), row=25 (y=200); tile $40 = © symbol
   drawNesText('@ 1980 1985 NAMCO LTD', 32, 200, 3);
   // ROM $D272 "ALL RIGHTS RESERVED": col=6 (x=48), row=27 (y=216)
