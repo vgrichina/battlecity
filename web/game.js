@@ -381,6 +381,8 @@ let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
 let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory' | 'select' | 'curtain' | 'edit'
 let titleFrame;     // frame counter for title screen blink animation
 let titleTimer = 0; // ROM $0A counts to 8 before Demo Mode
+let titleCursor = 0; // menu cursor: 0=1P, 1=2P, 2=CONSTRUCTION
+let titleDownHeld = false, titleUpHeld = false, titleFireHeld = false;
 let demoMode = false; // ROM $6D DemoActive
 let selectKeyHeld = false; // edge-detect for stage selection
 let credits = 0;    // ROM $0104 Credits count (0-99)

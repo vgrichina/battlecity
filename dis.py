@@ -41,6 +41,7 @@ COMMENTS_FILE = "comments.csv"
 
 class NESRom:
     def __init__(self, path):
+        self.path = path
         with open(path, 'rb') as f:
             raw = f.read()
 
@@ -102,7 +103,7 @@ class NESRom:
 
     def info(self):
         lines = [
-            f"ROM: {ROM_FILE}",
+            f"ROM: {self.path}",
             f"PRG-ROM: {self.prg_banks} x 16 KB = {len(self.prg)} bytes",
             f"CHR-ROM: {self.chr_banks} x  8 KB = {len(self.chr)} bytes",
             f"Mapper:  {self.mapper}",
@@ -370,7 +371,14 @@ def main():
         print(__doc__)
         sys.exit(0)
 
-    rom = NESRom(ROM_FILE)
+    # --rom <file> override
+    rom_file = ROM_FILE
+    if '--rom' in args:
+        idx = args.index('--rom')
+        rom_file = args[idx + 1]
+        args = args[:idx] + args[idx + 2:]
+
+    rom = NESRom(rom_file)
 
     if args[0] in ('info', '--info'):
         cmd_info(rom)
