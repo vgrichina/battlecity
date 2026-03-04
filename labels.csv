@@ -99,4 +99,4 @@ bank,addr,name,type,comment
 0,E42B,LoadStageEnemyCounts,,LoadStageEnemyCounts: if $46≠0 use stage 35 ($23) else use $85; Y=(stage-1)*4; load $E578[Y..Y+3]→$8B/$8C/$8D/$8E (4 enemy type counts).
 0,E578,StageEnemyCountTable,data/table,StageEnemyCountTable[35*4]: 4 enemy-type counts per stage (always sum to 20). Stage 1: [18,2,0,0]; Stage 35: [4,6,0,10]. Loaded into $8B-$8E by LoadStageEnemyCounts.
 0,F000,LoadStageData,,LoadStageData: takes stage# in A; $FF→36; ptr=$F07A; advance $5B/stage; decode 13×13 nibble grid (7 bytes/row=13 data+1 pad); call PlaceTileBlock for each nibble at pixel positions (16..208, 16..208) step 16.
-0,F07A,StageDataTable,data/table,StageDataTable: 35 stages × $5B (91) bytes each. Nibble-encoded 13×13 block grid. Each row=7 bytes (13 data nibbles + 1 padding nibble). Starts at $F07A; stage N at $F07A+(N-1)*$5B.
+0,F07A,StageDataTable,data/table,StageDataTable: 36 entries × $5B (91) bytes = 3276 bytes ($F07A–$FD44). Stages 1–35 at entries 0–34; entry 35 ($FCEB–$FD44) = blank stage (A=$FF). Nibble-encoded 13×13 block grid. Each row=7 bytes (13 data nibbles + 1 padding nibble).

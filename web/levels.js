@@ -1,10 +1,9 @@
 // Battle City — Level Map Data
-// Generated from ROM at commit 973e914
-// Source: ROM $F27D LevelMapData, 35 × 91-byte nibble-packed stages
+// Source: Famicom ROM StageDataTable at $F07A, 35 × 91-byte nibble-packed stages
 // Decoded by extract_level_maps.py
 // Format: LEVEL_MAPS[stageIndex][row][col] = tileType (0–15)
 // Tile types: 0-3=partial brick, 4=brick, 5-8=partial steel, 9=steel,
-//   10=trees, 11=water, 12=ice, 13-15=empty
+//   10=water, 11=forest/bush, 12=ice, 13-15=empty
 const LEVEL_MAPS = [
   // Stage 1
   [

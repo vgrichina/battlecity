@@ -75,8 +75,8 @@
 | $ECBE–$ECCF | — | ~18 | code | ReadChannelByte: reads next byte from note sequence at ($F2/$F3); advances pointer |
 | $ECE6–$ECFD | — | 24 | data | NoteFreqTable: 12 note period-hi values (C through B one octave) for APU frequency registers |
 | $ECFE–$ED35 | — | 56 | data | ChannelPtrTable: 28 × u16le pointers to note/SFX sequence data |
-| $F000–$F079 | $3000–$3079 | 122 | code | LoadStageData: decode 13×13 nibble grid from StageDataTable; A=stage#, $FF→stage36(blank); PlaceTileBlock each nibble |
-| $F07A–$F4C5 | $307A–$34C5 | ~1092 | data | StageDataTable: 35×91 bytes; nibble-encoded 13×13 block maps; 7 bytes/row (13 data nibbles + 1 pad) |
+| $F000–$F079 | $3000–$3079 | 122 | code | LoadStageData: decode 13×13 nibble grid from StageDataTable; A=stage# (1–35); A=$FF→entry 36 (blank); A≥$24 wraps (A-=$23); PlaceTileBlock each nibble |
+| $F07A–$FD44 | $307A–$3D44 | 3276 | data | StageDataTable: 36×91 bytes; nibble-encoded 13×13 block maps; 7 bytes/row (13 data nibbles + 1 pad); stages 1–35 at entries 0–34; entry 35=$FCEB=blank stage (all $DD/$6D = empty + eagle area) |
 | $DABB–$DACA | — | 16 | data | TileAttrTable: palette attr per nibble type; 0-4→pal0(brick); 5-9→pal3(steel); A→pal1; B→pal2; C→pal3; D-F→pal0(empty) |
 | $DACB–$DB0A | — | 64 | data | TileTypeTable: 4 tile indices per block type; D-F=empty($00×4); 0-3=partial brick($00/$0F); 4=full brick($0F×4); 5-8=partial steel($10/$20); 9=full steel($10×4); A=water($12×4); B=forest($22×4); C=ice($21×4) |
 | $DB48–$DB74 | — | ~45 | code | EnemySpawnTick: DEC $82 (delay); if $7F>0 scan $A0+$6C..+2 for free slot; call SpawnEnemy; DEC $7F; DrawEnemiesLeft |
@@ -173,7 +173,8 @@ MainLoop ($C09C):
 
 ## Stage Data Format (`LoadStageData` $F000)
 
-Stage tilemap table at **$F07A**, 35 entries × **91 bytes** ($5B) each.
+Stage tilemap table at **$F07A**, 36 entries × **91 bytes** ($5B) each.
+Stages 1–35 at entries 0–34; entry 35 ($FCEB–$FD44) = blank stage loaded when `A=$FF`.
 
 ### Decode algorithm
 1. Stage N: pointer = $F07A + (N-1) × 91
@@ -463,7 +464,7 @@ Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 - [x] Extract CHR ROM tiles — identify tiles $5E/$5F/$6B (namcot logo?), $60–$68 (credit names). **Done.** Fixed TILE_SZ bug in extract_tiles.py. CHR tiles extracted to tiles/. BG font: $40=©, $41–$5A=A–Z, $6B="-" dash (used in HI-SCORE/I-PLAYER/II-PLAYER). Tiles $5E=Roman-numeral-I (player-1 indicator), $5F=Roman-numeral-II (player-2 indicator), $6B=dash separator. Tiles $60–$68 = 9 NAMCOT logo graphic tiles (monochrome, plane-1=0), displayed as one row on title screen at $D28F — confirmed by raw string table at $D280. Full string table decoded: "© 1980 1985 NAMCO LTD.", "ALL RIGHTS RESERVED", "OPEN-REACH". Added CHR ROM Tile Map section and corrected Title Screen Layout table.
 - [x] Map sound engine ($D689 and call sites at $EA7E). **Done.** $D689 = ReadControllers (mislabeled "SoundUpdate" — it reads $4016/$4017). The real sound engine: $EA51=APUSoundInit (enables sq1+sq2+tri+noise; $4017=$C0; zeros 28 channel data blocks at $031C–$03FB). $EA7E=SoundEngineTick (NMI-called; $6D→$F5: 1 channel if game, else 28; iterate channels at $031C, each 8B; $ECAF=GetChannelDataPtr reads $F2/$F3 from ChannelPtrTable at $ECFE; $ECBE=ReadChannelByte reads note sequence; writes APU $4000+X×4). $ECE6=NoteFreqTable (12 note periods). $ECFE=ChannelPtrTable (28 × u16le ptrs to note/SFX seq data). $0300[$F4]=channel active status; $0300–$031B=28-byte status array; $031C–$03FB=28 × 8B channel state blocks.
 - [x] Understand CheckSavedState / DefaultConfig ($D4EF / $C040) — continue feature? **Done.** $C040–$C04F = DevSignature "RYOUITI OOKUBO  " (16-byte ASCII dev name as SRAM magic). $D4E3 = WriteDefaultConfig (copies signature to RAM $0110–$011F, called at end of Init). $D4EF = CheckSavedState (compare $0110 vs $C040; A=1→soft-reset, skip $3F/$83 init; A=0→first boot, set $3F=2/$83=0). This is Battle City's "continue" mechanism: on first power-on the RAM won't have the signature so game resets state; on soft-reset the signature survives and state is preserved.
-- [ ] Locate and map level/stage data (35 stages in Famicom vs 40 in VS)
+- [x] Locate and map level/stage data (35 stages in Famicom vs 40 in VS). **Done.** StageDataTable confirmed at $F07A (Famicom ROM), 36 × 91 bytes = $F07A–$FD44. Entries 0–34 = stages 1–35 (playable). Entry 35 ($FCEB–$FD44) = blank stage loaded via A=$FF (mostly $DD/empty with eagle-area $6D). LoadStageData ($F000): A<$24→use as stage# directly; A≥$24→wrap (A-=$23); A=$FF→force entry 36. web/levels.js confirmed correct (same 35 stage layouts). REVERSE.md had wrong end ($F4C5→$FD44) and wrong count (1092→3276 bytes). web/levels.js header comment and tile type labels fixed.
 - [x] Map entity/enemy system (EntityType table, movement, AI) — covered above
 - [ ] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller)
 - [ ] Locate high score save/load logic

@@ -27,8 +27,8 @@ import os
 import sys
 
 ROM_FILE = "battlecity_famicom.nes"
-# CPU $F27D is in PRG bank 1 ($C000–$FFFF); file offset = 0x4010 + (0xF27D - 0xC000)
-LEVEL_DATA_OFFSET = 0x4010 + (0xF27D - 0xC000)  # = 0x728D
+# CPU $F07A is in PRG ($C000–$FFFF mirror, NROM-128); file offset = 0x10 + ($F07A - $C000)
+LEVEL_DATA_OFFSET = 0x10 + (0xF07A - 0xC000)  # = 0x10 + 0x307A = 0x308A
 STAGE_SIZE = 91    # bytes per stage (182 nibbles, 14 per row × 13 rows)
 NUM_STAGES = 35
 COLS = 13
@@ -111,7 +111,7 @@ def main():
         rom = f.read()
 
     print(f"ROM size: {len(rom)} bytes")
-    print(f"Level data base: file offset 0x{LEVEL_DATA_OFFSET:05X} = CPU $F27D")
+    print(f"Level data base: file offset 0x{LEVEL_DATA_OFFSET:05X} = CPU $F07A")
     print(f"Stages: {NUM_STAGES}, bytes per stage: {STAGE_SIZE}")
     print()
 
@@ -137,7 +137,7 @@ def main():
         if counts.get('ICE', 0):
             tile_summary.append(f"ice={counts['ICE']}")
 
-        print(f"=== STAGE {stage:02d} (offset 0x{offset:05X} = CPU ${offset - 0x4010 + 0xC000:04X}) ===")
+        print(f"=== STAGE {stage:02d} (offset 0x{offset:05X} = CPU ${offset - 0x10 + 0xC000:04X}) ===")
         print(f"  Tiles: {', '.join(tile_summary) if tile_summary else 'all empty'}")
         print(render_grid(grid, 'char'))
         print()
