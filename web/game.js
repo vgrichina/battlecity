@@ -24,15 +24,38 @@ const CHR_CELL = 9, CHR_BORDER = 1;
 
 const NES_MASTER_HEX = ['#545454', '#001e74', '#081090', '#300088', '#440064', '#5c0030', '#540400', '#3c1800', '#202a00', '#083a00', '#004000', '#003c00', '#00323c', '#000000', '#000000', '#000000', '#989698', '#084cc4', '#3032ec', '#5c1ee4', '#8814b0', '#a01464', '#982220', '#783c00', '#545a00', '#287200', '#087c00', '#007628', '#006678', '#000000', '#000000', '#000000', '#eceeec', '#4c9aec', '#787cec', '#b062ec', '#e454ec', '#ec58b4', '#ec6a64', '#d48820', '#a0aa00', '#74c400', '#4cd020', '#38cc6c', '#38b4cc', '#3c3c3c', '#000000', '#000000', '#eceeec', '#a8ccec', '#bcbcec', '#d4b2ec', '#ecaeec', '#ecaed4', '#ecb4b0', '#e4c490', '#ccd278', '#b4de78', '#a8e290', '#98e2b4', '#a0d6e4', '#a0a2a0', '#000000', '#000000'];
 
-const ROM_PALETTE_DATA = [
-  [0x0F, 0x17, 0x06, 0x00],  // BG0 brick
-  [0x0F, 0x3C, 0x10, 0x12],  // BG1 water
-  [0x0F, 0x29, 0x09, 0x0B],  // BG2 trees
-  [0x0F, 0x00, 0x10, 0x20],  // BG3 steel
-  [0x0F, 0x18, 0x27, 0x38],  // SP0 P1 yel
-  [0x0F, 0x0A, 0x1B, 0x3B],  // SP1 P2 grn
+// 9 BG palette sets from BGPaletteTable ($D565–$D5F4, 9×16 bytes → PPU $3F00-$3F0F)
+// Each entry: [BG0[4], BG1[4], BG2[4], BG3[4]]
+// Sets 0-2: in-game (sets 1/2 alternate for water animation each 32 frames)
+// Set 3: player-select / game-over  Set 4: title animation
+// Sets 5-8: grenade/shovel flash cycle ($4D = ($0B&3)+5 → sets 5/6/7/8)
+const BG_PALETTE_SETS = [
+  // Set 0 — in-game base ($D565)
+  [[0x0F,0x17,0x06,0x00],[0x0F,0x3C,0x10,0x12],[0x0F,0x29,0x09,0x0B],[0x0F,0x00,0x10,0x20]],
+  // Set 1 — water anim frame A ($D575): BG1 col1=$3C col2=$12
+  [[0x0F,0x17,0x06,0x00],[0x0F,0x3C,0x12,0x12],[0x0F,0x29,0x09,0x0B],[0x0F,0x00,0x10,0x20]],
+  // Set 2 — water anim frame B ($D585): BG1 col1=$12 col2=$3C
+  [[0x0F,0x17,0x06,0x00],[0x0F,0x12,0x3C,0x12],[0x0F,0x29,0x09,0x0B],[0x0F,0x00,0x10,0x20]],
+  // Set 3 — player-select / game-over ($D595)
+  [[0x0F,0x16,0x16,0x30],[0x0F,0x3C,0x10,0x16],[0x0F,0x29,0x09,0x27],[0x0F,0x00,0x10,0x20]],
+  // Set 4 — title animation ($D5A5)
+  [[0x0F,0x17,0x06,0x00],[0x0F,0x3C,0x10,0x00],[0x0F,0x29,0x09,0x00],[0x0F,0x00,0x10,0x00]],
+  // Set 5 — flash A ($D5B5): BG0 col1=$0F (black)
+  [[0x0F,0x0F,0x06,0x00],[0x0F,0x3C,0x10,0x00],[0x0F,0x29,0x09,0x00],[0x0F,0x00,0x10,0x00]],
+  // Set 6 — flash B ($D5C5): BG0 col1=$12 (blue)
+  [[0x0F,0x12,0x06,0x00],[0x0F,0x3C,0x10,0x00],[0x0F,0x29,0x09,0x00],[0x0F,0x00,0x10,0x00]],
+  // Set 7 — flash C ($D5D5): BG0 col1=$00 (dark gray)
+  [[0x0F,0x00,0x06,0x00],[0x0F,0x3C,0x10,0x00],[0x0F,0x29,0x09,0x00],[0x0F,0x00,0x10,0x00]],
+  // Set 8 — flash D ($D5E5): BG0 col1=$30 (off-white)
+  [[0x0F,0x30,0x06,0x00],[0x0F,0x3C,0x10,0x00],[0x0F,0x29,0x09,0x00],[0x0F,0x00,0x10,0x00]],
+];
+
+// Sprite palettes (PPU $3F10-$3F1F via SpritePaletteData $D555–$D564, fixed for all screens)
+const SP_PALETTE_DATA = [
+  [0x0F, 0x18, 0x27, 0x38],  // SP0 P1 yellow
+  [0x0F, 0x0A, 0x1B, 0x3B],  // SP1 P2 green
   [0x0F, 0x0C, 0x10, 0x20],  // SP2 enemy
-  [0x0F, 0x04, 0x16, 0x20],  // SP3 spcl
+  [0x0F, 0x04, 0x16, 0x20],  // SP3 special
 ];
 
 // Active palette (hex strings), built once at startup
@@ -55,10 +78,26 @@ const tileCache = new Map();      // cached offscreen canvases keyed by "abs_pal
 
 // Build NES_PAL once: direct 2C02 lookup, no VS. System remap
 (function buildPalette() {
-  for (let si = 0; si < 8; si++)
-    for (let i = 0; i < 4; i++)
-      NES_PAL[si][i] = NES_MASTER_HEX[ROM_PALETTE_DATA[si][i] & 0x3F];
+  const bgSet = BG_PALETTE_SETS[0];
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++)
+      NES_PAL[i][j] = NES_MASTER_HEX[bgSet[i][j] & 0x3F];
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++)
+      NES_PAL[4+i][j] = NES_MASTER_HEX[SP_PALETTE_DATA[i][j] & 0x3F];
 })();
+
+// Active BG palette set index ($4D in ROM); 0=in-game base, 1/2=water anim, 3=select/gameover, 4=title, 5-8=flash
+let activeBGSet = 0;
+function setBGPaletteSet(n) {
+  if (activeBGSet === n) return;
+  activeBGSet = n;
+  const bgSet = BG_PALETTE_SETS[n];
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 4; j++)
+      NES_PAL[i][j] = NES_MASTER_HEX[bgSet[i][j] & 0x3F];
+  tileCache.clear();
+}
 
 function initCHR() {
   const img = new Image();
@@ -471,6 +510,7 @@ function setEagleWall(steel) {
 function initLevel(idx) {
   stageIdx          = idx % LEVEL_MAPS.length;  // ROM loops back to stage 1 after stage 35
   frameCount        = 0;
+  activeBGSet       = -1; setBGPaletteSet(0);   // reset to in-game base palette set
   gamePhase         = 'start';
   phaseTimer        = 180;   // ~3 s stage-start banner  ROM $CFAA PreGameDraw
   eagleAlive        = true;
@@ -1393,7 +1433,7 @@ function update() {
     if (frameCount % 3 === 0) { // approx matching ROM speed
       if (curtainTarget === 'select') {
         curtainRow++;
-        if (curtainRow === 15) { gamePhase = 'select'; }
+        if (curtainRow === 15) { gamePhase = 'select'; activeBGSet = -1; setBGPaletteSet(3); }
       } else {
         curtainRow--;
         if (curtainRow === -1) { 
@@ -1525,6 +1565,7 @@ function update() {
         if (allDead || !eagleAlive) {
           gamePhase  = 'gameover';
           phaseTimer = 240;
+          activeBGSet = -1; setBGPaletteSet(3); // ROM set 3 for game-over screen
           sfxGameOver();
           newHiScorePlayer = 0;
           if (p1Score > hiScore) { hiScore = p1Score; newHiScorePlayer = 1; }
@@ -2290,18 +2331,12 @@ function render() {
   }
 }
 
-// ROM $C2D9 PaletteFlash — 1Hz toggle between yellow/blue for BG1
+// ROM $C31D PaletteFlashTick — cycles $4D between sets 1 and 2 every 32 frames
+// Set 1 BG1: [0F,3C,12,12] (yellow dominant), Set 2 BG1: [0F,12,3C,12] (blue dominant)
 function tickPaletteFlash() {
   const f = frameCount & 0x3F;
-  if (f === 0) {
-    NES_PAL[1][1] = NES_MASTER_HEX[0x37]; // yellow
-    NES_PAL[1][2] = NES_MASTER_HEX[0x12]; // blue
-    tileCache.clear();
-  } else if (f === 32) {
-    NES_PAL[1][1] = NES_MASTER_HEX[0x12]; // blue
-    NES_PAL[1][2] = NES_MASTER_HEX[0x37]; // yellow
-    tileCache.clear();
-  }
+  if (f === 0) setBGPaletteSet(1);       // water anim frame A: BG1 col1=$3C(yellow)
+  else if (f === 32) setBGPaletteSet(2); // water anim frame B: BG1 col1=$12(blue)
 }
 
 // ROM $CAAD TallyOpenCurtain  $CACF TallyCloseCurtain
@@ -2381,6 +2416,7 @@ function drawVictoryScreen() {
 // ROM $CFAA PreGameDraw: draws "BATTLE" (26,46) + "CITY" (60,86) via DrawSpriteString
 function enterTitle() {
   stopAllSounds();  // silence everything on return to title
+  activeBGSet = -1; setBGPaletteSet(4); // ROM set 4 for title animation screen
   gamePhase   = 'title';
   titleFrame  = 0;
   titleTimer  = 0;
