@@ -692,6 +692,74 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
 
+// ─── Touch / Virtual Gamepad ──────────────────────────────────────────────────
+(function setupTouch() {
+  const dpad     = document.getElementById('dpad');
+  const btnFire  = document.getElementById('btn-fire');
+  const btnStart = document.getElementById('btn-start');
+  if (!dpad) return;
+
+  const DPAD_KEYS = ['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'];
+  const arrEls = { ArrowUp: dpad.querySelector('.up'), ArrowDown: dpad.querySelector('.dn'),
+                   ArrowLeft: dpad.querySelector('.lt'), ArrowRight: dpad.querySelector('.rt') };
+  let dpadTouchId = null;
+
+  function clearDpad() {
+    DPAD_KEYS.forEach(k => { keys[k] = false; });
+    Object.values(arrEls).forEach(el => el && el.classList.remove('active'));
+  }
+
+  function applyDir(clientX, clientY) {
+    const r  = dpad.getBoundingClientRect();
+    const dx = clientX - (r.left + r.width  / 2);
+    const dy = clientY - (r.top  + r.height / 2);
+    clearDpad();
+    if (Math.hypot(dx, dy) < r.width * 0.12) return;
+    const a = Math.atan2(dy, dx) * 180 / Math.PI;
+    let k;
+    if      (a >= -135 && a < -45)  k = 'ArrowUp';
+    else if (a >=  -45 && a <  45)  k = 'ArrowRight';
+    else if (a >=   45 && a < 135)  k = 'ArrowDown';
+    else                             k = 'ArrowLeft';
+    keys[k] = true;
+    if (arrEls[k]) arrEls[k].classList.add('active');
+  }
+
+  dpad.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (dpadTouchId !== null) return;
+    const t = e.changedTouches[0];
+    dpadTouchId = t.identifier;
+    applyDir(t.clientX, t.clientY);
+  }, { passive: false });
+
+  dpad.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches)
+      if (t.identifier === dpadTouchId) { applyDir(t.clientX, t.clientY); break; }
+  }, { passive: false });
+
+  dpad.addEventListener('touchend', e => {
+    for (const t of e.changedTouches)
+      if (t.identifier === dpadTouchId) { dpadTouchId = null; clearDpad(); break; }
+  });
+  dpad.addEventListener('touchcancel', () => { dpadTouchId = null; clearDpad(); });
+
+  function bindBtn(el, keyCode) {
+    if (!el) return;
+    el.addEventListener('touchstart', e => {
+      e.preventDefault();
+      keys[keyCode] = true;
+      el.classList.add('pressed');
+    }, { passive: false });
+    el.addEventListener('touchend',    () => { keys[keyCode] = false; el.classList.remove('pressed'); });
+    el.addEventListener('touchcancel', () => { keys[keyCode] = false; el.classList.remove('pressed'); });
+  }
+
+  bindBtn(btnFire,  'Space');
+  bindBtn(btnStart, 'Enter');
+})();
+
 // Returns direction (0-3) or -1 if no d-pad held
 // P1: Arrows (+ WASD in 1P mode); P2: WASD
 function p1Dir() {

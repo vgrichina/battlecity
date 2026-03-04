@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>Battle City — Web Port</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -70,12 +73,140 @@
       line-height: 1.5;
       white-space: nowrap;
     }
+
+    /* ── Virtual gamepad (hidden on desktop, shown on mobile) ───────────── */
+    #vpad {
+      display: none;
+      width: 100%;
+      flex: 1;
+      min-height: 130px;
+      max-height: 260px;
+      padding: 12px 28px 20px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* ── Mobile layout ────────────────────────────────────────────────────── */
+    @media (max-width: 800px) {
+      body {
+        justify-content: flex-start;
+        height: 100svh;
+        height: 100vh; /* fallback */
+        overflow: hidden;
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      h1 { font-size: 12px; margin-bottom: 2px; }
+      #controls-hint, .about { display: none; }
+      #screen { width: 100vw; border: none; }
+      canvas {
+        width: 100vw;
+        height: calc(100vw * 240 / 256);
+        margin-top: calc(-100vw * 8 / 256);
+        margin-bottom: calc(-100vw * 8 / 256);
+      }
+      #vpad { display: flex; }
+    }
+
+    #dpad {
+      width: 140px;
+      height: 140px;
+      position: relative;
+      background: #1a1a1a;
+      border: 2px solid #363636;
+      border-radius: 50%;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      flex-shrink: 0;
+    }
+    /* Plus-shaped center marker */
+    #dpad::before, #dpad::after {
+      content: '';
+      position: absolute;
+      background: #252525;
+      pointer-events: none;
+    }
+    #dpad::before { left: 33%; right: 33%; top: 0; bottom: 0; }
+    #dpad::after  { top: 33%; bottom: 33%; left: 0; right: 0; }
+
+    .dpad-arr {
+      position: absolute;
+      color: #444;
+      font-size: 13px;
+      pointer-events: none;
+      z-index: 1;
+      line-height: 1;
+      transition: color 0.05s;
+    }
+    .dpad-arr.active { color: #f8e800; }
+    .dpad-arr.up   { top: 10px;    left: 50%; transform: translateX(-50%); }
+    .dpad-arr.dn   { bottom: 10px; left: 50%; transform: translateX(-50%); }
+    .dpad-arr.lt   { left: 10px;   top: 50%;  transform: translateY(-50%); }
+    .dpad-arr.rt   { right: 10px;  top: 50%;  transform: translateY(-50%); }
+
+    #vpad-mid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+      padding-top: 28px;
+    }
+
+    .vbtn {
+      background: #1a1a1a;
+      border: 2px solid #363636;
+      border-radius: 50%;
+      color: #555;
+      font-family: monospace;
+      font-weight: bold;
+      cursor: pointer;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .vbtn.pressed { background: #282828; }
+
+    #btn-start {
+      width: 46px;
+      height: 46px;
+      font-size: 9px;
+      letter-spacing: 0.5px;
+    }
+    #btn-start.pressed { border-color: #555; color: #aaa; }
+
+    #btn-fire {
+      width: 80px;
+      height: 80px;
+      color: #f8e800;
+      border-color: #555;
+      font-size: 13px;
+      letter-spacing: 1px;
+      flex-shrink: 0;
+    }
+    #btn-fire.pressed { background: #2a2600; border-color: #f8e800; }
   </style>
 </head>
 <body>
   <h1>BATTLE CITY</h1>
   <div id="screen"><canvas id="game"></canvas></div>
   <div id="controls-hint"></div>
+  <div id="vpad">
+    <div id="dpad">
+      <span class="dpad-arr up">▲</span>
+      <span class="dpad-arr dn">▼</span>
+      <span class="dpad-arr lt">◀</span>
+      <span class="dpad-arr rt">▶</span>
+    </div>
+    <div id="vpad-mid">
+      <button class="vbtn" id="btn-start">START</button>
+    </div>
+    <button class="vbtn" id="btn-fire">FIRE</button>
+  </div>
   <p class="about">
     Faithful web reimplementation of the 1985 Namco Famicom game,<br>
     built by reverse-engineering the original ROM — CHR tiles, palettes,<br>
