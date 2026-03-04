@@ -2102,31 +2102,43 @@ function drawHUD() {
     }
   }
 
-  // P1 lives  ROM $C72D: "IP" at col 29 row 17; $C6C5: icon $14 at col 29 row 18, digit at col 30
+  // P1 lives  ROM DrawHUDScores $C830: tiles $58/$13 ("1P") at col 29-30, row 17
+  //            ROM LivesDisplayTick $C7C8: tile $14 at col 29 row 18; inverted digit at col 30 row 18
+  //            Inverted tiles: color-0=black (digit stroke), color-3=gray (matches tile $11 BG)
   const p1y = 18 * 8;  // nametable row 18 = pixel 144
   if (chrOff) {
-    drawNesText('IP', hx + 8, 17 * 8, 0);          // ROM col 29, row 17
-    drawCHRTile(0x14, 0, hx + 8, p1y, false);        // ROM col 29, row 18
-    drawNesText(String(p1Lives + 1), hx + 16, p1y, 0); // ROM col 30, row 18
+    // ROM tiles $58=inverted-"1", $13=inverted-"P"
+    drawCHRTile(0x58, 0, hx + 8,  17 * 8, false);  // ROM col 29, row 17
+    drawCHRTile(0x13, 0, hx + 16, 17 * 8, false);  // ROM col 30, row 17
+    drawCHRTile(0x14, 0, hx + 8, p1y, false);        // ROM col 29, row 18 (P1 tank icon)
+    // Lives digit: ROM uses inverted digit tiles $6E+digit via DrawNametableTextOffset
+    const p1d = p1Lives + 1;
+    if (p1d >= 10) drawCHRTile(0x6E + Math.floor(p1d / 10), 0, hx + 8,  p1y, false);
+    drawCHRTile(0x6E + (p1d % 10), 0, hx + 16, p1y, false);  // ROM col 30, row 18
   } else {
     text('IP', hx + 8, p1y - 8, C.P1, 6);
     text(String(p1Lives + 1), hx + 16, p1y + 6, C.HUD_TEXT, 6);
   }
 
-  // P2 lives  ROM $C746: "IIP" at col 29 row 20; $C6C5: icon $14 at col 29 row 21, digit at col 30
+  // P2 lives  ROM DrawHUDScores $C849: tiles $5A/$13 ("2P") at col 29-30, row 20
+  //            ROM LivesDisplayTick: tile $14 at col 29 row 21; inverted digit at col 30 row 21
   if (numPlayers === 2) {
     const p2y = 21 * 8;  // nametable row 21 = pixel 168
     if (chrOff) {
-      drawNesText('IIP', hx + 8, 20 * 8, 0);          // ROM col 29, row 20
-      drawCHRTile(0x14, 0, hx + 8, p2y, false);        // ROM col 29, row 21
-      drawNesText(String(Math.max(0, p2Lives + 1)), hx + 16, p2y, 0); // ROM col 30, row 21
+      // ROM tiles $5A=inverted-"2", $13=inverted-"P"
+      drawCHRTile(0x5A, 0, hx + 8,  20 * 8, false);  // ROM col 29, row 20
+      drawCHRTile(0x13, 0, hx + 16, 20 * 8, false);  // ROM col 30, row 20
+      drawCHRTile(0x14, 0, hx + 8, p2y, false);        // ROM col 29, row 21 (P1 tank icon)
+      const p2d = Math.max(0, p2Lives + 1);
+      if (p2d >= 10) drawCHRTile(0x6E + Math.floor(p2d / 10), 0, hx + 8,  p2y, false);
+      drawCHRTile(0x6E + (p2d % 10), 0, hx + 16, p2y, false);  // ROM col 30, row 21
     } else {
       text('IIP', hx + 8, p2y - 8, C.P2, 6);
       text(String(Math.max(0, p2Lives + 1)), hx + 16, p2y + 6, C.HUD_TEXT, 6);
     }
   }
 
-  // Stage number  ROM rows 23–25 (pixel 184): 2×2 flag icon + digit tiles
+  // Stage number  ROM rows 23–25 (pixel 184): 2×2 flag icon + inverted digit tiles
   const sty = 23 * 8;  // nametable row 23 = pixel 184
   if (chrOff) {
     // Flag icon: 2×2 tiles at rows 23–24, cols 29–30  ROM $D225/$D228
@@ -2134,8 +2146,10 @@ function drawHUD() {
     drawCHRTile(0xFC, 0, hx + 16, sty,     false);  // top-right
     drawCHRTile(0x6D, 0, hx + 8, sty + 8, false);  // bottom-left
     drawCHRTile(0xFD, 0, hx + 16, sty + 8, false);  // bottom-right
-    const sn = String(stageIdx + 1).padStart(2);
-    drawNesText(sn, hx + 8, sty + 16, 0);  // ROM row 25
+    // Stage digit: ROM uses inverted digit tiles $6E+digit via DrawNametableTextOffset, row 25
+    const sd = stageIdx + 1;
+    if (sd >= 10) drawCHRTile(0x6E + Math.floor(sd / 10), 0, hx + 8,  sty + 16, false);
+    drawCHRTile(0x6E + (sd % 10), 0, hx + 16, sty + 16, false);  // ROM row 25
   } else {
     text('S' + (stageIdx + 1), hx + 16, sty + 8, C.HUD_TEXT, 6);
   }
