@@ -25,7 +25,7 @@ bank,addr,name,type,comment
 0,CA85,UpdateCursorSprite,,UpdateCursorSprite: $98 = $8B + ($83 << 4); sets OAM sprite index for cursor tank
 0,D16A,SetupNametableStage,,
 0,D17F,DrawTitleScreen,,"DrawTitleScreen: sets nametable $24; draws BATTLE sprite-string at x=26 y=46; CITY at x=60 y=86; BG tiles $D2A5 at col=2 row=3; $D2A8 at col=11 row=3; HI-/SCORE headers; ""1 PLAYER"" row=17; ""2 PLAYERS"" row=19; ""CONSTRUCTION"" row=21; credits names row=23; copyright row=25; all rights row=27"
-0,D400,NMI,,NMI: push A/X/Y/P; OAM DMA from $0200; read $2002; JSR HideOffscreenSprites; if $4D>=0 JSR PaletteUpdate; write PPUCTRL=$50|$B0; scroll X=0 Y=$4F; PPUMASK=$1E; JSR SoundUpdate; JSR HideSpritePairs; JSR $EA7E; INC $0B (frame lo); every 64 INC $0A (frame hi); RTI
+0,D400,NMI,,NMI: push A/X/Y/P; OAM DMA from $0200; read $2002; JSR HideOffscreenSprites; if $4D>=0 JSR PaletteUpdate; write PPUCTRL=$50|$B0; scroll X=0 Y=$4F; PPUMASK=$1E; JSR ReadControllers2 ($D689); JSR HideSpritePairs; JSR SoundEngineTick ($EA7E); INC $0B (frame lo); every 64 INC $0A (frame hi); RTI
 0,D467,WaitNMI,,
 0,D470,ClearSpriteBuf,,
 0,D47E,WriteNametable,,
@@ -35,7 +35,13 @@ bank,addr,name,type,comment
 0,D502,InitRAM,,
 0,D50E,PaletteUpdate,,
 0,D5FB,CalcNametableAddr,,
-0,D689,SoundUpdate,,
+0,D689,ReadControllers2,,ReadControllers mirror at $D689 = same code as $9689; reads $4016/$4017 (P1/P2), edge-detects into $06-$09; called from NMI ($D433) NOT a sound routine despite old label
+0,EA51,APUSoundInit,,APUSoundInit: STA $4015=$0F (enable sq1+sq2+tri+noise); STA $4017=$C0 (5-step frame counter no IRQ); zero 28 channel data blocks at $031C-$03FB (8B each) and $0300-$031B (status array); called at startup
+0,EA7E,SoundEngineTick,,SoundEngineTick: NMI-called each frame; $6D!=0→$F5=1 else $F5=28; pointer $F0/$F1=$031C (channel table); first pass scans active channels writes APU $4000+X*4; reads note seqs via $ECAF/ECBE; second pass silences idle channels
+0,ECAF,GetChannelDataPtr,,GetChannelDataPtr: X=$F4*2; loads $F2/$F3 from ChannelPtrTable($ECFE); used to point at each channel's note sequence
+0,ECBE,ReadChannelByte,,ReadChannelByte: read next byte from note sequence at ($F2),$F3; advance pointer stored at ($F0),5
+0,ECE6,NoteFreqTable,,NoteFreqTable: 12 note values (C through B) → APU period hi byte; used to set $4002/$4006/$400A/$400E
+0,ECFE,ChannelPtrTable,,ChannelPtrTable: 28 x u16le pointers to note sequence data; indexed by channel number $F4; each ptr points into ROM music/SFX data
 0,D6B3,DrawNametableText,,DrawNametableText: CalcNametableAddr; reads ($11)
 0,D6DD,DrawNametableTextOffset,,DrawNametableTextOffset: same as DrawNametableText but adds $60 to bytes with bit7=0 (for palette highlight mode)
 0,D7B4,InitEntities,,

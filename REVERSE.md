@@ -57,7 +57,7 @@
 | $D502–$D50D | — | 12 | code | InitRAM entry |
 | $D50E | — | — | code | PaletteUpdate |
 | $D5FB | — | — | code | CalcNametableAddr |
-| $D689 | — | — | code | SoundUpdate |
+| $D689 | — | — | code | ReadControllers (mirror of $9689; reads $4016/$4017 → $06-$09; called from NMI; was mislabeled as SoundUpdate) |
 | $D6B3–$D705 | — | ~83 | code | DrawNametableText variants |
 | $D7B4 | — | — | code | InitEntities |
 | $D7CC | — | — | code | ClearEntitySlots |
@@ -66,8 +66,12 @@
 | $D8FD | — | — | code | HideOffscreenSprites |
 | $DA93–$DAAC | — | ~26 | code | HideSpritePairs |
 | $E413 | — | — | code | ClearEntitySlots2: clears $A0-$A7 and $0103-$010A (8 entity slots) |
-| $EA51 | — | — | code | (unknown) |
-| $EA7E | — | — | code | (called from NMI, unknown) |
+| $EA51–$EA7D | — | ~45 | code | APUSoundInit: STA $4015=$0F (enable sq1+sq2+tri+noise); STA $4017=$C0 (5-step, no IRQ); zero 28 channel blocks at $031C–$03FB and $0300–$031B |
+| $EA7E–$ECAD | — | ~560 | code | SoundEngineTick: NMI-called; $6D→$F5 (1 channel if game active, else 28); pointer $F0/$F1→$031C; iterate channels; write APU $4000+X*4; call GetChannelDataPtr/ReadChannelByte |
+| $ECAF–$ECBD | — | ~15 | code | GetChannelDataPtr: loads $F2/$F3 from ChannelPtrTable[$ECFE + $F4*2] |
+| $ECBE–$ECCF | — | ~18 | code | ReadChannelByte: reads next byte from note sequence at ($F2/$F3); advances pointer |
+| $ECE6–$ECFD | — | 24 | data | NoteFreqTable: 12 note period-hi values (C through B one octave) for APU frequency registers |
+| $ECFE–$ED35 | — | 56 | data | ChannelPtrTable: 28 × u16le pointers to note/SFX sequence data |
 | $F000–$F079 | $3000–$3079 | 122 | code | LoadStageData: decode 13×13 nibble grid from StageDataTable; A=stage#, $FF→stage36(blank); PlaceTileBlock each nibble |
 | $F07A–$F4C5 | $307A–$34C5 | ~1092 | data | StageDataTable: 35×91 bytes; nibble-encoded 13×13 block maps; 7 bytes/row (13 data nibbles + 1 pad) |
 | $DABB–$DACA | — | 16 | data | TileAttrTable: palette attr per nibble type; 0-4→pal0(brick); 5-9→pal3(steel); A→pal1; B→pal2; C→pal3; D-F→pal0(empty) |
@@ -386,6 +390,50 @@ Bit layout of $06/$07 (raw) and $08/$09 (new presses):
 
 ---
 
+## Sound Engine
+
+### APU initialization (`APUSoundInit` $EA51)
+
+Called at startup. Writes:
+- `$4015 = $0F` — enable square 1, square 2, triangle, noise channels
+- `$4017 = $C0` — 5-step frame counter mode, IRQ disabled
+
+Zeros 28 channel data blocks at `$031C–$03FB` (8 bytes each) and status array `$0300–$031B` (28 bytes).
+
+### Sound engine tick (`SoundEngineTick` $EA7E)
+
+Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
+
+**Channel count selection:** `$6D` (game-active flag) controls $F5:
+- `$6D = 0` (not in gameplay): `$F5 = $1C = 28` — process all channels
+- `$6D ≠ 0` (in gameplay): `$F5 = 1` — process only 1 channel
+
+**Channel data layout** (8 bytes per channel at `$031C + N×8`):
+
+| Byte offset | Purpose |
+|-------------|---------|
+| 0 | Current command / note type |
+| 1–4 | APU register values (written to $4000+hwchan*4) |
+| 5 | Sequence byte position |
+| 6 | Duration / timer lo |
+| 7 | Duration counter |
+
+**Status array:** `$0300[N]` = active flag for channel N (0=inactive)
+**APU hardware mapping:** channel N → hardware channel `N mod 4` (sq1/sq2/tri/noise)
+
+### Helper routines
+
+| Address | Name | Description |
+|---------|------|-------------|
+| $ECAF | GetChannelDataPtr | Loads $F2/$F3 from ChannelPtrTable[$ECFE + $F4×2] |
+| $ECBE | ReadChannelByte | Reads next byte from note sequence at ($F2/$F3); advances pointer |
+| $ECE6 | NoteFreqTable | 12 note period-hi values (C–B) for APU frequency register |
+| $ECFE | ChannelPtrTable | 28 × u16le pointers to note/SFX sequence data in ROM |
+
+**Note:** `$D689` (labeled "SoundUpdate" in earlier sessions) is actually `ReadControllers` — it reads $4016/$4017 with strobe protocol, edge-detects into $06–$09. Same code as $9689. It is NOT a sound routine.
+
+---
+
 ## VS System vs Famicom Differences
 
 | Feature | VS System (mapper 99) | Famicom (mapper 0) |
@@ -410,11 +458,11 @@ Bit layout of $06/$07 (raw) and $08/$09 (new presses):
 - [x] Map StagePlay ($C3B5) — level data loading, entity init. **Done.** StagePlay ($C3B5) = new-game init (vars, blank map, sprites, entities, $C331 spawn init, HUD). Actual game loop is in StageStartSetup ($C1C5) at $C1F9: WaitVBlank → GameTickMain ($C2E6) → CheckGameOver ($C728) → loop. Stage tilemap loaded by $F000(A=$85) from $F07A (35×91 bytes). Stage nibble types: D-F=empty, 0-3=partial brick, 4=full brick, 5-8=partial steel, 9=full steel, A=water, B=forest, C=ice. Enemy counts per stage from $E578 (35×4 table) → $8B-$8E. SpawnDelayBase=$BE-stage×4. CheckGameOver exits on eagle destroy ($68=0), stage clear ($80=0), or all lives ($51+$52=0).
 - [x] Map entity/enemy system: SpawnEnemy ($E363) internals; EntityType table; movement/AI dispatcher; understand $8B-$8E usage in spawn logic. **Done.** Entity state machine: Free(0)→SpawnAnim($F0, 14 ticks via $DE55)→$E0→DeathAnim(14 ticks via $DE64)→FinalizeEntitySpawn($E3B8)→Active($A0/$A2). 8 slots: 0-1=players, 2-7=enemies (2-5 in 1P, 2-7 in 2P). Direction 0=up/1=left/2=down/3=right (dX: $E46C, dY: $E470, ×8 px/frame). Enemy spawns at X=$18/$78/$D8 (round-robin $6A), Y=$18. Type selection: $8F indexes $8B-$8E counts → $E4EC[(stage-1)×4+$8F] ($80=basic $A0=fast $C0=power $E0→$E3=armor). Blink flag at $7F=3/10/17. EntityStateTable($E498): 16 ptrs; AI dispatch at $DC3D. Added 17 new labels, EntityStateTable/EntityTypeTable/spawn tables documented.
 - [x] Extract CHR ROM tiles — identify tiles $5E/$5F/$6B (namcot logo?), $60–$68 (credit names). **Done.** Fixed TILE_SZ bug in extract_tiles.py. CHR tiles extracted to tiles/. BG font: $40=©, $41–$5A=A–Z, $6B="-" dash (used in HI-SCORE/I-PLAYER/II-PLAYER). Tiles $5E=Roman-numeral-I (player-1 indicator), $5F=Roman-numeral-II (player-2 indicator), $6B=dash separator. Tiles $60–$68 = 9 NAMCOT logo graphic tiles (monochrome, plane-1=0), displayed as one row on title screen at $D28F — confirmed by raw string table at $D280. Full string table decoded: "© 1980 1985 NAMCO LTD.", "ALL RIGHTS RESERVED", "OPEN-REACH". Added CHR ROM Tile Map section and corrected Title Screen Layout table.
-- [ ] Map sound engine ($D689 and call sites at $EA7E)
+- [x] Map sound engine ($D689 and call sites at $EA7E). **Done.** $D689 = ReadControllers (mislabeled "SoundUpdate" — it reads $4016/$4017). The real sound engine: $EA51=APUSoundInit (enables sq1+sq2+tri+noise; $4017=$C0; zeros 28 channel data blocks at $031C–$03FB). $EA7E=SoundEngineTick (NMI-called; $6D→$F5: 1 channel if game, else 28; iterate channels at $031C, each 8B; $ECAF=GetChannelDataPtr reads $F2/$F3 from ChannelPtrTable at $ECFE; $ECBE=ReadChannelByte reads note sequence; writes APU $4000+X×4). $ECE6=NoteFreqTable (12 note periods). $ECFE=ChannelPtrTable (28 × u16le ptrs to note/SFX seq data). $0300[$F4]=channel active status; $0300–$031B=28-byte status array; $031C–$03FB=28 × 8B channel state blocks.
 - [ ] Understand CheckSavedState / DefaultConfig ($D4EF / $C040) — continue feature?
 - [ ] Locate and map level/stage data (35 stages in Famicom vs 40 in VS)
 - [x] Map entity/enemy system (EntityType table, movement, AI) — covered above
 - [ ] Identify $DA93 role in NMI more precisely (appears to be sprite hiding, not controller)
-- [ ] Map $EA51 and $EA7E (called from Init and NMI respectively)
 - [ ] Locate high score save/load logic
 - [ ] Identify palette data location and format
+- [ ] Understand GameTickMain subsystems ($E181, $E1FA, $E02E, $E2A9, $E27C, $E122, $E162, $DB0B, $C7C8) — bullet/collision/explosion/score logic
