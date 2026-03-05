@@ -7,6 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>Battle City — Web Port</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -16,21 +18,23 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      font-family: monospace;
+      font-family: 'JetBrains Mono', monospace;
       color: #888;
       padding: 24px 20px;
     }
     h1 {
+      font-family: 'Press Start 2P', monospace;
       color: #f8e800;
-      font-size: 14px;
-      letter-spacing: 4px;
-      margin-bottom: 8px;
+      font-size: 22px;
+      letter-spacing: 6px;
+      margin-bottom: 10px;
     }
     #screen {
       overflow: hidden;
       line-height: 0;
-      border: 2px solid #333;
+      border: 1px solid #2a2a2a;
       background: #000;
+      box-shadow: 0 0 60px rgba(248,232,0,0.10), 0 0 0 1px #1a1a1a;
     }
     #screen:fullscreen, #screen:-webkit-full-screen {
       display: flex;
@@ -67,9 +71,11 @@
     }
     .about a:hover { text-decoration: underline; }
     #sitenav {
+      font-family: 'JetBrains Mono', monospace;
       font-size: 11px;
-      color: #555;
-      margin-bottom: 6px;
+      color: #444;
+      margin-bottom: 10px;
+      letter-spacing: 0.5px;
     }
     #sitenav a { color: #f8e800; text-decoration: none; }
     #sitenav a:hover { text-decoration: underline; }
@@ -118,7 +124,7 @@
         overflow: hidden;
         padding: 6px 0 env(safe-area-inset-bottom);
       }
-      h1 { font-size: 12px; margin-bottom: 2px; }
+      h1 { font-size: 10px; margin-bottom: 2px; }
       #sitenav { font-size: 10px; margin-bottom: 2px; }
       #controls-hint, .about { display: none; }
       #screen { width: 100vw; border: none; }
@@ -217,7 +223,7 @@
       border: 2px solid #363636;
       border-radius: 50%;
       color: #555;
-      font-family: monospace;
+      font-family: 'Press Start 2P', monospace;
       font-weight: bold;
       cursor: pointer;
       touch-action: manipulation;

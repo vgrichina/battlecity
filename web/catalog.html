@@ -4,14 +4,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Battle City — Asset Catalog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #111; color: #eee; font-family: monospace; padding: 40px 20px 80px; }
-    nav { margin-bottom: 32px; font-size: 11px; color: #555; }
+    body { background: #111; color: #eee; font-family: 'JetBrains Mono', monospace; padding: 40px 20px 80px; }
+    nav { margin-bottom: 32px; font-size: 11px; color: #444; }
     nav a { color: #f8e800; text-decoration: none; }
     nav a:hover { text-decoration: underline; }
-    h1 { color: #f8e800; font-size: 18px; letter-spacing: 4px; margin-bottom: 32px; border-bottom: 1px solid #2a2a2a; padding-bottom: 10px; }
-    h2 { color: #f8e800; font-size: 13px; letter-spacing: 2px; margin: 32px 0 14px; border-bottom: 1px solid #2a2a2a; padding-bottom: 6px; }
+    h1 {
+      font-family: 'Press Start 2P', monospace;
+      color: #f8e800;
+      font-size: 20px;
+      letter-spacing: 3px;
+      margin-bottom: 14px;
+      line-height: 1.4;
+    }
+    h1::after {
+      content: '';
+      display: block;
+      width: 48px;
+      height: 2px;
+      background: #f8e800;
+      margin-top: 12px;
+      margin-bottom: 20px;
+    }
+    h2 {
+      font-family: 'Press Start 2P', monospace;
+      color: #f8e800;
+      font-size: 11px;
+      letter-spacing: 2px;
+      margin: 40px 0 16px;
+      padding: 14px 16px;
+      background: #161616;
+      border-left: 3px solid #f8e800;
+    }
     .section { margin-bottom: 40px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
     .item { background: #1a1a1a; padding: 15px; border-radius: 4px; text-align: center; border: 1px solid #2a2a2a; }
