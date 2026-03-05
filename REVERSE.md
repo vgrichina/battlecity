@@ -50,7 +50,7 @@
 | $8728–$8754 | — | ~45 | code | ShovelAnimInitCheck: if $68=0 (eagle dead) → set $0105=$70/$0106=$F0/$0107=0/$0108=$11 (init ShovelAnimTick spiral); elif $80=0 (stage clear) → fall through; elif $51+$52=0 → RTS A=0; else → RTS A=1 |
 | $8225–$8258 | — | ~52 | code | PostGameAnimLoop: clears $0A/$0B; loop: WaitVBlank+GameTickMain+$E23B+$DEA6+$E0D8+PaletteFlashTick until $0A=2 (~128fr); then APUSoundInit; JSR ResultScreen($CCD4) |
 | $8259–$8292 | — | ~58 | code | StageAdvance2P + GameOverBranchCheck: INC $85 (cycle stages 1–70); if $51+$52=0 or eagle dead → JSR GameOverBrickScreen($C5D9); JSR UpdateHiScore; if Y≠0 JSR HiScoreEntryScreen($C44B); JMP $C095 (return to title) |
-| $8CD4–$8E?? | — | ~400 | code | ResultScreen: stage-clear/game-over tally screen entry; sums $73–$76 (P1 kills/type) → $7D; $77–$7A (P2 kills/type) → $7E; calls $CEF7 (static strings) + $D0B8 (eagle-star sprites); per-type loop $5A=0–3: decrements kill counts, adds score via AddScoreDigits, draws with FindFirstNonZeroScore+DrawNametableTextOffset; total kills at row 23 col 8+skip |
+| $8CD4–$8E?? | — | ~400 | code | ResultScreen: stage-clear/game-over tally screen entry; sums $73–$76 (P1 kills/type) → $7D; $77–$7A (P2 kills/type) → $7E; calls $CEF7 (static strings) + $D0B8 (eagle-star sprites); per-type loop $5A=0–3: decrements kill counts, adds score via AddScoreDigits, draws with FindFirstNonZeroScore+DrawNametableTextOffset; total kills at row 23 col 8+skip. Timing: per-kill tick $CDD8 LDX #$08 (8fr); inter-row pause $CDEC LDX #$14 (20fr); total-row hold $CDF4 LDX #$1E (30fr); final exit $CEE5 LDX #$78 (120fr). |
 | $CEE5–$CEF6 | — | 18 | code | ResultScreenExit: LDX #$78 JSR WaitFrames (120fr hold); clear $50/$60/$6B/$4D=0; RTS |
 | $CEF7–$D0B7 | — | ~450 | code | ResultScreenInit: draws all static strings for result screen; sets $6B=1/$05=$24/$60=$30/$4D=3; HI-SCORE(col8/row3), STAGE(col12/row5), I-PLAYER(col3/row7), $5B-arrows(col14/rows 12/15/18/21), PTS(col8/rows 12/15/18/21), separator(col12/row22), TOTAL(col6/row23); 2P adds II-PLAYER+$5D-arrows |
 | $D276–$D283 | — | 14 | code | WaitFrames: X=count; loop JSR WaitVBlank + JSR $D0B8; DEX; BNE loop; RTS. Generic frame delay. |
@@ -111,7 +111,12 @@
 | $DB75–$DBF0 | — | ~28 | code | PlayerMoveTick: entity slots 0-1 only; checks $0B timing; dir from $06,X; calls $E451 |
 | $DBF1–$DC3C | — | ~76 | code | EntityMainLoop: X=7..0; check $0100; dispatch via EntityAIDispatch ($DC3D) |
 | $DC3D–$DC4F | — | ~19 | code | EntityAIDispatch: Y=(A0>>3)&$FE; JMP via EntityStateTable ($E498) |
-| $DC7C–$DCF0 | — | ~117 | code | EntityMovementAI: align-check → AI direction; dir delta lookup ($E46C/$E470); collision check |
+| $DC7C–$DC96 | — | ~27 | code | EntityMovementAI fast path: if enemy AND posX&7=0 AND posY&7=0 AND PRNG&$0F=0 → JSR SpeedCtrlMove; RTS (no move/animBit). Otherwise fall to $DC97. |
+| $DC97–$DD0E | — | ~120 | code | EntityMovementAI collision check: dir=$A0,X&3; $58=DirDeltaX[dir]×8 $59=DirDeltaY[dir]×8 (probe offsets, NOT movement delta); $56=posX+dX $57=posY+dY (1px step); 2-probe nametable test via $DD6E/$DD76; if passable→update pos + fall to $DD29. **No entity-entity collision** — tanks can freely overlap (confirmed: no $90/$98 cross-slot comparisons in movement path). |
+| $DD11–$DD2F | — | ~30 | code | EntityMovementBlocked: player(X<2)→BCC $DD29(toggle animBit); enemy: PRNG&3=0→$DD30(25% flip180°,no animBit); else bump sound+set bit3+toggle animBit($DD29). |
+| $DD29–$DD2F | — | 6 | code | AnimBitToggle: LDA $B0,X; EOR #$04; STA $B0,X. Reached from passable path and 75% blocked-enemy path. NOT reached from 25% flip path. |
+| $DD30–$DD47 | — | 24 | code | BlockedFlipDir (25% of blocked enemies): check grid-align for sound gate only; always EOR $A0,X #$02 (flip dir 180°); RTS without animBit toggle. |
+| $DD48–$DD6D | — | ~34 | code | RandomDirChange: entity state handler for states $90-$9F. PRNG&1=0→SpeedCtrlMove(50%); else PRNG&1→dir+1(25%) or dir-1(25%). |
 | $DE55–$DE63 | — | 15 | code | SpawnAnimTick: INC $A0,X × 14 → set $E0 (1st spawn phase) |
 | $DE64–$DE71 | — | 14 | code | DeathAnimTick: INC $A0,X × 14 → FinalizeEntitySpawn (2nd phase / death) |
 | $E363–$E408 | — | ~166 | code | SpawnEnemy + FinalizeEntitySpawn: spawn positioning, blink flag, entity type selection, activation |
@@ -372,7 +377,7 @@ Dispatch index: `Y = (A0,X >> 3) & $FE`; load 16-bit pointer from $E498,Y; JMP.
 | 10 | Down | 0 | +8 |
 | 11 | Right | +8 | 0 |
 
-Delta tables: `$E46C[dir]` (dX: 0/−1/0/+1), `$E470[dir]` (dY: −1/0/+1/0); multiplied by 8 for pixel speed.
+Delta tables: `$E46C[dir]` (dX: 0/−1/0/+1), `$E470[dir]` (dY: −1/0/+1/0). Values are ±1; multiplied by 8 at `$DCA0`/`$DCB1` (ASL×3) to produce **probe offsets** `$58`/`$59` only. Actual movement is 1px per step (`$56=posX+dX` where dX=±1); the ×8 is NOT the movement amount.
 
 ### Spawn positions
 

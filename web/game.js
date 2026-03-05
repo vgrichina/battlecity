@@ -818,12 +818,8 @@ function canMove(e, d) {
   else              { p1x = nx + 7; p1y = ny - 8; p2x = nx + 7; p2y = ny + 7; }  // RIGHT
   if (!passable8(p1x, p1y) || !passable8(p2x, p2y)) return false;
 
-  // Entity–entity collision  ROM $DC7C EntityMovementAI: position-snap prevents overlap
-  for (let i = 0; i < 8; i++) {
-    const o = entities[i];
-    if (!o.alive || o === e || o.spawnAnim > 0) continue;
-    if (rectsOverlap(nx - 8, ny - 8, TANK_SZ, TANK_SZ, o.x - 8, o.y - 8, TANK_SZ, TANK_SZ)) return false;
-  }
+  // ROM $DC7C EntityMovementAI has NO entity-entity collision — only tile probes.
+  // Tanks can freely overlap in the original ROM (prevents stuck-on-spawn).
   return true;
 }
 
