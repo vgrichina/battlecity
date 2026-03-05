@@ -473,8 +473,8 @@ function makeEntity(slot) {
     powerUpTank: false,// flashing tank carrying power-up  ROM $E363 SpawnEnemy $7F==17/10/3
     blinkFrame: 0,    // armor-hit blink countdown
     spawnAnim: 0,     // spawn star animation frames  ROM $DE55 SpawnAnimTick
-    animBit: 0,       // track animation frame: 0 or 4; XOR'd each 8px movement step  ROM $DD18/$DDE1 EOR #$04
-    aiTimer: 0,       // AI direction-change countdown  ROM $DC7C EntityMovementAI rand&$0F==0 trigger
+    stunTimer: 0,     // friendly-fire stun (200 frames, can't move)  ROM $6F,X=$C8 from $E8AA
+    animBit: 0,       // track animation frame: 0 or 4; EOR #$04 each EntityMovementAI call  ROM $DD29
     fireTimer: 0,     // unused; ROM $E162 EnemyFireTick uses per-frame 1/32 check instead
     deathTimer: 0,    // death explosion countdown: 12→0, drawn even while alive=false  ROM $DE64 DeathAnimTick
     lastHitBy: 0,     // player slot that last hit this entity (for score routing in 2P)
@@ -587,6 +587,7 @@ function spawnPlayer(slot) {
   e.shieldTimer = 3;      // spawn shield: 3 ticks × 64 frames = 192 frames  ROM $89,X
   e.starLevel   = 0;      // ROM $0101,X reset on death
   e.blinkFrame  = 0;
+  e.stunTimer   = 0;      // ROM $6F,X cleared on spawn
 }
 
 // ─── Enemy type table  ────────────────────────────────────────────────────────
@@ -664,7 +665,7 @@ function spawnEnemy() {
     // Armor check at $E70C: AND #$03; BEQ kill; DEC. Start=3 → 4 total hits.
     e.armorHits  = e.type >= 3 ? 3 : 0;
     e.shieldTimer = 0;
-    e.aiTimer    = 40 + Math.floor(Math.random() * 80);
+    e.fireTimer  = 0;
     e.fireTimer  = 0; // not used; firing uses per-frame 1/32 check
     e.blinkFrame = 0;
 
@@ -790,7 +791,7 @@ function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
   return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
 }
 
-// Can entity e move 1 px in direction d?
+// Can entity e move in direction d? (1px step; ROM moves 8px but runs EntityMainLoop ~8× less often)
 // ROM $DD30 MoveGridSnap: probes 2 leading-edge points at 8px tile resolution
 const TANK_SZ = 16;  // ROM 16×16 tank; entity_X/Y are center coords
 
@@ -884,9 +885,11 @@ function moveEntities() {
     const e = entities[i];
     if (!e.alive || e.spawnAnim > 0) continue;
 
-    // ROM $DD30 MoveGridSnap: ice tile ($1B/$1C) causes momentum/sliding
-    const icol = Math.floor((e.x - FX) / META);
-    const irow = Math.floor((e.y - FY) / META);
+    // ROM $E181 EntityTileRead: ice flag set from tile at (posX-8, posY-8) = entity top-left corner.
+    // (Not center — the ROM reads the nametable tile under the top-left 8×8 quadrant.)
+    const itlx = e.x - 8, itly = e.y - 8;
+    const icol = Math.floor((itlx - FX) / META);
+    const irow = Math.floor((itly - FY) / META);
     const onIce = irow >= 0 && irow < GH && icol >= 0 && icol < GW && grid[irow][icol] === T.ICE;
 
     if (e.isPlayer) {
@@ -894,6 +897,8 @@ function moveEntities() {
       if (e.slot === 1 && numPlayers === 1) continue;
       // ROM $DB75 PlayerMoveTick: process on 3 of every 4 frames
       if ((frameCount & 3) === 2) continue;
+      // ROM $DB8B: friendly-fire stun ($6F,X != 0) — skip controller input, count down
+      if (e.stunTimer > 0) { e.stunTimer--; continue; }
 
       const d = e.slot === 0 ? p1Dir() : p2Dir();
       if (!onIce) {
@@ -910,12 +915,12 @@ function moveEntities() {
         }
       }
       // On ice: ignore input — keep sliding in current direction, no direction change
+      // ROM $DD29: animBit ($B0,X EOR #$04) toggles every EntityMovementAI call, even when blocked
       if (canMove(e, e.dir)) {
-        const px = e.x, py = e.y;
         e.x += DX[e.dir];
         e.y += DY[e.dir];
-        if (((e.x ^ px) | (e.y ^ py)) & 8) e.animBit ^= 4;  // ROM $DD18/$DDE1: EOR #$04 each 8px step
       }
+      e.animBit ^= 4;  // ROM $DD29: toggle every movement-attempt frame (moved or blocked)
     } else {
       // Enemy: frozen during Timer power-up  ROM $0100 EnemyFreezeTimer
       if (freezeTimer > 0) continue;
@@ -923,33 +928,36 @@ function moveEntities() {
       // ROM $DC7C EntityMovementAI: Fast type ($A0, EntityType&$F0==$A0) always processes; others alternate
       if (e.type !== 1 && ((i ^ frameCount) & 1)) continue;
 
-      // AI: logic from ROM $DD30 MoveGridSnap and $DE72 RandomDirChange
+      // AI: logic from ROM $DC7C EntityMovementAI
       if (!onIce) {
-        // 1. If grid-aligned (8px), small chance to re-evaluate goal (SpeedCtrlMove)
+        // 1. ROM $DC80–$DC96: if 8px-aligned, 1/16 chance call SpeedCtrlMove and skip movement this frame
         if ((e.x & 7) === 0 && (e.y & 7) === 0) {
           if ((Math.random() * 16 | 0) === 0) {
             speedCtrlMove(e);
+            continue;  // ROM RTS at $DC96: no movement or animBit toggle this frame
           }
         }
 
-        // 2. If blocked, force a direction change (RandomDirChange)
+        // 2. ROM $DD11: if blocked — 75% keep direction (bump), 25% flip 180° ($DD30: EOR #$02)
+        // Snap to 8px grid before probing (ROM entities start on 8px grid; JS 1px steps drift off)
         if (!canMove(e, e.dir)) {
-          randomDirChange(e);
-          // If still blocked after change, logic at $DD30 sets a pause timer (simulated via aiTimer)
-          if (!canMove(e, e.dir)) {
-            e.aiTimer = 8; // pause for 8 frames
+          if ((Math.random() * 4 | 0) === 0) {
+            // 25%: flip 180° (ROM $DD30: EOR #$02 on direction bits); no animBit toggle
+            e.x = (e.x + 4) & 0xF8;  // snap grid so new-dir probes land on tile boundaries
+            e.y = (e.y + 4) & 0xF8;
+            e.dir ^= 2;
+            continue;  // ROM $DD47 RTS: no animBit toggle on the flip path
           }
+          // 75%: keep direction, toggle animBit (ROM $DD27→$DD29)
+          e.animBit ^= 4;
+          continue;
         }
       }
 
-      if (e.aiTimer > 0) {
-        e.aiTimer--;
-      } else if (canMove(e, e.dir)) {
-        const px = e.x, py = e.y;
-        e.x += DX[e.dir];   // enemies 1 px/step vs player 2 px/step
-        e.y += DY[e.dir];
-        if (((e.x ^ px) | (e.y ^ py)) & 8) e.animBit ^= 4;  // ROM $DD18/$DDE1: EOR #$04 each 8px step
-      }
+      // Passable: move 1px, toggle animBit (ROM $DD04–$DD0E→$DD29)
+      e.x += DX[e.dir];
+      e.y += DY[e.dir];
+      e.animBit ^= 4;
     }
   }
 }
@@ -1018,21 +1026,21 @@ function tryFire(e) {
 }
 
 // ─── Bullet movement + tile collision  ────────────────────────────────────────
-// ROM $E604 BulletTerrainCollision  $E693 BulletHitCheck
-const BULLET_SPD = 4;   // ROM $E02E BulletStateMachine: active state $40 → move 4px/frame
+// ROM $E02E BulletStateMachine: moves all bullets every frame — 2px normal, 4px power.
+// ROM $E604 BulletTerrainCollision: separate step; skips collision check for normal
+//   bullets when (slot^frame)&1==0 (alternating frame, $E612–$E61B).
+// These are two separate GameTickMain steps (5 and 11).
 
 function moveBullets() {
   for (let i = 0; i < bullets.length; i++) {
     const b = bullets[i];
     if (!b.active) continue;
 
-    // Alternating-frame skip  ROM $E604 BulletTerrainCollision: slot^frame parity skip
-    // Power bullets (D6!=0) bypass the skip and move every frame at 4px/frame
-    // Normal bullets move every other frame = 2px/frame effective  ROM $E612-$E61B
-    if (!b.powered && (b.slot ^ frameCount) & 1) continue;
-
-    b.x += DX[b.dir] * BULLET_SPD;
-    b.y += DY[b.dir] * BULLET_SPD;
+    // ROM $E051 BulletMoveStep: move every frame — 2px normal (one BulletApplyDelta),
+    // 4px power (two BulletApplyDelta calls, $D6 bit0 set).
+    const spd = b.powered ? 4 : 2;
+    b.x += DX[b.dir] * spd;
+    b.y += DY[b.dir] * spd;
 
     // Out of field bounds  ROM $E604 BulletTerrainCollision: boundary check
     if (b.x < FX - 4 || b.x > FX + GW * META + 4 ||
@@ -1040,6 +1048,10 @@ function moveBullets() {
       b.active = false;
       continue;
     }
+
+    // ROM $E612–$E61B: skip collision check this frame for normal bullets when (slot^frame)&1==0
+    // Power bullets always check collision.
+    if (!b.powered && !((b.slot ^ frameCount) & 1)) continue;
 
     // Eagle hit  ROM $E693 BulletHitCheck: eagle tile $C8 → set $68=$27=39 (eagle-destruction timer)
     if (eagleAlive &&
@@ -1174,10 +1186,21 @@ function bulletEntityCollision() {
     for (let ei = 0; ei < 8; ei++) {
       const e = entities[ei];
       if (!e.alive || e.spawnAnim > 0) continue;
-      if ((ei < 2) === isPlayerBullet) continue;  // same team
+
+      const targetIsPlayer = ei < 2;
+
+      // Section routing matches ROM's three separate loops:
+      if (!isPlayerBullet && !targetIsPlayer) continue;  // S1: enemy bullet only hits players
+      if (isPlayerBullet && targetIsPlayer) {
+        // S3: player bullet → other player  ROM $E843
+        // EOR parity: (entity_slot XOR bullet_slot) must be ODD → prevents self-hit  ROM $E865
+        if (!((ei ^ bi) & 1)) continue;
+      }
+      // S2: player bullet → enemy falls through (no extra filter)
+
       if (ei === b.owner) continue;
 
-      // 10×10 px hit check  ROM $E70C  (e.x/e.y are center coords)
+      // 10×10 px hit check  ROM $E70C $E87A  (e.x/e.y are center coords)
       if (Math.abs(b.x - e.x) >= 10) continue;
       if (Math.abs(b.y - e.y) >= 10) continue;
 
@@ -1188,6 +1211,11 @@ function bulletEntityCollision() {
         // Enemy bullet → player  ROM $E70C
         if (e.shieldTimer > 0) continue;  // shield deflects
         killEntity(e);
+      } else if (targetIsPlayer) {
+        // Player bullet → other player  ROM $E843: 200-frame stun (not kill), shield deflects
+        // ROM $E8A0: skip if already stunned ($6F,X!=0); $E8A4: skip in construction mode
+        if (e.stunTimer > 0 || e.shieldTimer > 0) continue;
+        e.stunTimer = 200;  // ROM $E8AA: STA $6F,X=#$C8 (200 frames — can't move)
       } else {
         // Player bullet → enemy  ROM $E70C: armor check, blink on partial hit
         e.lastHitBy = b.owner;  // track which player gets the kill score
