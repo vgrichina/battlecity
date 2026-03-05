@@ -528,7 +528,7 @@ function initLevel(idx) {
   puFlashPos        = null;
   grenadeFlash      = 0;
   spawnRot          = 0;     // ROM $6A SpawnRotIdx
-  spawnDelay        = Math.max(50, 186 - stageIdx * 4); // ROM $84=$BE-$85*4: stageNum(1-based)*4; stageIdx=stageNum-1 → 186-stageIdx*4
+  spawnDelay        = Math.max(50, 186 - stageIdx * 4 - (numPlayers === 2 ? 20 : 0)); // ROM $C3A2: $84=$BE-(stage*4); $C3B0: 2P SBC #$14
   enemiesLeft       = 20;    // ROM $7F EnemiesRemaining: 20 per stage
   activeEnemyCount  = 0;
   playerRespawnTimer = [0, 0];
@@ -1413,7 +1413,7 @@ function tickEnemySpawn() {
   if (enemiesLeft <= 0 || activeEnemyCount >= 4) return;
   if (spawnDelay > 0) { spawnDelay--; return; }
   spawnEnemy();
-  spawnDelay = Math.max(50, 186 - stageIdx * 4); // ROM $84=$BE-$85*4 (stageNum 1-based)
+  spawnDelay = Math.max(50, 186 - stageIdx * 4 - (numPlayers === 2 ? 20 : 0)); // ROM $C3A2+$C3B0
 }
 
 // ─── Shield + freeze tick  ────────────────────────────────────────────────────
@@ -1639,11 +1639,11 @@ function update() {
         ts.frameTimer--;
         if (ts.frameTimer <= 0) {
           ts.countsLeft[ts.row] = Math.max(0, ts.countsLeft[ts.row] - 1);
-          ts.frameTimer = 7;  // ROM $CBF5: LDX #$07 = 7 frames per kill tick
+          ts.frameTimer = 8;  // ROM $CDD8: LDX #$08 = 8 frames per kill tick
         }
         if (ts.countsLeft[ts.row] === 0) {
           ts.row++;
-          ts.frameTimer = 18;  // ROM $CC09: LDX #$12 = 18 frames inter-row pause
+          ts.frameTimer = 20;  // ROM $CDEC: LDX #$14 = 20 frames inter-row pause
         }
       }
     } else {
@@ -1671,14 +1671,14 @@ function update() {
       while (ts.row < 4 && killCounts[ts.row] === 0) ts.row++;
       if (ts.row >= 4) {
         ts.done = true;
-        phaseTimer = 100;  // ROM $CEE5: LDX #$78 = 120fr; close enough
+        phaseTimer = 120;  // ROM $CEE5: LDX #$78 = 120 frames
       } else {
         ts.frameTimer--;
         if (ts.frameTimer <= 0) {
           ts.countsLeft[ts.row] = Math.max(0, ts.countsLeft[ts.row] - 1);
-          ts.frameTimer = 7;
+          ts.frameTimer = 8;   // ROM $CDD8: LDX #$08
         }
-        if (ts.countsLeft[ts.row] === 0) { ts.row++; ts.frameTimer = 18; }
+        if (ts.countsLeft[ts.row] === 0) { ts.row++; ts.frameTimer = 20; } // ROM $CDEC: LDX #$14
       }
     } else {
       phaseTimer--;
