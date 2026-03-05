@@ -1340,8 +1340,8 @@ function killEntity(e) {
 
 // ─── Power-ups  ───────────────────────────────────────────────────────────────
 // ROM $E972 PowerupCollectTick: proximity check; dispatch on $88 type
-// PowerUpTypeRNG weight table: 8 entries, types 0–4 only; type 5 (1-Up) never random
-const POWERUP_RNG = [0, 1, 2, 3, 4, 0, 4, 3];
+// ROM $E8FA PowerupTypeTable[8]: PRNG&7 indexes into this; type 5 (1-Up) at index 5
+const POWERUP_RNG = [0, 1, 2, 3, 4, 5, 4, 3];
 // PowerUpSpawnPickPos: RNG & 0x03 → coord = ((A+1)*6)*8
 // → 4 possible values: {48, 96, 144, 192} for both X and Y, independent of entity position
 // Collision retry if new position overlaps existing power-up.
