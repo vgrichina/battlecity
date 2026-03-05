@@ -41,12 +41,20 @@
 | $C2E6–$C31C | — | ~55 | code | GameTickMain: 14+ subsystem JSR calls per frame (enemy AI, movement, collision, spawn, sound) |
 | $C331–$C3B4 | — | ~132 | code | StageStartInit: clear entity tables; spawn P1/P2; set enemies=20; calc SpawnDelayBase=$BE-(stage×4); 2P:-20 |
 | $C3B5–$C41C | — | ~104 | code | StagePlay: new-game var init; blank map load ($F000/FF); draw STAGE sprites; entity init; StageStartInit; HUD |
-| $C41D–$C44F | — | 51 | code | GameOverLoop: post-game animation; WaitVBlank+game ticks until button pressed |
+| $C41D–$C44A | — | 46 | code | GameOverLoop: post-game animation loop; WaitVBlank+GameTickMain ticks until Start/Select pressed |
+| $C44B–$C623 | — | ~472 | code | HiScoreEntryScreen: new hi-score entry; draws label+value; palette flash loop ($4D=($0B&3)+5); waits input; called from $828C when UpdateHiScore Y≠0 |
+| $C5D9–$C623 | — | ~75 | code | GameOverBrickScreen: STA $4D=3; LDA #$1C STA $05 (PPU addr offset: $12+$05=$20→$2000, NOT a tile index); WriteNametable→CPU $0400-$07FF=$00; InitEntities copies to PPU $2000→blank black BG; draw GAME/OVER big-text sprites; hold until Start/Select |
+| $C624–$C641 | — | 30 | code | GameOverWaitLoop: WaitVBlank; check Start/Select; check $0318≠0; exit: ClearSpriteBuf+WriteNametable+InitEntities+WaitNMI+APUSoundInit+RTS |
 | $C728–$C754 | — | ~45 | code | CheckGameOver: returns A=1 if $68=0 (eagle destroyed), $80=0 (stage clear), or $51+$52=0 (all lives lost) |
 | $C7AB–$C7C7 | — | 29 | code | TitleWaitLoop |
 | $8728–$8754 | — | ~45 | code | ShovelAnimInitCheck: if $68=0 (eagle dead) → set $0105=$70/$0106=$F0/$0107=0/$0108=$11 (init ShovelAnimTick spiral); elif $80=0 (stage clear) → fall through; elif $51+$52=0 → RTS A=0; else → RTS A=1 |
-| $8CD4–$8E?? | — | ~400 | code | ResultScreen: stage-clear tally screen entry; sums $73–$76 (P1 kills/type) → $7D; $77–$7A (P2 kills/type) → $7E; calls $CEF7 (static strings) + $D0B8 (eagle-star sprites); per-type loop $5A=0–3: decrements kill counts, adds score via AddScoreDigits, draws with FindFirstNonZeroScore+DrawNametableTextOffset; total kills at row 23 col 8+skip |
-| $CEF7–$D0B7 | — | ~450 | code | ResultScreenInit: draws all static strings for result screen; HI-SCORE(col8/row3), STAGE(col12/row5), I-PLAYER(col3/row7), $5B-arrows(col14/rows 12/15/18/21), PTS(col8/rows 12/15/18/21), separator-$5C×7(col12/row22), TOTAL(col6/row23); 2P adds II-PLAYER+$5D-arrows |
+| $8225–$8258 | — | ~52 | code | PostGameAnimLoop: clears $0A/$0B; loop: WaitVBlank+GameTickMain+$E23B+$DEA6+$E0D8+PaletteFlashTick until $0A=2 (~128fr); then APUSoundInit; JSR ResultScreen($CCD4) |
+| $8259–$8292 | — | ~58 | code | StageAdvance2P + GameOverBranchCheck: INC $85 (cycle stages 1–70); if $51+$52=0 or eagle dead → JSR GameOverBrickScreen($C5D9); JSR UpdateHiScore; if Y≠0 JSR HiScoreEntryScreen($C44B); JMP $C095 (return to title) |
+| $8CD4–$8E?? | — | ~400 | code | ResultScreen: stage-clear/game-over tally screen entry; sums $73–$76 (P1 kills/type) → $7D; $77–$7A (P2 kills/type) → $7E; calls $CEF7 (static strings) + $D0B8 (eagle-star sprites); per-type loop $5A=0–3: decrements kill counts, adds score via AddScoreDigits, draws with FindFirstNonZeroScore+DrawNametableTextOffset; total kills at row 23 col 8+skip |
+| $CEE5–$CEF6 | — | 18 | code | ResultScreenExit: LDX #$78 JSR WaitFrames (120fr hold); clear $50/$60/$6B/$4D=0; RTS |
+| $CEF7–$D0B7 | — | ~450 | code | ResultScreenInit: draws all static strings for result screen; sets $6B=1/$05=$24/$60=$30/$4D=3; HI-SCORE(col8/row3), STAGE(col12/row5), I-PLAYER(col3/row7), $5B-arrows(col14/rows 12/15/18/21), PTS(col8/rows 12/15/18/21), separator(col12/row22), TOTAL(col6/row23); 2P adds II-PLAYER+$5D-arrows |
+| $D276–$D283 | — | 14 | code | WaitFrames: X=count; loop JSR WaitVBlank + JSR $D0B8; DEX; BNE loop; RTS. Generic frame delay. |
+| $D138–$D169 | — | 50 | code | BonusLifeCheck: 2P only; if $66=0 and $17≥2 → INC $51/$66; elif $67=0 and $1F≥2 → INC $52/$67; if awarded STA $0304/$0305=1 (bonus-life indicator). |
 | $9E48–$9E54 | — | ~13 | code | ShovelPowerupActivate: STA $0108=$0D; STA $0106=$D8; STA $0B=0; RTS — activates ShovelAnimTick countdown |
 | $C9B0–$C9BF | — | 16 | code | ConstructionSetup |
 | $C9C0–$CA8F | — | ~208 | code | PlayerSelectLoop + helpers |
@@ -238,12 +246,27 @@ Reset ($C070)
   $4B=0
 
 MainLoop ($C09C):
-  JSR SetupNametableStage ($D16A) — init nametable $1C for stage
+  JSR SetupNametableStage ($D16A) — $05=$1C (PPU addr offset), WriteNametable zeros $0400-$07FF, InitEntities copies to PPU $2000 → black BG + palette 3
   JSR TitleWaitLoop       ($C7AB) — spin until SELECT pressed (~240 frame demo timeout)
   JSR PlayerSelectLoop    ($C9C0) — SELECT cycles 1P/2P/CONSTRUCTION, START confirms
   JSR StagePlay           ($C3B5) — actual gameplay
-  JSR GameOverLoop        ($C41D) — wait for button, then loop back
+  JSR GameOverLoop        ($C41D) — post-game animation (GameTickMain) until button pressed
   JMP MainLoop
+
+Full game-over sequence (2P path at $8225–$8292):
+  $8225: PostGameAnimLoop  — run GameTickMain ~128 frames (palette flash animation)
+  $8256: JSR ResultScreen  — kill-count tally screen (same layout as stage-clear)
+  $8259: StageAdvance2P    — INC $85; wrap stages 1–70; check loop/game-over
+  $8283: JSR GameOverBrickScreen ($C5D9)
+           — fill nametable $1C, palette 3; draw GAME/OVER large sprites
+           — hold until Start/Select pressed ($0318/$0319/$031A flags)
+  $8286: JSR UpdateHiScore
+  $828C: JSR HiScoreEntryScreen ($C44B) — only if new record (Y≠0)
+  $8292: JMP $C095         — DrawTitleScreen + STA $4B=0 → back to MainLoop
+
+Tile $1C (PT1): CHR offset $1C0; the letter "S" glyph. NOT a brick tile.
+$05=$1C is used as a PPU address offset ($12=4 + $05=$1C = $20 → PPU $2000), not as a tile fill value.
+Background for game-over and player-select screens is tile $00 (blank = black).
 ```
 
 ---
@@ -748,3 +771,6 @@ The following tasks update web/game.js to match the Famicom ROM findings in cata
 - [x] **Fix score display: minimum 2 digits.** ROM $D934 FindFirstNonZeroScore skips leading zeros but always shows ≥2 digits. Added `fmtScore(n, width=6)` helper: `n.toString().padStart(2,'0').padStart(width,' ')`. Replaced all `score.toString().padStart(6,' ')` calls with `fmtScore(score)`.
 - [x] **Fix copyright period: "NAMCO LTD."** ROM string at $D2F8 ends with tile $69 (period glyph). Added `'.'→0x69` to `NES_TILE_OVERRIDE` map and appended `.` to copyright string `'@ 1980 1985 NAMCO LTD.'`.
 - [x] **Fix dash rendering in drawNesText.** ROM font uses tile $6B for `-` (ASCII $2D → tile $2D was wrong). Added `NES_TILE_OVERRIDE = {'-': 0x6B, '.': 0x69}` map; drawNesText now checks override before using raw ASCII code. Extended tile range check to allow tiles ≥$60 (needed for override targets). Fixes "HI-" dash and any other dashed text.
+- [x] **Map full game-over sequence.** Done. Sequence: (1) post-game animation loop ($8225, ~128 frames GameTickMain+palette flash); (2) ResultScreen ($8256/$CCD4, kill-count tally); (3) GameOverBrickScreen ($C5D9/$8283): $05=$1C is PPU addr offset (NOT tile fill), WriteNametable zeros $0400-$07FF → black BG + palette 3, GAME/OVER big-text sprites; (4) UpdateHiScore; (5) JMP $C095 → title.
+- [x] **Fix drawGameOver() background** — was incorrectly drawing tile $1C (the "S" glyph) as background fill. Corrected: background is black (tile $00 = blank). $05=$1C is the PPU address offset used by InitEntities to target nametable $2000, not a tile index.
+- [ ] **Locate eagle-wall init routine** — separate routine writes Π-shaped steel/brick border around eagle to nametable at start of each stage. Not found yet. Search: look for writes to nametable at row 11–12 / col 5–7 pixel region ($58–$68, $D8–$E8). Try: search for LDA #$10 (steel tile) or LDA #$0F near WriteNametableByte calls; or xref $D0B8 ($D0B8 draws eagle-star HUD sprites — may be adjacent to eagle-wall write).

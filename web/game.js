@@ -397,7 +397,7 @@ let editCursor = { x: 6, y: 12, tileType: 4 }; // GH=13, GW=13. 4=Brick
 let editKeyHeld = false;
 let customMap = null; // GW*GH array of arrays
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
-let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover' | 'victory' | 'select' | 'curtain' | 'edit'
+let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover_tally' | 'gameover' | 'victory' | 'select' | 'curtain' | 'edit'
 let titleFrame;     // frame counter for title screen blink animation
 let titleTimer = 0; // ROM $0A counts to 8 before Demo Mode
 let titleCursor = 0; // menu cursor: 0=1P, 1=2P, 2=CONSTRUCTION
@@ -1625,9 +1625,35 @@ function update() {
     }
     return;
   }
+  // ROM $8256 JSR $CCD4: result/stats tally before brick GAME OVER screen
+  if (gamePhase === 'gameover_tally') {
+    if (phaseTimer > 0) { phaseTimer--; return; }
+    const ts = tallyState;
+    if (!ts.done) {
+      while (ts.row < 4 && killCounts[ts.row] === 0) ts.row++;
+      if (ts.row >= 4) {
+        ts.done = true;
+        phaseTimer = 100;  // ROM $CEE5: LDX #$78 = 120fr; close enough
+      } else {
+        ts.frameTimer--;
+        if (ts.frameTimer <= 0) {
+          ts.countsLeft[ts.row] = Math.max(0, ts.countsLeft[ts.row] - 1);
+          ts.frameTimer = 7;
+        }
+        if (ts.countsLeft[ts.row] === 0) { ts.row++; ts.frameTimer = 18; }
+      }
+    } else {
+      phaseTimer--;
+      if (phaseTimer <= 0) {
+        // ROM $8283 JSR $C5D9: brick background + GAME/OVER sprites
+        gamePhase = 'gameover';
+        activeBGSet = -1; setBGPaletteSet(3);
+      }
+    }
+    return;
+  }
   if (gamePhase === 'gameover') {
-    phaseTimer--;
-    if (phaseTimer <= 0 && (keys['Space'] || keys['Enter'])) enterTitle();
+    if (keys['Space'] || keys['Enter']) enterTitle();
     return;
   }
   // ROM $C44D DrawVictoryScreen: 4-phase victory sequence
@@ -1685,10 +1711,17 @@ function update() {
         // Transition to gameover only if all players dead or eagle destroyed
         const allDead = p1Lives < 0 && (numPlayers === 1 || p2Lives < 0);
         if (allDead || !eagleAlive) {
-          gamePhase  = 'gameover';
-          phaseTimer = 240;
-          activeBGSet = -1; setBGPaletteSet(3); // ROM set 3 for game-over screen
+          // ROM $8256 JSR $CCD4: result/stats screen before brick game-over screen
+          gamePhase  = 'gameover_tally';
+          phaseTimer = 25;
+          activeBGSet = -1; setBGPaletteSet(3);  // ROM $CEF7 ResultScreenInit: $4D=3
           sfxGameOver();
+          tallyState = {
+            countsLeft: [...killCounts],
+            row:        0,
+            frameTimer: 7,
+            done:       false,
+          };
           newHiScorePlayer = 0;
           if (p1Score > hiScore) { hiScore = p1Score; newHiScorePlayer = 1; }
           if (numPlayers === 2 && p2Score > hiScore) { hiScore = p2Score; newHiScorePlayer = 2; }
@@ -2272,11 +2305,14 @@ function drawStageBanner() {
   drawNesText(stageStr, bx + 8, by + 4, 3);
 }
 
-// ROM $C53E DrawGameOverScreen — big 32×32 CHR tiles via DrawBigSpriteTile ($D87E)
-// ROM $C4E9 NewHiScoreDisplay: "HISCORE" label ($D16B) + hi-score value ($D9C4) + palette flash
+// ROM $C5D9 GameOverBrickScreen — nametable filled with tile $00 (blank); palette set 3; GAME/OVER as big-text sprites
+// ROM $C44B HiScoreEntryScreen: "HISCORE" label + value + palette flash
 function drawGameOver() {
+  // ROM $C5D9: WriteNametable zeros CPU $0400-$07FF → PPU nametable all tile $00 = solid black.
+  // $05=$1C is a PPU address offset ($12+$05=0x20→$2000), NOT a tile fill index.
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   // "GAME" and "OVER": 4 chars × 32px = 128px wide, centered at x=64
-  fillRect(32, 76, 192, 100, '#000');
   drawBigNesText('GAME', 64, 84, 3);
   drawBigNesText('OVER', 64, 116, 3);
   // ROM $D97D UpdateHiScore → post-game hi-score display
@@ -2395,8 +2431,9 @@ const HINTS = {
   curtain: [],
   start:   [hb('↑↓←→', 'Move'), hb('Space', 'Fire'), hb('M', 'Mute')],
   play:    [hb('↑↓←→', 'Move'), hb('Space', 'Fire'), hb('M', 'Mute')],
-  clear:   [],
-  gameover:[hb('Enter', 'Retry')],
+  clear:          [],
+  gameover_tally: [],
+  gameover:       [hb('Enter', 'Retry')],
   victory: [],
   edit:    [hb('↑↓←→', 'Move'), hb('Space', 'Place'), hb('T', 'Cycle tile'), hb('Enter', 'Save')],
 };
@@ -2416,8 +2453,11 @@ function render() {
   if (gamePhase === 'curtain') { drawCurtain();       return; }
   if (gamePhase === 'select')  { drawStageSelect();   return; }
   if (gamePhase === 'victory') { drawVictoryScreen(); return; }
-  // ROM $CAF1 StageClearTallyScreen: full-screen tally (not an overlay)
-  if (gamePhase === 'clear')   { drawStageClear();    return; }
+  // ROM $CAF1 StageClearTallyScreen / $8CD4 ResultScreen: full-screen (not overlays)
+  if (gamePhase === 'clear')          { drawStageClear(); return; }
+  if (gamePhase === 'gameover_tally') { drawStageClear(); return; }
+  // ROM $C5D9 GameOverBrickScreen: full-screen brick background (not an overlay)
+  if (gamePhase === 'gameover')       { drawGameOver();   return; }
 
   ctx.fillStyle = C.BG;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -2470,8 +2510,7 @@ function render() {
 
   drawHUD();
 
-  if (gamePhase === 'start')    drawStageBanner();
-  if (gamePhase === 'gameover') drawGameOver();
+  if (gamePhase === 'start') drawStageBanner();
 
   // ROM $EBBC grenade palette flash: NES flips all palette colours for ~8 frames.
   // Approximated as a fading white overlay over the entire canvas.

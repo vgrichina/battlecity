@@ -267,7 +267,7 @@ TILE_PAL = {
     10:1, 11:2, 12:3,             # water:BG1  trees:BG2  ice:BG3
 }
 
-LEVEL_OFF  = 0x4010 + (0xF27D - 0xC000)   # = 0x728D, stage data in PRG bank 1
+LEVEL_OFF  = 0x0010 + (0xF27D & 0x3FFF)   # Famicom: 1×16KB PRG mirrored; $F27D → file 0x328D
 STAGE_SIZE = 91
 NUM_STAGES = 35
 MAP_COLS   = 13
@@ -339,7 +339,9 @@ def main():
     ap.add_argument('--ram',   help='2048-byte CPU RAM dump ($0000–$07FF)')
     ap.add_argument('--stage', type=int, default=1,
                     help='Stage number for synthetic frame (default: 1)')
-    ap.add_argument('--out',   default=None, help='Output PNG path')
+    ap.add_argument('--out',      default=None, help='Output PNG path')
+    ap.add_argument('--gameover', action='store_true',
+                    help='Render GameOverBrickScreen (blank BG + GAME/OVER big-text, palette set 3)')
     args = ap.parse_args()
 
     with open(ROM_PATH, 'rb') as f:
@@ -348,6 +350,52 @@ def main():
     # Famicom: PT0=sprites @ 0x4010, PT1=BG @ 0x5010 (mapper 0, 8KB CHR)
     chr_pt0 = [decode_tile(rom, 0x4010 + i * 16) for i in range(256)]  # sprites
     chr_pt1 = [decode_tile(rom, 0x5010 + i * 16) for i in range(256)]  # BG
+
+    if args.gameover:
+        # ROM $C5D9 GameOverBrickScreen:
+        #   WriteNametable → CPU $0400-$07FF = 0x00 → PPU nametable all tile $00 (blank)
+        #   Palette set 3: BG0=[0F,16,16,30] (black, orange-red, orange-red, white)
+        #   GAME/OVER drawn as big-text using font tiles $41-$5A magnified 4× via brick sub-tiles $00-$0F
+        go_pal3 = [[NES_MASTER[c & 0x3F] for c in row] for row in [
+            [0x0F, 0x16, 0x16, 0x30],  # BG0 (palette set 3)
+            [0x0F, 0x3C, 0x10, 0x16],  # BG1
+            [0x0F, 0x29, 0x09, 0x27],  # BG2
+            [0x0F, 0x00, 0x10, 0x20],  # BG3
+        ]]
+        nt_data   = bytes(NT_TILES)           # all tile $00 = blank
+        attr_data = bytes(ATTR_BYTES)         # all palette 0 (BG0)
+        oam_data  = bytes([0xF0, 0x00, 0x00, 0x00] * 64)
+
+        canvas = Canvas(bg=go_pal3[0][0])
+        render_bg(canvas, nt_data, attr_data, chr_pt1)  # blank black BG
+
+        # drawBigCHRTile equivalent: each 8×8 font tile → 4×4 grid of brick sub-tiles (8×8 each) = 32×32
+        def draw_big(char, dest_x, dest_y):
+            tile_idx = ord(char.upper())
+            font_pix = chr_pt1[tile_idx]   # 8×8 font tile from PT1
+            for ty in range(4):
+                for tx in range(4):
+                    bits = 0
+                    if font_pix[(ty*2+0)*8 + (tx*2+0)] > 0: bits |= 1
+                    if font_pix[(ty*2+0)*8 + (tx*2+1)] > 0: bits |= 2
+                    if font_pix[(ty*2+1)*8 + (tx*2+0)] > 0: bits |= 4
+                    if font_pix[(ty*2+1)*8 + (tx*2+1)] > 0: bits |= 8
+                    if bits == 0:
+                        continue
+                    sub = chr_pt1[bits]    # brick sub-tile $00-$0F
+                    canvas.draw_tile(sub, go_pal3[0], dest_x + tx*8, dest_y + ty*8, transparent=True)
+
+        for i, ch in enumerate('GAME'):
+            draw_big(ch, 64 + i * 32, 84)
+        for i, ch in enumerate('OVER'):
+            draw_big(ch, 64 + i * 32, 116)
+
+        out_path = args.out or os.path.join(OUT_DIR, 'frame_gameover.png')
+        title    = 'GameOverBrickScreen (palette set 3, blank BG + GAME/OVER big-text)'
+        os.makedirs(OUT_DIR, exist_ok=True)
+        canvas.save(out_path)
+        print(f'render_frame.py: {title} → {out_path}  ({SCR_W}×{SCR_H})')
+        return
 
     if args.ram:
         with open(args.ram, 'rb') as f:

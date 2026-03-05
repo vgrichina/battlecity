@@ -37,7 +37,8 @@ def main():
         t_start = int(args[0], 0)
         t_end   = int(args[1], 0)
     elif len(args) == 1:
-        t_start = t_end = int(args[0], 0)
+        t_start = int(args[0], 0)
+        t_end   = t_start + 1
     else:
         # Default: examine the tiles mentioned in REVERSE.md task
         t_start = 0x5E
