@@ -30,6 +30,21 @@
       overflow: hidden;
       line-height: 0;
       border: 2px solid #333;
+      background: #000;
+    }
+    #screen:fullscreen, #screen:-webkit-full-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+    #screen:fullscreen canvas, #screen:-webkit-full-screen canvas {
+      width: auto;
+      height: 100vh;
+      aspect-ratio: 256 / 224;
+      margin: 0;
+      max-width: 100vw;
+      object-fit: contain;
     }
     canvas {
       display: block;
@@ -95,7 +110,7 @@
     }
 
     /* ── Mobile layout ────────────────────────────────────────────────────── */
-    @media (max-width: 800px) {
+    @media (max-width: 800px), (hover: none) and (pointer: coarse) {
       body {
         justify-content: flex-start;
         height: 100svh;
@@ -114,6 +129,41 @@
         margin-bottom: calc(-100vw * 8 / 256);
       }
       #vpad { display: flex; }
+    }
+
+    /* ── Landscape mobile ──────────────────────────────────────────────── */
+    @media (max-height: 500px) and (orientation: landscape) {
+      body {
+        flex-direction: row;
+        padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
+        justify-content: center;
+        align-items: center;
+        gap: 0;
+      }
+      h1, #sitenav, #controls-hint, .about, #toolbar { display: none; }
+      #screen { width: auto; border: none; flex-shrink: 0; }
+      canvas {
+        width: auto;
+        height: 100vh;
+        height: 100svh;
+        aspect-ratio: 256 / 224;
+        margin-top: calc(-100vh * 8 / 240);
+        margin-bottom: calc(-100vh * 8 / 240);
+      }
+      #vpad {
+        display: flex;
+        flex-direction: row;
+        min-height: unset;
+        max-height: unset;
+        height: 100vh;
+        height: 100svh;
+        padding: 12px;
+        flex: 1;
+        align-items: center;
+      }
+      #dpad { width: 110px; height: 110px; }
+      #vpad-mid { padding-top: 0; }
+      #btn-fire { width: 64px; height: 64px; }
     }
 
     #dpad {
@@ -198,6 +248,46 @@
       flex-shrink: 0;
     }
     #btn-fire.pressed { background: #2a2600; border-color: #f8e800; }
+
+    #vpad-right {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #btn-b {
+      width: 54px;
+      height: 54px;
+      font-size: 13px;
+      color: #888;
+      display: none; /* shown only in edit mode */
+    }
+    #btn-b.pressed { background: #282828; border-color: #555; }
+
+    /* ── Toolbar (fullscreen + sound) ────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+      align-items: center;
+    }
+    .tool-btn {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #888;
+      font-size: 16px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-family: monospace;
+      line-height: 1;
+    }
+    .tool-btn:hover { border-color: #666; color: #ccc; }
+    .tool-btn:active { background: #222; }
+    @media (max-width: 800px) {
+      #toolbar { margin-top: 2px; }
+    }
   </style>
 </head>
 <body>
@@ -208,6 +298,10 @@
     <a href="catalog.html">catalog</a>
   </nav>
   <div id="screen"><canvas id="game"></canvas></div>
+  <div id="toolbar">
+    <button class="tool-btn" id="btn-fullscreen" title="Fullscreen (F)">⛶</button>
+    <button class="tool-btn" id="btn-sound" title="Sound on/off (M)">🔊</button>
+  </div>
   <div id="controls-hint"></div>
   <div id="vpad">
     <div id="dpad">
@@ -219,7 +313,10 @@
     <div id="vpad-mid">
       <button class="vbtn" id="btn-start">START</button>
     </div>
-    <button class="vbtn" id="btn-fire">FIRE</button>
+    <div id="vpad-right">
+      <button class="vbtn" id="btn-fire">FIRE</button>
+      <button class="vbtn" id="btn-b">B</button>
+    </div>
   </div>
   <p class="about">
     Faithful web reimplementation of the 1985 Namco Famicom game,<br>

@@ -687,12 +687,7 @@ window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'KeyM') toggleSound();  // M = mute/unmute
   // KeyC: no-op (VS arcade coin insert removed — Famicom has no coin slot)
-  if (e.code === 'KeyE' && gamePhase === 'title') { 
-    gamePhase = 'edit'; 
-    initLevel(0); 
-    grid.forEach(r => r.fill(13)); 
-    brickBits.forEach(r => r.fill(0));
-  } // E = edit
+  if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && gamePhase !== 'play') toggleFullscreen();
   e.preventDefault();
 });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
@@ -763,7 +758,46 @@ window.addEventListener('keyup',   e => { keys[e.code] = false; });
 
   bindBtn(btnFire,  'Space');
   bindBtn(btnStart, 'Enter');
+
+  // B button (for edit mode tile cycling backward)
+  const btnB = document.getElementById('btn-b');
+  if (btnB) bindBtn(btnB, 'KeyX');
 })();
+
+// ─── Fullscreen ───────────────────────────────────────────────────────────────
+function toggleFullscreen() {
+  const el = document.getElementById('screen');
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  }
+}
+
+// ─── UI buttons (fullscreen + sound) ──────────────────────────────────────────
+(function setupUIButtons() {
+  const btnFS = document.getElementById('btn-fullscreen');
+  const btnSnd = document.getElementById('btn-sound');
+  if (btnFS) btnFS.addEventListener('click', toggleFullscreen);
+  if (btnSnd) btnSnd.addEventListener('click', () => {
+    const on = toggleSound();
+    btnSnd.textContent = on ? '🔊' : '🔇';
+  });
+})();
+
+// ─── Dynamic mobile button labels ─────────────────────────────────────────────
+function updateMobileLabels() {
+  const btnFire = document.getElementById('btn-fire');
+  const btnB    = document.getElementById('btn-b');
+  if (!btnFire) return;
+  if (gamePhase === 'edit') {
+    btnFire.textContent = 'A';
+    if (btnB) btnB.style.display = '';
+  } else {
+    btnFire.textContent = 'FIRE';
+    if (btnB) btnB.style.display = 'none';
+  }
+}
 
 // Returns direction (0-3) or -1 if no d-pad held
 // P1: Arrows (+ WASD in 1P mode); P2: WASD
@@ -1498,6 +1532,7 @@ function tickDemoAI() {
 // ROM $C2E6 GameTickMain — 18-subsystem sequence called every frame from game loop $C1F9
 function update() {
   frameCount++;
+  updateMobileLabels();
 
   if (gamePhase === 'play') tickPaletteFlash(); // ROM $C31D PaletteFlashTick — water animation, in-game only
 
