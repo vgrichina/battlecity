@@ -1408,7 +1408,11 @@ function tickTimers() {
     }
   }
   if (puFlashTimer > 0) puFlashTimer--;
-  if (grenadeFlash > 0) grenadeFlash--;
+  if (grenadeFlash > 0) {
+    grenadeFlash--;
+    setBGPaletteSet(5 + (frameCount & 3));  // ROM $EBBC: cycle sets 5-8 ($4D=($0B&3)+5)
+    if (grenadeFlash === 0) setBGPaletteSet(0); // restore in-game base when flash ends
+  }
   for (const e of entities) {
     if (e.spawnAnim > 0)  e.spawnAnim--;
     if (e.blinkFrame > 0) e.blinkFrame--;
@@ -2519,15 +2523,7 @@ function render() {
 
   if (gamePhase === 'start') drawStageBanner();
 
-  // ROM $EBBC grenade palette flash: NES flips all palette colours for ~8 frames.
-  // Approximated as a fading white overlay over the entire canvas.
-  if (grenadeFlash > 0) {
-    ctx.save();
-    ctx.globalAlpha = (grenadeFlash / 8) * 0.85;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.restore();
-  }
+  // ROM $EBBC grenade palette flash: cycles BG palette sets 5-8 for ~8 frames (handled in tick).
 }
 
 // ROM $C31D PaletteFlashTick — cycles $4D between sets 1 and 2 every 32 frames
