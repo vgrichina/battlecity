@@ -782,3 +782,42 @@ The following tasks update web/game.js to match the Famicom ROM findings in cata
 - [x] **Fix drawGameOver() background** — was incorrectly drawing tile $1C (the "S" glyph) as background fill. Corrected: background is black (tile $00 = blank). $05=$1C is the PPU address offset used by InitEntities to target nametable $2000, not a tile index.
 - [x] **Confirm stage selection in Famicom ROM** — disassembled InterStageScreen ($C159). ROM DOES allow stage select: sets palette 4 ($C16D: STA $4D=#$04), calls CurtainClose ($CC90 fills all 30 rows with tile $11), then loops calling DrawStageInter ($CA91: writes "STAGE" tiles+number to nametable row 14). A-button held (bit0/$06, every 8 frames) → INC $85; B-button held (bit1/$06) → DEC $85; $85 wraps 1-35. REVERSE.md VS table corrected. web/game.js curtain+select fixed: palette 4 set at curtain start; palIdx=3 (ROM's BG3) for steel tiles; black fill (NES_PAL[0][0]); drawStageSelect now renders frozen curtain background; auto-repeat added to stage cycling.
 - [ ] **Locate eagle-wall init routine** — separate routine writes Π-shaped steel/brick border around eagle to nametable at start of each stage. Not found yet. Search: look for writes to nametable at row 11–12 / col 5–7 pixel region ($58–$68, $D8–$E8). Try: search for LDA #$10 (steel tile) or LDA #$0F near WriteNametableByte calls; or xref $D0B8 ($D0B8 draws eagle-star HUD sprites — may be adjacent to eagle-wall write).
+
+### Unmapped PRG ROM ranges
+
+The following byte ranges have no classification in the Data-Range Map. ~20-30% of PRG remains unaccounted for.
+
+| CPU Range | Size (est.) | Context |
+|-----------|-------------|---------|
+| $C050–$C09B | ~76 | Between DevSignature and MainLoop |
+| $C0BE–$C158 | ~155 | Between ConstructionEntry and InterStageScreen |
+| $C642–$C727 | ~230 | Between GameOverWaitLoop and CheckGameOver |
+| $C755–$C7AA | ~86 | Between CheckGameOver and TitleWaitLoop |
+| $CB5E–$CC5B | ~254 | Between ConstructionSetup area and WriteNametableRow |
+| $CCB2–$CCD3 | ~34 | Between CurtainClose and ResultScreen |
+| $D284–$D3B0 | ~301 | Between title string table end and str_CursorArrow |
+| $D3DD–$D3FF | ~35 | After ShovelTileDY data |
+| $D44D–$D466 | ~26 | PRNG routine to WaitNMI |
+| $DA13–$DABA | ~168 | Sprite helper routines (partially covered) |
+| $DD48–$DE54 | ~269 | Movement AI / RandomDirChange to SpawnAnimTick |
+| $DE72–$E02D | ~444 | SpeedCtrlMove area (partially referenced) |
+| $E23A–$E2A8 | ~111 | ShovelEagleTick / InvincibilityTick area |
+| $E362–$E413 | ~178 | SpawnEnemy internals (partially covered) |
+| $E486–$E4EB | ~102 | Between EntityStateTable and EntityTypeTable |
+| $E8BE–$E90F | ~82 | Between EnemyScoreTable and BulletBulletCollision |
+| $E9E1–$EA48 | ~104 | Between PowerupCollectTick and BulletDirDX |
+| $ED36–$EFFF | ~714 | Between ChannelPtrTable and LoadStageData — likely sound sequence data |
+| $FD45–$FFF9 | ~693 | Between StageDataTable end and vectors — unknown (padding? more data?) |
+
+- [ ] **Classify $C050–$C09B** — between DevSignature and MainLoop; likely init continuation or jump table
+- [ ] **Classify $C0BE–$C158** — between ConstructionEntry and InterStageScreen; may contain construction mode logic
+- [ ] **Classify $C642–$C727** — large gap between GameOverWaitLoop and CheckGameOver; likely game-over related routines
+- [ ] **Classify $C755–$C7AA** — between CheckGameOver and TitleWaitLoop
+- [ ] **Classify $CB5E–$CC5B** — between ConstructionSetup area and WriteNametableRow; likely construction mode tile editing
+- [ ] **Classify $CCB2–$CCD3** — small gap before ResultScreen
+- [ ] **Classify $D284–$D3B0** — between title string table and string constants; likely more string/data tables
+- [ ] **Classify $D3DD–$D3FF** — small data region after ShovelTileDY
+- [ ] **Classify $DD48–$DE54** — movement AI routines between RandomDirChange and SpawnAnimTick
+- [ ] **Classify $DE72–$E02D** — SpeedCtrlMove and surrounding AI/movement code
+- [ ] **Classify $ED36–$EFFF** — likely sound/music sequence data (between ChannelPtrTable and LoadStageData)
+- [ ] **Classify $FD45–$FFF9** — between StageDataTable end and interrupt vectors; padding or additional data
