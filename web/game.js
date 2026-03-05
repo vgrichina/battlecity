@@ -485,7 +485,7 @@ function makeEntity(slot) {
 // ─── Bullet factory  ──────────────────────────────────────────────────────────
 // ROM $CC,X BulletState  $B8,X BulletX  $C2,X BulletY  $D6,X BulletDouble
 function makeBullet(slot) {
-  return { slot, x: 0, y: 0, dir: 0, active: false, armor: false, owner: -1, explodeTimer: 0, ex: 0, ey: 0, edir: 0 };
+  return { slot, x: 0, y: 0, dir: 0, active: false, armor: false, powered: false, owner: -1, explodeTimer: 0, ex: 0, ey: 0, edir: 0 };
 }
 
 // ROM $E112 BulletExplode: explosion sprite drawn from $B8/$C2 bullet position
@@ -1010,6 +1010,9 @@ function tryFire(e) {
   b.active       = true;
   b.explodeTimer = 0;
   b.armor        = e.starLevel >= 0x60;  // armor-piercing at max star  ROM $D6,X bit1
+  // Power (D6,X!=0): 1-2-star player or power-type enemy → 4px/frame, no alternating-frame skip
+  // ROM $E08C FireBullet: $A8&$F0=$20/$40→D6=1; =$60→D6=3; enemy $C0→D6=1; else D6=0
+  b.powered      = e.starLevel >= 0x20 || (!e.isPlayer && e.type === 2);
   b.owner        = e.slot;
   if (e.isPlayer) sfxPlayerFire(); else sfxEnemyFire();  // ROM sound triggers
 }
@@ -1024,8 +1027,9 @@ function moveBullets() {
     if (!b.active) continue;
 
     // Alternating-frame skip  ROM $E604 BulletTerrainCollision: slot^frame parity skip
-    // slot index XOR frameLo parity → move only on even (slot^frame) frames
-    if ((b.slot ^ frameCount) & 1) continue;
+    // Power bullets (D6!=0) bypass the skip and move every frame at 4px/frame
+    // Normal bullets move every other frame = 2px/frame effective  ROM $E612-$E61B
+    if (!b.powered && (b.slot ^ frameCount) & 1) continue;
 
     b.x += DX[b.dir] * BULLET_SPD;
     b.y += DY[b.dir] * BULLET_SPD;
@@ -1049,8 +1053,25 @@ function moveBullets() {
       continue;
     }
 
-    // Tile collision  ROM $E693 BulletHitCheck
-    if (bulletHitsTile(b)) {
+    // Tile collision  ROM $E604 BulletTerrainCollision: 4-probe system
+    // Probes span −5/−1/0/+4 pixels perpendicular to movement direction.
+    // isHoriz: LEFT(1)/RIGHT(3) → perp is Y axis; UP(0)/DOWN(2) → perp is X axis.
+    const isHoriz = b.dir & 1;
+    const px = isHoriz ? 0 : 1;  // perpendicular unit X
+    const py = isHoriz ? 1 : 0;  // perpendicular unit Y
+
+    // Probe A: primary, always  ROM $E647 JSR BulletHitCheck
+    const hitA = bulletHitsTileAt(b, b.x, b.y);
+    // Probe B: perp +4, only if A hit brick  ROM $E64A BEQ $E65F (skip B when A=0)
+    if (hitA === 'brick') tryBrickAt(b.x + px * 4, b.y + py * 4);
+
+    // Probe C: perp −1, always independent of A  ROM $E65F–$E66D (unconditional)
+    const hitC = bulletHitsTileAt(b, b.x - px, b.y - py);
+    // Probe D: perp −5, only if C hit brick  ROM $E670 BEQ $E68B (skip D when C=0)
+    if (hitC === 'brick') tryBrickAt(b.x - px * 5, b.y - py * 5);
+
+    // Stop bullet if either A or C hit any solid tile  ROM: $CC,X=$33 set inside BulletHitCheck
+    if (hitA || hitC) {
       triggerBulletExplosion(b);
       b.active = false;
     }
@@ -1062,47 +1083,61 @@ function moveBullets() {
   }
 }
 
-// ROM $E693 BulletHitCheck: checks tile at bullet position
-// Returns true if bullet should be stopped
-function bulletHitsTile(b) {
-  const col = Math.floor((b.x - FX) / META);
-  const row = Math.floor((b.y - FY) / META);
-  if (col < 0 || col >= GW || row < 0 || row >= GH) return false;
+// ROM $E604: secondary probe — destroy brick at (bx,by) without stopping bullet.
+// Used for probes B and D (perpendicular ±4/±5 from bullet center).
+function tryBrickAt(bx, by) {
+  const col = Math.floor((bx - FX) / META);
+  const row = Math.floor((by - FY) / META);
+  if (col < 0 || col >= GW || row < 0 || row >= GH) return;
+  const t = grid[row][col];
+  if (t !== T.BRICK && !(t >= T.BRICK_R && t <= T.BRICK_T)) return;
+  const localX = bx - (FX + col * META);
+  const localY = by - (FY + row * META);
+  const qbit = 1 << (Math.floor(localY / 8) * 2 + Math.floor(localX / 8));
+  if (brickBits[row][col] & qbit) destroyBrick(row, col, bx, by);
+}
+
+// ROM $E693 BulletHitCheck: checks tile at (bx, by) for bullet b.
+// Returns 'brick' (A=1: destroys brick quarter, triggers secondary probes B/D),
+//         'solid' (A=0: steel stops bullet via $CC=$33, no secondary probe),
+//         null    (A=0: empty/passable — water/forest/ice/open-steel all pass through).
+// ROM $E6C8: CMP #$12; BCS $E709 — tiles >= $12 (water=$12, ice=$21, forest=$22) are passable.
+function bulletHitsTileAt(b, bx, by) {
+  const col = Math.floor((bx - FX) / META);
+  const row = Math.floor((by - FY) / META);
+  if (col < 0 || col >= GW || row < 0 || row >= GH) return null;
 
   const t = grid[row][col];
-  // Sub-quadrant helpers (shared by brick + partial steel checks)
-  const localX = b.x - (FX + col * META);
-  const localY = b.y - (FY + row * META);
+  const localX = bx - (FX + col * META);
+  const localY = by - (FY + row * META);
   const qx = localX >= 8 ? 1 : 0;
   const qy = localY >= 8 ? 1 : 0;
   const qbit = 1 << (qy * 2 + qx);  // TL=bit0, TR=bit1, BL=bit2, BR=bit3
 
-  // Steel: stop bullet  ROM $E693 BulletHitCheck: steel tile check  $030D=1 if player bullet
-  // Armor-piercing (starLevel >= $60): destroy steel  ROM $E693: BulletHitCheck armor-pierce path
+  // Steel: A=0 in ROM (but $CC=$33 set), no secondary probe trigger  ROM $E6D8–$E709
+  // Armor-piercing (D6 bit1 set): erase steel tile  ROM $E6DE WriteNametableByte #$00
   if (t === T.STEEL || (t >= T.STEEL_R && t <= T.STEEL_T)) {
     if (t >= T.STEEL_R && t <= T.STEEL_T) {
-      // Partial steel: open ($20) quadrants are passable — only solid ($10) quadrants block
-      // STEEL_BLOCK bitmask same as passable8; matches TILE_CHR $10 entries
+      // Partial steel: open ($20) quadrants passable, only solid ($10) quadrants block
       const STEEL_BLOCK = [0b1010, 0b1100, 0b0101, 0b0011]; // STEEL_R/B/L/T
-      if (!(STEEL_BLOCK[t - T.STEEL_R] & qbit)) return false;
+      if (!(STEEL_BLOCK[t - T.STEEL_R] & qbit)) return null;
     }
     if (b.armor) grid[row][col] = T.EMPTY;
-    if (b.owner < 2) sfxSteelHit();  // ROM $030D=1 player bullet hits steel
-    return true;
+    if (b.owner < 2) sfxSteelHit();  // ROM $030D=1 player bullet ricochets
+    return 'solid';
   }
 
-  // Water: stop bullet, no destroy  ROM $E693 BulletHitCheck: water tile check
-  if (t === T.WATER) { if (b.owner < 2) sfxSteelHit(); return true; }  // ROM $030D=1
+  // Water/forest/ice: tile >= $12 → passable for bullets  ROM $E6C8 CMP #$12; BCS $E709
+  // (Tanks cannot cross water, but bullets fly through freely)
 
-  // Brick: destroy quarter  ROM $D763 TileDestroyBrick  $D745 SubTileBitmask
-  // Only collide if the specific 8×8 quadrant is still intact (bit set in brickBits)
+  // Brick: A=1 in ROM, triggers secondary probes  ROM $E6FA ClearTileBit; $E6FD LDA #$01 RTS
   if (t === T.BRICK || (t >= T.BRICK_R && t <= T.BRICK_T)) {
-    if (!(brickBits[row][col] & qbit)) return false;  // quadrant already destroyed — pass through
-    destroyBrick(row, col, b.x, b.y);
+    if (!(brickBits[row][col] & qbit)) return null;  // quadrant already cleared — pass through
+    destroyBrick(row, col, bx, by);
     if (b.owner < 2) sfxBrickHit();  // ROM $030C=1
-    return true;
+    return 'brick';
   }
-  return false;
+  return null;
 }
 
 // ROM $D763 TileDestroyBrick  $D745 SubTileBitmask

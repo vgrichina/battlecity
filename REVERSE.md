@@ -123,7 +123,7 @@
 | $D3D1–$D3D4 | — | 4 | data | ResultEnemyScoreTable[4]: same BCD values used on result screen ($8D1C): $10/$20/$30/$40 = 100/200/300/400 pts |
 | $E578–$E603 | — | 140 | data | StageEnemyCountTable: 35×4 bytes; enemy type counts per stage (always sum to 20); loaded into $8B-$8E |
 | $E604–$E68B | — | ~136 | code | BulletTerrainCollision: loops slots 9→0; if $CC,X&$F0=$40 (active): compute next pos ($B8+EA49[dir]×4, $C2+EA4D[dir]×4); JSR BulletHitCheck ($E693) |
-| $E693–$E70B | — | ~121 | code | BulletHitCheck: get nametable ptr; read tile; if eagle tile→$68=$27 damage countdown; if brick→clear bit/erase; if steel&power→erase; set SFX flags $030B-$030D; $CC,X=$33 on hit |
+| $E693–$E70B | — | ~121 | code | BulletHitCheck: get nametable ptr; read tile; returns A=1 (brick hit: ClearTileBit, SFX $030C, triggers B/D probes) or A=0 (all other cases). Steel ($10): sets $CC,X=$33 (stop) then returns A=0 (no B/D probe). Eagle ($C8/$CC): sets $68=$27+$CC=$33+SFX $030B, returns A=0. Tile >= $12 (water=$12/ice=$21/forest=$22): BCS $E709 → A=0, no stop (bullets pass through). Armor-pierce (D6 bit1): erases steel tile, returns A=0. |
 | $E70C–$E77A | — | ~110 | code | EnemyBulletPlayerCollision: loops players 0-1; scan enemy bullets 7→2; proximity check <10px; if hit+no-invincibility: kill player, DEC lives |
 | $E910–$E971 | — | ~98 | code | BulletBulletCollision: for slots where $5A&$06==0 (player-owned): inner loop Y=9→0; if |$B8,X-$B8,Y|<6 and |$C2,X-$C2,Y|<6: destroy both bullets |
 | $E972–$E9E0 | — | ~111 | code | PowerupCollectTick: checks entity proximity to powerup pos ($86/$87); on pickup: $62=50 duration; adds 500pts; triggers powerup effect |
@@ -652,7 +652,7 @@ Called every frame from the main game loop (StageStartSetup at $C1F9). 18 sequen
 |-------|-------|---------|
 | $00 | No bullet | RTS (skip) |
 | $10–$30 | Cooldown countdown | $E076: DEC lo nibble; wrap hi nibble -$10 each 4 ticks |
-| $40 | Active (flying) | $E051: move 2px/frame via BulletApplyDelta |
+| $40 | Active (flying) | $E051: move 2px/frame (normal) or 4px/frame (power: D6!=0) |
 | $33 | Impact / stop | $E076: count down to $00 over 9 frames |
 | $60–$70 | Explosion animation | $E112: draw explosion sprite at $B8,$C2 |
 
@@ -660,11 +660,34 @@ Bullet fired by `FireBullet` ($E08C): $CC,X = $40 | dir; $B8,X = X+dX×8; $C2,X 
 
 ### Bullet power (`$D6,X`)
 
-| Value | Type | Effect |
-|-------|------|--------|
-| 0 | Basic | Stops on brick tile; stopped by steel |
-| 1 | Enhanced | Destroys brick AND steel tiles |
-| 3 | Triple | Same as enhanced + may pierce (from $60-type tank) |
+| Value | Source | Effect |
+|-------|--------|--------|
+| 0 | 0-star player; basic/fast/armor enemy | 2px/frame; alternating-frame collision check |
+| 1 | 1–2-star player (`$A8&$F0`=$20/$40); power enemy ($C0) | 4px/frame; NO alternating-frame skip |
+| 3 | 3-star player (`$A8&$F0`=$60) | 4px/frame; NO frame-skip; armor-pierces steel |
+
+`FireBullet` ($E08C) sets $D6,X: start at 0; `$A8&$F0`=$00→0; =$20/$40→1; =$60→3; =$C0→1; =$80/$A0/$E0→0.
+
+### Bullet terrain collision — 4-probe geometry (`$E604`)
+
+`BulletTerrainCollision` checks **4 positions per bullet per frame**, all at the same travel-axis coordinate, spanning a ±5/+4 pixel range **perpendicular** to movement:
+
+For a RIGHT bullet (DX=+1) at (bx, by):
+
+| Probe | Position | Condition |
+|-------|----------|-----------|
+| A | (bx, by) | always |
+| B | (bx, by+4) | only if A hits brick |
+| C | (bx, by−1) | always |
+| D | (bx, by−5) | only if C hits brick |
+
+Perpendicular offsets −5, −1, 0, +4 span **10 pixels** — can cross into adjacent CHR tile rows. For UP/DOWN bullets the pattern is identical but in X.
+
+Each probe calls `BulletHitCheck` independently. The bullet is stopped ($CC,X=$33) after probe A or C hits any solid tile (brick or steel). Probes B and D add extra brick destruction without re-stopping the bullet. Note: probes B and D only fire when A/C return A=1 (brick hit) — steel hits return A=0, skipping B/D.
+
+`ClearTileBit` ($D743): mask $00 computed by `ComputeTileBitmask` ($D725):
+- bit2 of pixelY selects top/bottom half (rows 0–3 or 4–7 of CHR tile)
+- bit2 of pixelX selects left/right half → result: $00 = 1/2/4/8 for TL/TR/BL/BR 4×4 sub-quadrant
 
 ### SFX trigger flags (page 3 RAM)
 
