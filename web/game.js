@@ -1556,7 +1556,7 @@ function update() {
     if (frameCount % 3 === 0) { // approx matching ROM speed
       if (curtainTarget === 'select') {
         curtainRow++;
-        if (curtainRow === 15) { gamePhase = 'select'; setBGPaletteSet(3); } // set 3 for legible text (BG0 color3=$30=white)
+        if (curtainRow === 15) { gamePhase = 'select'; } // ROM keeps $4D=4 (set 4) through entire InterStageScreen
       } else {
         curtainRow--;
         if (curtainRow === -1) { 
@@ -2568,20 +2568,29 @@ function drawCurtain() {
 // "STAGE XX" written to nametable tiles $23-$27+digit at row 14 via $CA91.
 // Stage select: A-held→INC $85 (1-35 wraps), B-held→DEC $85, Start→StageStartSetup.
 function drawStageSelect() {
-  // Frozen curtain background: all 30 rows of tile $11 with BG3 (set 3 now active for text clarity)
-  ctx.fillStyle = NES_PAL[0][0]; // universal BG = black
+  // ROM $C159 InterStageScreen: palette 4 active; $CC90 CurtainClose fills all rows with tile $11.
+  // $CA91 DrawStageInter writes tiles $23-$27 (inverted S,T,A,G,E), two $11 spaces, then digit
+  // tiles $6E+d at row 14 col 12. All tiles use BG3 (same palette as steel curtain).
+  ctx.fillStyle = NES_PAL[0][0];
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const tile = 0x11, steelPal = 3;
+  const palIdx = 3; // BG3 — attribute table sets BG3 for entire field during InterStageScreen
   for (let r = 0; r < 30; r++)
     for (let c = 0; c < 32; c++)
-      drawCHRTile(tile, steelPal, c * 8, r * 8, false);
+      drawCHRTile(0x11, palIdx, c * 8, r * 8, false);
 
-  // "STAGE  XX" text: black bar for contrast, then text with BG0 (color3=$30=white in set 3)
-  const stageNum = String(selectedStage + 1);
-  const cx = 128 - 4 * 8; // center 8-char "STAGE  X" at x=128
-  fillRect(cx - 4, 108, 9 * 8 + 8, 16, '#000');
-  drawNesText('STAGE  ', cx, 112, 0); // BG0 set3: color3=$30=white
-  drawNesText(stageNum, cx + 7 * 8, 112, 1); // BG1: color1=$3C=yellow for number
+  // "STAGE  " at row 14 col 12 (NES px 96,112): inverted-letter tiles $23-$27 + two steel spaces
+  const sx = 12 * 8, sy = 14 * 8;
+  for (let i = 0; i < 5; i++) drawCHRTile(0x23 + i, palIdx, sx + i * 8, sy, false);
+  drawCHRTile(0x11, palIdx, sx + 5 * 8, sy, false);
+  drawCHRTile(0x11, palIdx, sx + 6 * 8, sy, false);
+
+  // Digit tiles $6E='0'..$77='9' at col 19+ (inverted digits); leading tens digit omitted if 0
+  const stage = selectedStage + 1;
+  const tens = Math.floor(stage / 10);
+  const units = stage % 10;
+  let dc = 19;
+  if (tens > 0) { drawCHRTile(0x6E + tens, palIdx, dc * 8, sy, false); dc++; }
+  drawCHRTile(0x6E + units, palIdx, dc * 8, sy, false);
 }
 
 // ─── Victory screen  ────────────────────────────────────────────────────────

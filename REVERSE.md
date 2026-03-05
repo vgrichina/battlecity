@@ -34,7 +34,7 @@
 | $C159 | — | — | code | GameInit (entry) |
 | $C2B3 | — | — | code | NewGameSetup |
 | $C3B5 | — | — | code | StagePlay entry |
-| $C159–$C1C4 | — | ~108 | code | InterStageScreen: shows stage# ($85), A=next/B=prev (1–35), Start/timeout→$C1C5; draws stage tiles via $CA91 |
+| $C159–$C1C4 | — | ~108 | code | InterStageScreen: $4D=4 (palette 4); JSR CurtainClose($CC90); loop: JSR DrawStageInter($CA91); A-held(every 8fr)→INC $85; B-held→DEC $85; $85 wraps 1-35; Start/timeout($4C≠0)→$C1C5 |
 | $C1C5–$C1FF | — | ~59 | code | StageStartSetup: sets up nametables, JSR $F000 (load stage?), JSR ConstructionSetup or $CB5D, then JSR $CC27/$CCB2, clear $0C, enable PPU |
 | $C1C5–$C222 | — | ~94 | code | StageStartSetup + GameLoop: ConstructionSetup; $F000(A=$85) load tilemap; $CAF5 HUD; $C331 spawn; game loop at $C1F9 (WaitVBlank+ticks+CheckGameOver) |
 | $C2BD–$C2E5 | — | ~41 | code | GameVarsInit: clears $66/$67/$4C; STA $51=$52=$6A=3; 1P→$52=0; STA $85=1; STA $46=0 |
@@ -57,7 +57,9 @@
 | $D138–$D169 | — | 50 | code | BonusLifeCheck: 2P only; if $66=0 and $17≥2 → INC $51/$66; elif $67=0 and $1F≥2 → INC $52/$67; if awarded STA $0304/$0305=1 (bonus-life indicator). |
 | $9E48–$9E54 | — | ~13 | code | ShovelPowerupActivate: STA $0108=$0D; STA $0106=$D8; STA $0B=0; RTS — activates ShovelAnimTick countdown |
 | $C9B0–$C9BF | — | 16 | code | ConstructionSetup |
-| $C9C0–$CA8F | — | ~208 | code | PlayerSelectLoop + helpers |
+| $C9C0–$CA8F | — | ~208 | code | PlayerSelectLoop + helpers (CA6F=Start1P, CA74=Start2P, CA7E=StartConstruction, CA85=UpdateCursorSprite, CA91=DrawStageInter) |
+| $CC5C–$CC8F | — | ~52 | code | WriteNametableRow: Y=row → writes 32-tile row to PPU via $0180 buffer; $63!=0 → fill with $63; $63=0 → copy from shadow RAM ($0400-$05FF) |
+| $CC90–$CCB1 | — | ~34 | code | CurtainClose: $63=$11; $57=0→$0F loop; JSR WriteNametableRow(row)+WriteNametableRow(29-row) per WaitVBlank; fills all 30 rows with tile $11 (steel). Called from InterStageScreen with palette 4 active. |
 | $D16A–$D27F | — | ~278 | code | SetupNametableStage + DrawTitleScreen |
 | $D280–$D345 | $1280–$1345 | ~198 | data/strings | Title screen string table (mirrors $92A0–$9345): 17 FF-terminated rows; format = col_byte+tiles+$FF; decoded to CHR tile indices |
 | $D346 | $1346 | 2 | data/string | str_LivesTile |
@@ -549,7 +551,7 @@ Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 | Title screen | "PLEASE INSERT COIN" / "PUSH START BUTTON" | "1 PLAYER"/"2 PLAYERS"/"CONSTRUCTION" menu |
 | Menu navigation | Fire button → start game | SELECT cycles, START confirms |
 | NAMCOT branding | Not present | CHR BG tiles $60–$68 = NAMCOT logo graphic (9-tile row); $5E=Roman-I; $5F=Roman-II; $6B=dash "-"; copyright "© 1980 1985 NAMCO LTD." |
-| Stage select | Not present | Yes — cheat via P1+P2 combo |
+| Stage select | Not present | Yes — A/B buttons at InterStageScreen ($C159) cycle $85 (1–35); cheat: P1-DOWN+P2-A → $4A+=16 skip, P1-RIGHT+P2-B → DEC $4A |
 | Starting lives DIP | Yes ($4016 bit4 → 3 or 5 lives) | No DIP; lives stored separately; $6C=5/7 is entity slot bound, not lives |
 | CONSTRUCTION mode | Not present | Yes (menu option 2) |
 
@@ -623,7 +625,7 @@ Updated each NMI when `$4D` is ≥ 0 (bit7=0) by PaletteUpdate ($D50E). Index = 
 | 1 | $D575 | Alternate in-game (mode A) |
 | 2 | $D585 | Alternate in-game (mode B) |
 | 3 | $D595 | Player-select / game-over screen |
-| 4 | $D5A5 | Title screen demo animation |
+| 4 | $D5A5 | InterStageScreen / curtain animation (set before CurtainClose $CC90); also title demo |
 | 5 | $D5B5 | Flash frame 0 (loop at $8486: `$4D = ($0B & 3) + 5`) |
 | 6 | $D5C5 | Flash frame 1 |
 | 7 | $D5D5 | Flash frame 2 |
@@ -773,4 +775,5 @@ The following tasks update web/game.js to match the Famicom ROM findings in cata
 - [x] **Fix dash rendering in drawNesText.** ROM font uses tile $6B for `-` (ASCII $2D → tile $2D was wrong). Added `NES_TILE_OVERRIDE = {'-': 0x6B, '.': 0x69}` map; drawNesText now checks override before using raw ASCII code. Extended tile range check to allow tiles ≥$60 (needed for override targets). Fixes "HI-" dash and any other dashed text.
 - [x] **Map full game-over sequence.** Done. Sequence: (1) post-game animation loop ($8225, ~128 frames GameTickMain+palette flash); (2) ResultScreen ($8256/$CCD4, kill-count tally); (3) GameOverBrickScreen ($C5D9/$8283): $05=$1C is PPU addr offset (NOT tile fill), WriteNametable zeros $0400-$07FF → black BG + palette 3, GAME/OVER big-text sprites; (4) UpdateHiScore; (5) JMP $C095 → title.
 - [x] **Fix drawGameOver() background** — was incorrectly drawing tile $1C (the "S" glyph) as background fill. Corrected: background is black (tile $00 = blank). $05=$1C is the PPU address offset used by InitEntities to target nametable $2000, not a tile index.
+- [x] **Confirm stage selection in Famicom ROM** — disassembled InterStageScreen ($C159). ROM DOES allow stage select: sets palette 4 ($C16D: STA $4D=#$04), calls CurtainClose ($CC90 fills all 30 rows with tile $11), then loops calling DrawStageInter ($CA91: writes "STAGE" tiles+number to nametable row 14). A-button held (bit0/$06, every 8 frames) → INC $85; B-button held (bit1/$06) → DEC $85; $85 wraps 1-35. REVERSE.md VS table corrected. web/game.js curtain+select fixed: palette 4 set at curtain start; palIdx=3 (ROM's BG3) for steel tiles; black fill (NES_PAL[0][0]); drawStageSelect now renders frozen curtain background; auto-repeat added to stage cycling.
 - [ ] **Locate eagle-wall init routine** — separate routine writes Π-shaped steel/brick border around eagle to nametable at start of each stage. Not found yet. Search: look for writes to nametable at row 11–12 / col 5–7 pixel region ($58–$68, $D8–$E8). Try: search for LDA #$10 (steel tile) or LDA #$0F near WriteNametableByte calls; or xref $D0B8 ($D0B8 draws eagle-star HUD sprites — may be adjacent to eagle-wall write).
