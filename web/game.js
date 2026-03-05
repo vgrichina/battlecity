@@ -1504,6 +1504,7 @@ function update() {
         curtainTarget = 'select';
         curtainRow = 0;
         selectedStage = 0;
+        setBGPaletteSet(4); // ROM $C16D: STA $4D=#$04 (InterStageScreen sets palette 4 before curtain)
       }
     } else if (titleTimer > 600) { // 10 seconds inactivity → Demo Mode
       demoMode = true;
@@ -1555,7 +1556,7 @@ function update() {
     if (frameCount % 3 === 0) { // approx matching ROM speed
       if (curtainTarget === 'select') {
         curtainRow++;
-        if (curtainRow === 15) { gamePhase = 'select'; activeBGSet = -1; setBGPaletteSet(3); }
+        if (curtainRow === 15) { gamePhase = 'select'; setBGPaletteSet(3); } // set 3 for legible text (BG0 color3=$30=white)
       } else {
         curtainRow--;
         if (curtainRow === -1) { 
@@ -1567,15 +1568,20 @@ function update() {
     return;
   }
 
+  // ROM $C159 InterStageScreen: A=advance stage, B=go back (1-35/$23 wraps); auto-repeats every 8 frames
   if (gamePhase === 'select') {
     const selUp   = !!(keys['ArrowUp']   || keys['KeyW']);
     const selDown = !!(keys['ArrowDown'] || keys['KeyS']);
-    if (selUp && !selectKeyHeld)   selectedStage = (selectedStage + 1) % 35;
-    if (selDown && !selectKeyHeld) selectedStage = (selectedStage + 34) % 35;
+    // Edge trigger on first press, then auto-repeat every 8 frames (matches ROM $C18B/$C1B2 timing)
+    if (selUp && (!selectKeyHeld || frameCount % 8 === 0))
+      selectedStage = (selectedStage + 1) % 35;
+    if (selDown && (!selectKeyHeld || frameCount % 8 === 0))
+      selectedStage = (selectedStage + 34) % 35;
     selectKeyHeld = selUp || selDown;
 
     if (keys['Space'] || keys['Enter']) {
       initLevel(selectedStage);
+      setBGPaletteSet(0); // ROM $C1F1: STA $4D=#$00 after InitNametableFromRAM, switches to in-game palette
       gamePhase = 'curtain';
       curtainTarget = 'play';
       curtainRow = 14;
@@ -2532,20 +2538,23 @@ function tickPaletteFlash() {
   else if (f === 32) setBGPaletteSet(2); // water anim frame B: BG1 col1=$12(blue)
 }
 
-// ROM $CAAD TallyOpenCurtain  $CACF TallyCloseCurtain
+// ROM $CC90 CurtainClose: fills nametable with tile $11 from outside in (row pairs 0+29, 1+28..15+14)
+// ROM $CCB2 InitNametableFromRAM: $63=0, copies shadow RAM to PPU same way (curtain open)
+// InterStageScreen ($C159) sets palette 4 before calling $CC90; attribute table has BG3 for field area.
 function drawCurtain() {
-  // Clear to the same gray as the curtain tiles for consistency
-  ctx.fillStyle = NES_PAL[0][3]; // BG0 Color 3 (Gray $00)
+  // Universal BG color = NES_PAL[0][0] = 0x0F = black (same in all palette sets)
+  ctx.fillStyle = NES_PAL[0][0];
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
+
   if (curtainTarget === 'play') {
     // When opening to play, we draw the field first then cover it
     drawField();
     drawEagleBase();
   }
 
-  const palIdx = 0; // BG0 (gray color 3)
-  const tile = 0x11; // steel
+  // ROM: attribute table sets BG3 (palIdx=3) for the field area during InterStageScreen
+  const palIdx = 3;
+  const tile = 0x11; // steel tile — fills entire nametable as curtain
   for (let r = 0; r <= curtainRow; r++) {
     for (let c = 0; c < 32; c++) {
       drawCHRTile(tile, palIdx, c * 8, r * 8, false);
@@ -2554,18 +2563,25 @@ function drawCurtain() {
   }
 }
 
-// ROM $C8B6 DrawStageSelectHUD — "STAGE XX" screen during stage selection
+// ROM $CA91 DrawStageInter — "STAGE XX" shown on top of closed curtain.
+// InterStageScreen ($C159): curtain fills all 30 rows with tile $11 (BG3 steel, palette 4);
+// "STAGE XX" written to nametable tiles $23-$27+digit at row 14 via $CA91.
+// Stage select: A-held→INC $85 (1-35 wraps), B-held→DEC $85, Start→StageStartSetup.
 function drawStageSelect() {
-  ctx.fillStyle = '#666666'; // Gray background
+  // Frozen curtain background: all 30 rows of tile $11 with BG3 (set 3 now active for text clarity)
+  ctx.fillStyle = NES_PAL[0][0]; // universal BG = black
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  drawBorderTiles();
+  const tile = 0x11, steelPal = 3;
+  for (let r = 0; r < 30; r++)
+    for (let c = 0; c < 32; c++)
+      drawCHRTile(tile, steelPal, c * 8, r * 8, false);
 
-  const stageStr = 'STAGE  ' + String(selectedStage + 1);
-  const tw = stageStr.length * 8;
-  const bx = (256 - tw) / 2 - 8, by = 108;
-  fillRect(bx, by, tw + 16, 16, '#000');
-  drawNesText('STAGE  ', bx + 8, by + 4, 3);
-  drawNesText(String(selectedStage + 1), bx + 8 + 7 * 8, by + 4, 1); // BG1 flashes
+  // "STAGE  XX" text: black bar for contrast, then text with BG0 (color3=$30=white in set 3)
+  const stageNum = String(selectedStage + 1);
+  const cx = 128 - 4 * 8; // center 8-char "STAGE  X" at x=128
+  fillRect(cx - 4, 108, 9 * 8 + 8, 16, '#000');
+  drawNesText('STAGE  ', cx, 112, 0); // BG0 set3: color3=$30=white
+  drawNesText(stageNum, cx + 7 * 8, 112, 1); // BG1: color1=$3C=yellow for number
 }
 
 // ─── Victory screen  ────────────────────────────────────────────────────────
@@ -2688,10 +2704,21 @@ frameCount = 0;
 enterTitle();
 initCHR();     // load single Famicom CHR ROM sheet (chr_all.png)
 
-// ROM $C09C MainLoop — requestAnimationFrame at 60 fps
-(function loop() {
-  update();
-  render();
+// ROM $C09C MainLoop — fixed 60 fps physics, skip render if no tick elapsed
+const FRAME_MS = 1000 / 60;
+let _accumulator = 0;
+let _lastTime = performance.now();
+(function loop(now) {
+  _accumulator += now - _lastTime;
+  _lastTime = now;
+  if (_accumulator > 200) _accumulator = 200; // clamp after tab sleep
+  let ticked = false;
+  while (_accumulator >= FRAME_MS) {
+    update();
+    _accumulator -= FRAME_MS;
+    ticked = true;
+  }
+  if (ticked) render();
   requestAnimationFrame(loop);
-})();
+})(performance.now());
 
