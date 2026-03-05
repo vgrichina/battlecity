@@ -172,7 +172,7 @@
     <li>All 35 stage maps decoded from ROM nibble table and verified tile-by-tile</li>
     <li>Eagle wall geometry (Π-shape, 5 metatile cells) confirmed against pixel-position analysis of ROM nametable writes</li>
     <li>Enemy spawn positions (3 fixed spawn points), player spawn positions, and eagle position are hardcoded ROM values</li>
-    <li>Spawn delay formula: <code>max(50, 186 − stageIndex × 4)</code> frames — matches ROM <code>$BE − stage × 4</code></li>
+    <li>Spawn delay formula: <code>max(50, 186 − stageIndex × 4 − (2P ? 20 : 0))</code> frames — ROM <code>$C3A2: $BE − stage × 4</code>; 2P penalty <code>$C3B0: SBC #$14</code></li>
     <li>Enemy type distribution per stage from ROM <code>$EA51 EnemyTypeTable</code> (20 entries per stage)</li>
     <li>Score values per tank type match ROM <code>$D9E1 SetupScoreDigits</code> BCD encoding</li>
     <li>NTSC overscan (8px top/bottom) replicated via CSS clip on the canvas wrapper</li>
