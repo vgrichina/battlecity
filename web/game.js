@@ -2313,8 +2313,9 @@ function drawGameOver() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   // "GAME" and "OVER": 4 chars × 32px = 128px wide, centered at x=64
-  drawBigNesText('GAME', 64, 84, 3);
-  drawBigNesText('OVER', 64, 116, 3);
+  // palIdx=0 = BG0 of palette set 3 = [0F,16,16,30] → orange-red + white bricks
+  drawBigNesText('GAME', 64, 84, 0);
+  drawBigNesText('OVER', 64, 116, 0);
   // ROM $D97D UpdateHiScore → post-game hi-score display
   if (newHiScorePlayer > 0) {
     // ROM $C527: JSR RNG; AND #$3F; JSR QueuePaletteWrite — random NES color each frame
