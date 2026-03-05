@@ -1661,16 +1661,15 @@ function update() {
   }
 
   if (gamePhase === 'curtain') {
-    if (frameCount % 3 === 0) { // approx matching ROM speed
-      if (curtainTarget === 'select') {
-        curtainRow++;
-        if (curtainRow === 15) { gamePhase = 'select'; } // ROM keeps $4D=4 (set 4) through entire InterStageScreen
-      } else {
-        curtainRow--;
-        if (curtainRow === -1) { 
-          gamePhase = 'start';
-          phaseTimer = 180;
-        }
+    // ROM $CC90 CurtainClose / $CCB2 InitNametableFromRAM: 1 row per WaitVBlank (1 row/frame)
+    if (curtainTarget === 'select') {
+      curtainRow++;
+      if (curtainRow === 15) { gamePhase = 'select'; }
+    } else {
+      curtainRow--;
+      if (curtainRow === -1) {
+        gamePhase = 'play';  // ROM has no separate 'start' banner phase — goes straight to game loop
+        startBGM();
       }
     }
     return;
@@ -2787,12 +2786,14 @@ function drawTitleScreen() {
   drawNesText('2 PLAYERS',   88, 152, 0);
   drawNesText('CONSTRUCTION', 88, 168, 0);
 
-  // ROM $CA2F UpdateCursorSprite: P1 tank sprite (entity slot 0, $A0=$83, dir=$83&$03=3=RIGHT)
-  // at X=$90=$48=72, Y=$98=cursor×16+$8B; blink via $B0 bit2 every 4 frames
-  // $DA73: tileBase = dir×8 + animBase = 3×8+0 = $18; drawn as 2×2 metasprite from sprite bank
-  if ((titleFrame >> 2) & 1) {
+  // ROM $CA2F UpdateCursorSprite: P1 tank sprite (entity slot 0, $A0=$83, dir=3=RIGHT)
+  // at X=$90=$48=72, Y=$98=cursor×16+$8B; $B0 bit2 toggles every 4 frames for tread animation
+  // Tank is always visible — $B0 controls animation frame, not visibility.
+  {
+    // Animation frame toggles every 4 frames (ROM $C9EF: EOR #$04 when $0B AND 3 == 0)
+    const animBit = (titleFrame >> 2) & 1;
     if (chrOff) {
-      const T = 256 + 0x18; // P1 tank, dir=3 (right), star0, animBit=0
+      const T = 256 + 0x18 + (animBit ? 4 : 0); // P1 tank, dir=3 (right), star0
       drawCHRTile(T,   4, 64, 132 + titleCursor * 16, true); // top-left    SP0=palIdx 4
       drawCHRTile(T+2, 4, 72, 132 + titleCursor * 16, true); // top-right
       drawCHRTile(T+1, 4, 64, 140 + titleCursor * 16, true); // bottom-left

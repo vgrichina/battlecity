@@ -172,7 +172,7 @@ bank,addr,name,type,comment
 0,D5FB,CalcNametableAddr,,CalcNametableAddr: Y=tile-row(0-29); X=page(0/1) → A=hi($04/$05); Y=lo; maps to RAM shadow $0400-$05FF.
 0,D17F,DrawTitleScreen,,DrawTitleScreen: sets nametable $24; sprites "BATTLE"(x=26,y=46)/"CITY"(x=60,y=86); score strip row3: $5E/$6B col=2/3, P1-score col=4, "HI-" col=11, HI-score col=14; menu items col=11 rows=17/19/21; credits $60-$68 col=11 row=23; copyright "@..." col=4 row=25; "ALL RIGHTS" col=6 row=27.
 0,D934,FindFirstNonZeroScore,,FindFirstNonZeroScore: scan RAM from $0000+Y skipping zeros (INY+INX per zero); on non-zero or $FF terminus, STA $12=0/$11=Y (address); X=col offset for DrawNametableTextOffset score rendering.
-0,CA85,UpdateCursorSprite,,UpdateCursorSprite: draws cursor sprite at col=8; row = 17+$83*2 (1P/2P/CONSTRUCTION rows 17/19/21); $B0 bit2 controls blink (toggled every 4 frames at $C9EF).
+0,CA85,UpdateCursorSprite,,UpdateCursorSprite: sets $98 = $83*16+$8B (cursor Y pos); row = 17+$83*2. $B0 bit2 toggled every 4 frames at $C9EF controls tread animation frame (not visibility — tank always drawn).
 0,CA69,SelectDispatchTable,data,SelectDispatchTable: 3×2-byte addr table indexed by $83×2; dispatch on START: 0=1P game, 1=2P game, 2=CONSTRUCTION mode.
 0,D284,str_WrittenBy,data,"str_WrittenBy: ""WRITTEN BY"" FF — staff credit string; no direct xref in DrawTitleScreen (likely part of credits animation sub-sequence).
 0,D28F,str_CreditsNames,data,str_CreditsNames: tile indices $60-$68 FF — staff name graphic tiles drawn at col=11 row=23 by DrawTitleScreen $D24D.
