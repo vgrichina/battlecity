@@ -393,9 +393,13 @@ let stageIdx;       // ROM $41 StageNum
 let selectedStage;  // ROM $85 SelectedStage
 let curtainRow = -1; // 0..14, row of curtain currently closing/opening (top and bottom meet at center)
 let curtainTarget = ''; // 'select' or 'play'
-let editCursor = { x: 6, y: 12, tileType: 4 }; // GH=13, GW=13. 4=Brick
-let editKeyHeld = false;
-let customMap = null; // GW*GH array of arrays
+let editX = 6, editY = 6;       // grid coords (ROM $90/$98 in pixel, /16 for grid)
+let editTileType = 4;            // ROM $5C: 0-13 (start=full brick)
+let editHoldCount = 0;           // ROM $7B: d-pad hold counter
+let editAFirst = false;          // ROM $81: first A press flag
+let editACycleTimer = 0;         // throttle A/B held cycling
+let editStartHeld = false;       // edge-detect for Enter in edit mode
+let customMap = null;            // GW*GH array of arrays
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
 let gamePhase;      // 'title' | 'start' | 'play' | 'clear' | 'gameover_tally' | 'gameover' | 'victory' | 'select' | 'curtain' | 'edit'
 let titleFrame;     // frame counter for title screen blink animation
@@ -1519,10 +1523,16 @@ function update() {
     if (keys['Space'] || keys['Enter']) {
       initAudio();
       if (titleCursor === 2) { // CONSTRUCTION
-        gamePhase = 'edit';
         initLevel(0);
-        grid.forEach(r => r.fill(13));
+        gamePhase = 'edit';  // must be AFTER initLevel (which sets gamePhase='start')
+        grid.forEach(r => r.fill(T.EMPTY));
         brickBits.forEach(r => r.fill(0));
+        editX = 6; editY = 6;
+        editTileType = T.BRICK;
+        editHoldCount = 0;
+        editAFirst = false;
+        editACycleTimer = 0;
+        editStartHeld = true;  // Enter is still held from title select
       } else {
         numPlayers = titleCursor === 1 ? 2 : 1; // 0=1P, 1=2P
         p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
@@ -1545,37 +1555,72 @@ function update() {
   }
 
   if (gamePhase === 'edit') {
-    // Move cursor (WASD or Arrows)
+    // D-pad: cursor movement (ROM $C6D2)
     const up    = !!(keys['ArrowUp']    || keys['KeyW']);
     const left  = !!(keys['ArrowLeft']  || keys['KeyA']);
     const down  = !!(keys['ArrowDown']  || keys['KeyS']);
     const right = !!(keys['ArrowRight'] || keys['KeyD']);
-    
-    if (frameCount % 8 === 0) { // Throttle movement
-      if (up)    editCursor.y = Math.max(0, editCursor.y - 1);
-      if (left)  editCursor.x = Math.max(0, editCursor.x - 1);
-      if (down)  editCursor.y = Math.min(GH - 1, editCursor.y + 1);
-      if (right) editCursor.x = Math.min(GW - 1, editCursor.x + 1);
+    const dpad  = up || left || down || right;
+
+    let moved = false;
+    if (dpad) {
+      editHoldCount++;
+      // First press (==1) moves immediately; after 20 frames, repeat every 6
+      if (editHoldCount === 1 || (editHoldCount >= 20 && (editHoldCount - 20) % 6 === 0)) {
+        if (up)    editY = Math.max(0, editY - 1);
+        if (down)  editY = Math.min(GH - 1, editY + 1);
+        if (left)  editX = Math.max(0, editX - 1);
+        if (right) editX = Math.min(GW - 1, editX + 1);
+        moved = true;
+      }
+    } else {
+      editHoldCount = 0;
     }
-    
-    // Cycle tile type with 'T' (Brick -> Steel -> Water -> Trees -> Ice -> Empty)
-    if (keys['KeyT'] && !editKeyHeld) {
-      const types = [4, 9, 11, 10, 12, 13];
-      let idx = types.indexOf(editCursor.tileType);
-      editCursor.tileType = types[(idx + 1) % types.length];
+
+    // Place tile on movement (ROM places continuously while moving)
+    if (moved) {
+      grid[editY][editX] = editTileType;
+      brickBits[editY][editX] = brickInitBits(editTileType);
     }
-    editKeyHeld = keys['KeyT'];
-    
-    // Place tile with Space or F
-    if (keys['Space'] || keys['KeyF']) {
-      grid[editCursor.y][editCursor.x] = editCursor.tileType;
-      brickBits[editCursor.y][editCursor.x] = brickInitBits(editCursor.tileType);
+
+    // A button (Space/Z): first press places tile, holding cycles type forward
+    const aBtn = !!(keys['Space'] || keys['KeyZ']);
+    if (aBtn) {
+      if (!editAFirst) {
+        editAFirst = true;
+        grid[editY][editX] = editTileType;
+        brickBits[editY][editX] = brickInitBits(editTileType);
+        editACycleTimer = 0;
+      } else {
+        editACycleTimer++;
+        if (editACycleTimer % 8 === 0) {
+          editTileType = (editTileType + 1) % 14;
+        }
+      }
+    } else if (!aBtn) {
+      editAFirst = false;
     }
-    
-    // Save and return with Enter or Escape
-    if (keys['Enter'] || keys['Escape']) {
+
+    // B button (X/Shift): cycle type backward (every 8 frames while held)
+    const bBtn = !!(keys['KeyX'] || keys['ShiftLeft'] || keys['ShiftRight']);
+    if (bBtn && !aBtn && frameCount % 8 === 0) {
+      editTileType = (editTileType + 13) % 14; // -1 mod 14
+    }
+
+    // Start (Enter): save and transition to play (edge-detect)
+    if (!keys['Enter']) editStartHeld = false;
+    if (keys['Enter'] && !editStartHeld) {
+      setEagleWall(false);
       customMap = grid.map(r => [...r]);
-      enterTitle();
+      numPlayers = 1;
+      p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
+      p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
+      newHiScorePlayer = 0;
+      selectedStage = 0;
+      gamePhase = 'curtain';
+      curtainTarget = 'select';
+      curtainRow = 0;
+      setBGPaletteSet(4);
     }
     return;
   }
@@ -1645,7 +1690,11 @@ function update() {
     } else {
       phaseTimer--;
       if (phaseTimer <= 0) {
-        if (stageIdx === LEVEL_MAPS.length - 1) {
+        if (customMap && stageIdx === 0) {
+          // Construction mode: return to title after playing custom map
+          customMap = null;
+          enterTitle();
+        } else if (stageIdx === LEVEL_MAPS.length - 1) {
           // ROM $C44D: victory screen after all 35 stages cleared
           gamePhase      = 'victory';
           victoryPhase   = 0;
@@ -2526,21 +2575,30 @@ function render() {
   }
 
   if (gamePhase === 'edit') {
-    // Draw cursor: white 16x16 frame blinking
-    if ((frameCount >> 3) & 1) {
-      const cx = FX + editCursor.x * META, cy = FY + editCursor.y * META;
+    // Draw cursor: blink every 16 frames (ROM style)
+    if (!(frameCount & 0x10)) {
+      const cx = FX + editX * META, cy = FY + editY * META;
       fillRect(cx, cy, 16, 2, '#fff');
       fillRect(cx, cy + 14, 16, 2, '#fff');
       fillRect(cx, cy, 2, 16, '#fff');
       fillRect(cx + 14, cy, 2, 16, '#fff');
     }
-    // Also draw the tile type being placed
-    drawCHRTile(editCursor.tileType === 13 ? 0x00 : 
-                editCursor.tileType === 4 ? 0x10 : 
-                editCursor.tileType === 9 ? 0x11 :
-                editCursor.tileType === 11 ? 0x12 :
-                editCursor.tileType === 10 ? 0x13 : 0x14, // simple mapping for preview
-                0, 224, 200, true);
+    // Draw current tile type preview in sidebar
+    const previewX = FX + GW * META + 8, previewY = FY + 8;
+    // Draw the selected tile as a metatile
+    if (editTileType < T.EMPTY) {
+      const chr = editTileType <= T.BRICK ? [0x11,0x11,0x11,0x11] : TILE_CHR[editTileType];
+      const pal = editTileType <= T.BRICK ? 0 : TILE_PAL[editTileType];
+      if (chr) {
+        drawCHRTile(chr[0], pal, previewX,     previewY,     true);
+        drawCHRTile(chr[1], pal, previewX + 8, previewY,     true);
+        drawCHRTile(chr[2], pal, previewX,     previewY + 8, true);
+        drawCHRTile(chr[3], pal, previewX + 8, previewY + 8, true);
+      }
+    }
+    // Draw type number using inverted digit tiles
+    drawCHRTile(0x6E + Math.floor(editTileType / 10), 0, previewX, previewY + 20, false);
+    drawCHRTile(0x6E + (editTileType % 10), 0, previewX + 8, previewY + 20, false);
   }
 
   drawHUD();
