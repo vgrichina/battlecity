@@ -161,6 +161,42 @@
 | $D784–$D7A9 | — | ~38 | code | WriteNametableByte: STA($11),Y + buffer triplet to VRAM flush queue ($0180+$0C×4) for NMI |
 | $D743–$D783 | — | ~65 | code | ClearTileBit + related: clears specific tile bits (partial brick destruction) |
 | $E306–$E361 | — | ~92 | data/code | EagleAnimTable: ptr16 dispatch table for eagle damage animation routines |
+| $C050–$C06F | $0050–$006F | 32 | data/string | DevSignature2: ASCII "TAKEFUMI HYOUDOU JUNKO OZAWA    " (additional developer names) |
+| $C070–$C09B | $0070–$009B | 44 | code | ResetEntry: PPU warmup loops; TXS $7F; JSR Init; clear $4F/$50; JSR WaitNMI; JSR DrawTitleScreen; STA $4B=0; fall into MainLoop |
+| $C0BE–$C158 | $00BE–$0158 | 155 | code | ConstructionMainLoop: JSR ClearEntitySlots2; init cursor entity $90/$98/$A0=$84; loop: WaitVBlank; handle d-pad movement via $C6D2; A-button→PlaceTileBlock($C6C6) with $5C cycling 0–13 (tile types); B-button→cycle $5C; Start→exit to PlayerSelectLoop ($C0A2) with $4B=1 |
+| $C642–$C6C1 | $0642–$06C1 | 128 | code | ConstructionAITarget: scans powerup ($86/$87) then entity slots $A2–$A5 for active enemies; calls CalcDirToTarget ($DDA2); maps result via $C6C2 direction table → sets $06/$08 direction bits. Used by construction cursor auto-move |
+| $C6C2–$C6C5 | $06C2–$06C5 | 4 | data | ConstructionDirTable: direction byte lookup [4]; indexed by CalcDirToTarget result |
+| $C6C6–$C6D1 | $06C6–$06D1 | 12 | code | PlaceTileBlockFromCursor: LDA $5C AND #$0F → PlaceTileBlock($D80B) at cursor pos ($90,$98); RTS |
+| $C6D2–$C71D | $06D2–$071D | 76 | code | ConstructionCursorMove: d-pad held detection ($7B counter, threshold $14=20fr); calls $E451 (direction decode); moves cursor ×16px via ShovelTileDX/DY table |
+| $C71E–$C727 | $071E–$0727 | 10 | code | ClearKillCounts: X=7→0; STA $73,X=0; clears P1/P2 per-type kill counts ($73–$7A) |
+| $C755–$C7AA | $0755–$07AA | 86 | code | ConstructionConfigDisplay: draws score digits at nametable; handles A(+$10)/B(DEC)/Select(INC) on $0109 config value |
+| $CB5E–$CC07 | $0B5E–$0C07 | 170 | code | ConstructionEagleWallDraw: draws eagle-area brick/steel tile patterns to nametable using DrawNametableText; writes attribute table bytes at $07F3/$07F4 for eagle area palette |
+| $CC08–$CC26 | $0C08–$0C26 | 31 | code | ConstructionEagleWallDraw2: second variant; draws eagle patterns at col=14/rows 26-27; writes attr $07F3=$3F, $07F4 OR $33 |
+| $CC27–$CC5B | $0C27–$0C5B | 53 | code | InitAttrTable: writes 64 attribute bytes from RAM $07C0 to PPU $23C0 via VRAM flush buffer; loops Y=0→$3F |
+| $CCB2–$CCD3 | $0CB2–$0CD3 | 34 | code | InitNametableFromRAM (curtain open): $63=0; rows $0F→0: WriteNametableRow(row)+WriteNametableRow(29-row); copies RAM shadow to PPU nametable |
+| $D284–$D33E | $1284–$133E | 187 | data/strings | StringTable2: "WRITTEN BY"/$D284, NAMCOT tiles/$D28F, "BATTLE"/$D299, "CITY"/$D2A0, player indicators/$D2A5-$D2B0, "HI-"/$D2B1, "HISCORE"/$D2B5, "HI-SCORE"/$D2BD, "1 PLAYER"/$D2C6, "2 PLAYERS"/$D2CF, "I-PLAYER"/$D2D9, "II-PLAYER"/$D2E2, "CONSTRUCTION"/$D2EB, copyright/$D2F8, "THIS PROGRAM WAS"/$D30F, "ALL RIGHTS RESERVED"/$D320, "OPEN-REACH"/$D334 |
+| $D33F–$D36C | $133F–$136C | 46 | data/strings | StringTable3: "."/$D33F, stage-number/$D341, "GAME"/$D343, "OVER"/$D348, "WHO LOVES NORIKO"/$D34D (Easter egg), "PTS"/$D35E, HUD tile pairs/$D362-$D36A, steel tile/$D36B |
+| $D36D–$D3A4 | $136D–$13A4 | 56 | data | EagleWallTilePatterns: 6×4 brick-wall rows ($D36D: empty/$0F-brick/$C8-$CB eagle tiles, FF-terminated); 6×4 steel-wall rows ($D390: $10-steel variant); eagle tile pairs ($D3A5: $C8/$CA top, $D3A8: $C9/$CB bottom, $D3AB: $CC/$CE, $D3AE not here) |
+| $D3DD–$D3FF | $13DD–$13FF | 35 | data/pad | $FF padding (all bytes = $FF) |
+| $DD6E–$DD7D | $1D6E–$1D7D | 16 | code | CollisionProbeHelpers: two 8-byte routines; CMP $56/$57 collision boundary checks used by EntityMovementAI |
+| $DD7E–$DDA1 | $1D7E–$1DA1 | 36 | code | AITargetSelect: three entry points selecting target coords → $71/$72: $DD7E=target P1($90/$98), $DD89=target P2($91/$99), $DD94=target eagle($78/$D8); all JMP CalcDirToTarget($DDA2) |
+| $DDA2–$DDE4 | $1DA2–$1DE4 | 67 | code | CalcDirToTarget: computes direction from entity X to target ($71/$72); uses abs-delta weighting; players(X<2) use frame-based randomization; enemies use PRNG; indexes DirToStateTable($E486) |
+| $DDE5–$DE54 | $1DE5–$1E54 | 112 | code | CalcDirToTarget continued + AI helpers: direction state calculation tail; lookup from $E486 table |
+| $DE72–$DEA5 | $1E72–$1EA5 | 52 | code | SpeedCtrlMove: AI goal selector; $84>>2 vs $0A → phase1=$B0(chase eagle), phase2=random dir, phase3=$C0/$D0(chase player); JSR $E420 |
+| $DEA6–$DEB7 | $1EA6–$1EB7 | 18 | code | EntityDrawLoop: loops $5A=0→7; JSR $DEB8 per entity; renders all entity sprites |
+| $DEB8–$DF98 | $1EB8–$1F98 | 225 | code | EntitySpriteRender: dispatches entity sprite drawing via ($E4B8) table based on $A0,X state; includes spawn blink, death explosion, tank quadrant sprite rendering |
+| $DF99–$DFB5 | $1F99–$1FB5 | 29 | code | CalcEntityTileIndex: computes CHR tile index from entity type ($A0) and direction; returns tile in $53, coords in X/Y |
+| $DFB6–$E02D | $1FB6–$202D | 120 | code | EntitySpriteAttrCalc: enemy blink ($A8 bit2), powerup-carrier color cycling ($A8+$0B), armor-tier sprite offset; feeds into sprite quadrant drawing |
+| $E23B–$E27B | $223B–$227B | 65 | code | PowerupSpriteDraw: if $86≠0 and $62(timer)≠0: DEC $62; draw powerup sprite ($88=type→tile $81+type×4) at ($86,$87); if $62=0 clear $86. Blinks every 8 frames |
+| $E486–$E497 | $2486–$2497 | 18 | data | DirToStateTable: 2×9 direction lookup; indexed by CalcDirToTarget delta signs |
+| $E498–$E4B7 | already mapped | — | — | (EntityStateTable — already in map) |
+| $E4B8–$E4EB | $24B8–$24EB | 52 | data | EntitySpriteDispatch: 16×ptr16 table; sprite rendering dispatch indexed by entity state ($A0>>3)&$FE |
+| $E8BE–$E90F | $28BE–$290F | 82 | code | PowerupSpawn: STA $0309=1(SFX); PRNG→$86/$87 (random position via $E902 grid-snap helper); PRNG→$88(type 0-7 from $E8FA table); clears $62; JSR PowerupCollectTick; restores $5A/$5B; RTS |
+| $E8FA–$E901 | $28FA–$2901 | 8 | data | PowerupTypeTable[8]: powerup type weights [0,1,2,3,4,5,4,3] |
+| $E902–$E90F | $2902–$290F | 14 | code | PowerupGridSnap: A=PRNG&3 → grid-snapped pixel coord (A×10+6)×2 |
+| $E9E2–$EA48 | $29E2–$2A48 | 103 | data/code | PowerupEffectTable: 5×ptr16 dispatch ($E9E2); handlers: $E9F0=SetInvincibility(A=$0A→$89,X); $E9F5=FreezeEnemies($0100=$0A); $E9FB=ShovelActivate(JSR $CB9E+$45=$14); $EA07=UpgradeArmor($0101,X += $20); $EA17=KillAllEnemies(loop $A0+7→2, set $73=death); $EA3E=ExtraLife(INC $51,X; set $0304/$0305=1) |
+| $ED36–$EFFF | $2D36–$2FFF | 714 | data | SoundSequenceData: 28 channels of note/SFX sequence data; referenced by ChannelPtrTable ($ECFE); not valid code (illegal opcodes throughout) |
+| $FD45–$FFF9 | $3D45–$3FF9 | 693 | data | ConstructionDefaultMap + padding: $9D+9×$FF header; ~513 bytes of $2E/$40 grid data (construction mode default map template?); trailing $FF padding to vectors. Only 3 unique tile values ($00/$2E/$40). No xrefs found — may be unreferenced remnant |
 | $FFFA–$FFFF | $3FFA–$3FFF | 6 | vectors | NMI=$D400 RESET=$C070 IRQ=$C070 |
 
 ---
@@ -781,7 +817,7 @@ The following tasks update web/game.js to match the Famicom ROM findings in cata
 - [x] **Map full game-over sequence.** Done. Sequence: (1) post-game animation loop ($8225, ~128 frames GameTickMain+palette flash); (2) ResultScreen ($8256/$CCD4, kill-count tally); (3) GameOverBrickScreen ($C5D9/$8283): $05=$1C is PPU addr offset (NOT tile fill), WriteNametable zeros $0400-$07FF → black BG + palette 3, GAME/OVER big-text sprites; (4) UpdateHiScore; (5) JMP $C095 → title.
 - [x] **Fix drawGameOver() background** — was incorrectly drawing tile $1C (the "S" glyph) as background fill. Corrected: background is black (tile $00 = blank). $05=$1C is the PPU address offset used by InitEntities to target nametable $2000, not a tile index.
 - [x] **Confirm stage selection in Famicom ROM** — disassembled InterStageScreen ($C159). ROM DOES allow stage select: sets palette 4 ($C16D: STA $4D=#$04), calls CurtainClose ($CC90 fills all 30 rows with tile $11), then loops calling DrawStageInter ($CA91: writes "STAGE" tiles+number to nametable row 14). A-button held (bit0/$06, every 8 frames) → INC $85; B-button held (bit1/$06) → DEC $85; $85 wraps 1-35. REVERSE.md VS table corrected. web/game.js curtain+select fixed: palette 4 set at curtain start; palIdx=3 (ROM's BG3) for steel tiles; black fill (NES_PAL[0][0]); drawStageSelect now renders frozen curtain background; auto-repeat added to stage cycling.
-- [ ] **Locate eagle-wall init routine** — separate routine writes Π-shaped steel/brick border around eagle to nametable at start of each stage. Not found yet. Search: look for writes to nametable at row 11–12 / col 5–7 pixel region ($58–$68, $D8–$E8). Try: search for LDA #$10 (steel tile) or LDA #$0F near WriteNametableByte calls; or xref $D0B8 ($D0B8 draws eagle-star HUD sprites — may be adjacent to eagle-wall write).
+- [ ] **Locate eagle-wall init routine** — tile patterns found at $D36D (brick) and $D390 (steel) but no pointer refs. The patterns are 6-byte FF-terminated rows: empty/$0F-brick/$C8-$CB eagle. Construction mode draws them via $CB5E/$CB9E (DrawNametableText). The gameplay init path likely uses a different routine — search for inline LDA #$0F/STA sequences near $F000 LoadStageData call chain, or trace $C1C5 StageStartSetup forward.
 
 ### Unmapped PRG ROM ranges
 
@@ -809,15 +845,16 @@ The following byte ranges have no classification in the Data-Range Map. ~20-30% 
 | $ED36–$EFFF | ~714 | Between ChannelPtrTable and LoadStageData — likely sound sequence data |
 | $FD45–$FFF9 | ~693 | Between StageDataTable end and vectors — unknown (padding? more data?) |
 
-- [ ] **Classify $C050–$C09B** — between DevSignature and MainLoop; likely init continuation or jump table
-- [ ] **Classify $C0BE–$C158** — between ConstructionEntry and InterStageScreen; may contain construction mode logic
-- [ ] **Classify $C642–$C727** — large gap between GameOverWaitLoop and CheckGameOver; likely game-over related routines
-- [ ] **Classify $C755–$C7AA** — between CheckGameOver and TitleWaitLoop
-- [ ] **Classify $CB5E–$CC5B** — between ConstructionSetup area and WriteNametableRow; likely construction mode tile editing
-- [ ] **Classify $CCB2–$CCD3** — small gap before ResultScreen
-- [ ] **Classify $D284–$D3B0** — between title string table and string constants; likely more string/data tables
-- [ ] **Classify $D3DD–$D3FF** — small data region after ShovelTileDY
-- [ ] **Classify $DD48–$DE54** — movement AI routines between RandomDirChange and SpawnAnimTick
-- [ ] **Classify $DE72–$E02D** — SpeedCtrlMove and surrounding AI/movement code
-- [ ] **Classify $ED36–$EFFF** — likely sound/music sequence data (between ChannelPtrTable and LoadStageData)
-- [ ] **Classify $FD45–$FFF9** — between StageDataTable end and interrupt vectors; padding or additional data
+- [x] **Classify $C050–$C09B** — **Done.** $C050–$C06F = DevSignature2 "TAKEFUMI HYOUDOU JUNKO OZAWA" (ASCII dev names). $C070–$C09B = ResetEntry (PPU warmup, TXS, JSR Init, JSR DrawTitleScreen, fall into MainLoop).
+- [x] **Classify $C0BE–$C158** — **Done.** ConstructionMainLoop: init cursor entity; loop handles d-pad movement ($C6D2), A=place tile ($C6C6 via $5C type 0–13), B=cycle tile type, Start=exit to PlayerSelectLoop.
+- [x] **Classify $C642–$C727** — **Done.** $C642–$C6C1=ConstructionAITarget (scan entities→CalcDirToTarget→direction table $C6C2). $C6C6–$C6D1=PlaceTileBlockFromCursor. $C6D2–$C71D=ConstructionCursorMove (d-pad with 20fr delay, ×16px steps). $C71E–$C727=ClearKillCounts (zero $73–$7A).
+- [x] **Classify $C755–$C7AA** — **Done.** ConstructionConfigDisplay: draws score digits; A/B/Select adjust $0109 config value.
+- [x] **Classify $CB5E–$CC5B** — **Done.** $CB5E–$CC07=ConstructionEagleWallDraw (draws brick/steel patterns via DrawNametableText + attr writes). $CC08–$CC26=second variant. $CC27–$CC5B=InitAttrTable (64 attr bytes from $07C0→PPU $23C0).
+- [x] **Classify $CCB2–$CCD3** — **Done.** InitNametableFromRAM: curtain-open animation; $63=0; rows $0F→0 WriteNametableRow pairs; copies RAM shadow $0400–$05FF to PPU.
+- [x] **Classify $D284–$D3B0** — **Done.** StringTable2 ($D284–$D33E): "WRITTEN BY", NAMCOT tiles, "BATTLE"/"CITY", player indicators, "HI-SCORE", menu options, copyright, "THIS PROGRAM WAS", "ALL RIGHTS RESERVED", "OPEN-REACH". StringTable3 ($D33F–$D36C): "GAME"/"OVER", "WHO LOVES NORIKO" (Easter egg!), "PTS", HUD tiles. EagleWallTilePatterns ($D36D–$D3AA): brick-wall 6×4 rows + steel-wall 6×4 rows + eagle tile pairs.
+- [x] **Classify $D3DD–$D3FF** — **Done.** All $FF padding bytes (35 bytes).
+- [x] **Classify $DD48–$DE54** — **Done.** RandomDirChange ($DD48, already mapped). CollisionProbeHelpers ($DD6E–$DD7D). AITargetSelect ($DD7E–$DDA1: 3 entry points for P1/P2/eagle targeting). CalcDirToTarget ($DDA2–$DDE4: abs-delta direction calculation using DirToStateTable $E486).
+- [x] **Classify $DE72–$E02D** — **Done.** SpeedCtrlMove ($DE72–$DEA5: stage-tier AI goal selector). EntityDrawLoop ($DEA6–$DEB7: loops 8 slots). EntitySpriteRender ($DEB8–$DF98: state-based sprite dispatch). CalcEntityTileIndex ($DF99–$DFB5). EntitySpriteAttrCalc ($DFB6–$E02D: blink, color cycling, armor-tier offset).
+- [x] **Classify $ED36–$EFFF** — **Done.** SoundSequenceData: 714 bytes of note/SFX sequence data for 28 channels; referenced by ChannelPtrTable ($ECFE). Not valid code.
+- [x] **Classify $FD45–$FFF9** — **Done.** ConstructionDefaultMap + padding: $9D header + 9×$FF + ~513 bytes grid data ($2E/$40 values) + trailing $FF padding. No xrefs found; likely unreferenced construction mode remnant or dev artifact.
+- [ ] **Classify remaining small gaps** — $D44D–$D466 (PRNG+helpers), $DA13–$DABA (Div10+sprite helpers), $E23B–$E27B (PowerupSpriteDraw), $E362–$E413 (SpawnEnemy internals), $E486–$E4EB (DirToStateTable+EntitySpriteDispatch), $E8BE–$E90F (PowerupSpawn+helpers), $E9E2–$EA48 (PowerupEffectTable+handlers)

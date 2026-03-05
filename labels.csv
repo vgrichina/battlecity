@@ -8,8 +8,14 @@ bank,addr,name,type,comment
 0,C331,StageStartInit,,StageStartInit: JSR ClearStageCCData; JSR ClearEntitySlots; set $0106/$0108; spawn P1 (if $51!=0) and P2 (if $52!=0) via SpawnEnemy; STA $7F=$80=20 (enemies=20); clear $8F/$0A/$4B/$45/$6F/$70/$89/$8A/$82/$86/$0100/$6A; JSR $C71E/$C8C0/WaitVBlank/$C830/$C859/$E42B; set $68=$80/$0312=$4C=1; calc SpawnDelayBase: $84=$BE-(stage*4); 2P: $84-=$14.
 0,C3B5,StagePlay,,StagePlay: sets $6D=1 (game active); $4D=0; JSR GameVarsInit; STA $52=3; clears $4F/$50/$0A/$0B; JSR ConstructionSetup; JSR $F000(A=$FF) blank map; STA $85=$1E; STA $46=2; draws STAGE sprites; JSR InitEntities; JSR WaitNMI; JSR StageStartInit; JSR DrawHUDInit; JSR WaitVBlank; falls into ResetEntitySlots ($6C=5); RTS.
 0,C41D,GameOverLoop,,GameOverLoop: WaitVBlank; if Start/Select pressed ($08 & $0C) → exit; JSR $C642; JSR GameTickMain ($C2E6); JSR $E23B; JSR $DEA6; JSR $E0D8; JSR $C728; BEQ loop. Post-game animation/wait loop.
-0,C642,DrawScore,,DrawScore (tentative): called from GameOverLoop
-0,C71E,InitSpawnPoints,,InitSpawnPoints (tentative): called from StageStartInit
+0,C050,DevSignature2,data,DevSignature2: ASCII "TAKEFUMI HYOUDOU JUNKO OZAWA" — additional developer names
+0,C0BE,ConstructionMainLoop,,ConstructionMainLoop: init cursor entity $90/$98/$A0=$84; loop: d-pad movement ($C6D2); A=place tile ($C6C6); B=cycle tile type $5C(0-13); Start=exit
+0,C642,ConstructionAITarget,,ConstructionAITarget: scans entities for active target; calls CalcDirToTarget($DDA2); maps via $C6C2 table → direction bits $06/$08
+0,C6C2,ConstructionDirTable,data,ConstructionDirTable[4]: direction byte lookup indexed by CalcDirToTarget result
+0,C6C6,PlaceTileBlockFromCursor,,PlaceTileBlockFromCursor: LDA $5C AND #$0F; JSR PlaceTileBlock($D80B) at ($90,$98); RTS
+0,C6D2,ConstructionCursorMove,,ConstructionCursorMove: d-pad held→$7B counter(threshold $14=20fr); calls $E451; moves ×16px via ShovelTileDX/DY
+0,C71E,ClearKillCounts,,ClearKillCounts: X=7→0; STA $73,X=0; clears P1/P2 per-type kill counts ($73-$7A)
+0,C755,ConstructionConfigDisplay,,ConstructionConfigDisplay: draws score digits; A(+$10)/B(DEC)/Select(INC) adjust $0109
 0,C728,CheckGameOver,,CheckGameOver: if $68=0 (eagle destroyed) → show explosion sprite → RTS A=1; if $80=0 (no enemies on screen) → RTS A=1 (stage clear); if $51+$52=0 (all lives lost) → RTS A=1 (game over); else RTS A=0 (continue).
 0,C830,DrawHUDScores,,DrawHUDScores (tentative): called after WaitVBlank in stage start
 0,C859,DrawHUDLives,,DrawHUDLives (tentative): called after DrawHUDScores in stage start
@@ -193,3 +199,36 @@ bank,addr,name,type,comment
 0,D276,WaitFrames,,WaitFrames: X = frame count to wait; loop: JSR WaitVBlank + JSR $D0B8; DEX; BNE loop; RTS. Generic frame-delay utility. Called throughout with X=$08/$14/$1E/$78 etc.
 0,D138,BonusLifeCheck,,BonusLifeCheck: if 2P game ($68=$80): if P1 $66=0 and $17≥2 → INC $51 INC $66; elif $67=0 and $1F≥2 → INC $52 INC $67; if life awarded: STA $0304=$0305=1 (bonus-life sprite trigger). RTS. Called after each kill-row tally in ResultScreen.
 0,8225,PostGameAnimLoop,,PostGameAnimLoop: post-game animation loop called from 2P stage path. Clears $0A/$0B; loops: WaitVBlank+$C2A2+GameTickMain+$E23B+$DEA6+$E0D8+PaletteFlashTick until $0A=2 (~128 frames). Then: JSR APUSoundInit; JSR ResultScreen($CCD4) → tally screen; falls through to StageAdvance2P($8259).
+0,CB5E,ConstructionEagleWallDraw,,ConstructionEagleWallDraw: draws brick/steel eagle-border patterns via DrawNametableText + attr table writes at $07F3/$07F4
+0,CB9E,ConstructionEagleWallDraw2,,ConstructionEagleWallDraw2: second variant; draws eagle patterns at col=14 rows 26-27; writes attr $07F3=$3F $07F4|=$33
+0,D30F,str_ThisProgramWas,data,"str_ThisProgramWas: ""THIS PROGRAM WAS"" FF — staff credit line"
+0,D334,str_OpenReach,data,"str_OpenReach: ""OPEN-REACH"" FF — staff credit (company/team name)"
+0,D343,str_Game,data,"str_Game: ""GAME"" FF — game-over text"
+0,D348,str_Over,data,"str_Over: ""OVER"" FF — game-over text"
+0,D34D,str_WhoLovesNoriko,data,"str_WhoLovesNoriko: ""WHO LOVES NORIKO"" FF — Easter egg string (dev personal message)"
+0,D35E,str_PTS,data,"str_PTS: ""PTS"" FF — tally screen points label"
+0,D36D,EagleWallBrickPattern,data,EagleWallBrickPattern: 7×(6+FF) tile rows; empty/$0F-brick border + $C8/$CA/$C9/$CB eagle tiles; used by ConstructionEagleWallDraw
+0,D390,EagleWallSteelPattern,data,EagleWallSteelPattern: 7×(6+FF) tile rows; $10-steel variant of eagle wall pattern
+0,D3C4,str_Bonus,data,"str_Bonus: ""BONUS"" $15 FF — bonus life text on result screen"
+0,DD6E,CollisionProbeX,,CollisionProbeX: CMP $56; BCC +3; SEC SBC #$01; RTS — collision boundary check helper
+0,DD76,CollisionProbeY,,CollisionProbeY: CMP $57; BCC +3; SEC SBC #$01; RTS — collision boundary check helper
+0,DD7E,AITargetP1,,AITargetP1: load P1 pos ($90/$98)→$71/$72; JMP CalcDirToTarget
+0,DD89,AITargetP2,,AITargetP2: load P2 pos ($91/$99)→$71/$72; JMP CalcDirToTarget
+0,DD94,AITargetEagle,,AITargetEagle: load eagle pos ($78/$D8)→$71/$72; JMP CalcDirToTarget
+0,DDA2,CalcDirToTarget,,CalcDirToTarget: computes direction from entity to ($71/$72); abs-delta weighting; indexes DirToStateTable($E486)
+0,DEA6,EntityDrawLoop,,EntityDrawLoop: loops $5A=0→7; JSR EntitySpriteRender per slot
+0,DEB8,EntitySpriteRender,,EntitySpriteRender: dispatches sprite drawing via $E4B8 table based on $A0,X state
+0,E4B8,EntitySpriteDispatch,data/table,EntitySpriteDispatch: 16×ptr16; sprite rendering dispatch indexed by entity state ($A0>>3)&$FE
+0,E23B,PowerupSpriteDraw,,PowerupSpriteDraw: draws powerup icon at ($86/$87) if active; blinks every 8fr; DEC $62 timer; clears $86 when expired
+0,E8BE,PowerupSpawn,,PowerupSpawn: PRNG→random pos $86/$87 via $E902 grid-snap; PRNG→$88 type(0-7 from $E8FA); SFX $0309=1
+0,E8FA,PowerupTypeTable,data,PowerupTypeTable[8]: powerup type weights [0 1 2 3 4 5 4 3]
+0,E902,PowerupGridSnap,,PowerupGridSnap: A=PRNG&3→grid-snapped pixel coord (A*10+6)*2
+0,E9E2,PowerupEffectTable,data/table,PowerupEffectTable: 5×ptr16 dispatch for powerup effects
+0,E9F0,SetInvincibility,,SetInvincibility: STA $89,X=$0A (10 units × 64fr = 640fr invincibility)
+0,E9F5,FreezeEnemies,,FreezeEnemies: STA $0100=$0A (freeze timer)
+0,E9FB,ShovelActivate,,ShovelActivate: JSR $CB9E (steel wall); STA $45=$14 (20-unit timer)
+0,EA07,UpgradeArmor,,UpgradeArmor: $0101,X += $20 (advance player tank tier)
+0,EA17,KillAllEnemies,,KillAllEnemies: loop slots 7→2; if active+not-armor: set $A0=$73(death state); SFX $030A=1
+0,EA3E,ExtraLife,,ExtraLife: INC $51,X; STA $0304=$0305=1 (bonus-life indicator)
+0,ED36,SoundSequenceData,data,SoundSequenceData: 714 bytes of note/SFX sequence data for 28 APU channels; referenced by ChannelPtrTable($ECFE)
+0,FD45,ConstructionDefaultMap,data,ConstructionDefaultMap: $9D header + 9×$FF + ~513 bytes grid ($2E/$40 values) + $FF padding; unreferenced remnant
