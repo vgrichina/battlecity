@@ -50,6 +50,13 @@
       text-decoration: none;
     }
     .about a:hover { text-decoration: underline; }
+    #sitenav {
+      font-size: 11px;
+      color: #555;
+      margin-bottom: 6px;
+    }
+    #sitenav a { color: #f8e800; text-decoration: none; }
+    #sitenav a:hover { text-decoration: underline; }
     #controls-hint {
       display: flex;
       gap: 12px;
@@ -96,6 +103,7 @@
         padding-bottom: env(safe-area-inset-bottom);
       }
       h1 { font-size: 12px; margin-bottom: 2px; }
+      #sitenav { font-size: 10px; margin-bottom: 2px; }
       #controls-hint, .about { display: none; }
       #screen { width: 100vw; border: none; }
       canvas {
@@ -193,6 +201,11 @@
 </head>
 <body>
   <h1>BATTLE CITY</h1>
+  <nav id="sitenav">
+    <a href="reverse.html">RE notes</a> &nbsp;·&nbsp;
+    <a href="architecture.html">architecture</a> &nbsp;·&nbsp;
+    <a href="catalog.html">catalog</a>
+  </nav>
   <div id="screen"><canvas id="game"></canvas></div>
   <div id="controls-hint"></div>
   <div id="vpad">

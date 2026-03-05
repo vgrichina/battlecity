@@ -1,26 +1,30 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Battle City — Metasprite Catalog</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battle City — Asset Catalog</title>
   <style>
-    body { background: #1a1a1a; color: #eee; font-family: monospace; padding: 20px; }
-    h1 { color: #f8e800; border-bottom: 2px solid #333; padding-bottom: 10px; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #111; color: #eee; font-family: monospace; padding: 40px 20px 80px; }
+    nav { margin-bottom: 32px; font-size: 11px; color: #555; }
+    nav a { color: #f8e800; text-decoration: none; }
+    nav a:hover { text-decoration: underline; }
+    h1 { color: #f8e800; font-size: 18px; letter-spacing: 4px; margin-bottom: 32px; border-bottom: 1px solid #2a2a2a; padding-bottom: 10px; }
+    h2 { color: #f8e800; font-size: 13px; letter-spacing: 2px; margin: 32px 0 14px; border-bottom: 1px solid #2a2a2a; padding-bottom: 6px; }
     .section { margin-bottom: 40px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
-    .item { background: #2a2a2a; padding: 15px; border-radius: 4px; text-align: center; border: 1px solid #444; }
+    .item { background: #1a1a1a; padding: 15px; border-radius: 4px; text-align: center; border: 1px solid #2a2a2a; }
     .item.wide { grid-column: span 2; }
     .item.full { grid-column: 1 / -1; }
     .item canvas { image-rendering: pixelated; background: #000; margin-bottom: 10px; border: 1px solid #111; }
     .label { font-size: 12px; color: #aaa; margin-top: 5px; }
-    .controls { position: fixed; top: 20px; right: 20px; background: #333; padding: 15px; border-radius: 8px; border: 1px solid #f8e800; }
-    select { background: #000; color: #f8e800; border: 1px solid #f8e800; padding: 5px; }
     .tag { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; margin-bottom: 5px; }
     .tag-spr { background: #440064; color: #fff; }
     .tag-bg  { background: #083a00; color: #fff; }
     /* SFX cards */
     .sfx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
-    .sfx-card { background: #2a2a2a; border: 1px solid #444; border-radius: 4px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+    .sfx-card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
     .sfx-card .play-btn { flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: #1a1a1a; border: 2px solid #f8e800; color: #f8e800; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.1s; }
     .sfx-card .play-btn:hover { background: #f8e800; color: #000; }
     .sfx-card .play-btn.playing { background: #f8e800; color: #000; }
@@ -37,8 +41,9 @@
   </style>
 </head>
 <body>
+  <nav><a href="index.html">← game</a> &nbsp;·&nbsp; <a href="reverse.html">ROM reverse engineering</a> &nbsp;·&nbsp; <a href="architecture.html">web port architecture</a></nav>
 
-  <h1>BATTLE CITY METASPRITE CATALOG</h1>
+  <h1>ASSET CATALOG</h1>
 
   <div class="section">
     <h2>PLAYERS &amp; ENEMIES</h2>
