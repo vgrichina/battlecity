@@ -396,8 +396,8 @@ let curtainTarget = ''; // 'select' or 'play'
 let editX = 6, editY = 6;       // grid coords (ROM $90/$98 in pixel, /16 for grid)
 let editTileType = 4;            // ROM $5C: 0-13 (start=full brick)
 let editHoldCount = 0;           // ROM $7B: d-pad hold counter
-let editAFirst = false;          // ROM $81: first A press flag
-let editACycleTimer = 0;         // throttle A/B held cycling
+let editACycleTimer = 0;         // A hold frame counter
+let editBHoldTimer = 0;          // B hold frame counter
 let editStartHeld = false;       // edge-detect for Enter in edit mode
 let customMap = null;            // GW*GH array of arrays
 let frameCount;     // ROM $0A/$0B FrameHi/FrameLo
@@ -888,9 +888,9 @@ function updateMobileLabels() {
       if (btnB) btnB.style.display = 'none';
       break;
     case 'edit':
-      btnFire.textContent  = 'PLACE';
+      btnFire.textContent  = 'A ▶';
       btnStart.textContent = 'PLAY';
-      if (btnB) btnB.style.display = 'none'; // tile nav handled by ctx-tile buttons
+      if (btnB) { btnB.style.display = 'flex'; btnB.textContent = '◀ B'; }
       break;
     case 'play':
     case 'start':
@@ -1726,8 +1726,8 @@ function update() {
         editX = 6; editY = 6;
         editTileType = T.BRICK;
         editHoldCount = 0;
-        editAFirst = false;
         editACycleTimer = 0;
+        editBHoldTimer = 0;
         editStartHeld = true;  // Enter is still held from title select
       } else {
         numPlayers = titleCursor === 1 ? 2 : 1; // 0=1P, 1=2P
@@ -1779,28 +1779,31 @@ function update() {
       brickBits[editY][editX] = brickInitBits(editTileType);
     }
 
-    // A button (Space/Z): first press places tile, holding cycles type forward
+    // A button (Space/Z): place tile, hold to cycle forward every 8 frames
     const aBtn = !!(keys['Space'] || keys['KeyZ']);
     if (aBtn) {
-      if (!editAFirst) {
-        editAFirst = true;
+      editACycleTimer++;
+      if (editACycleTimer === 1) {
+        // First frame: place tile
         grid[editY][editX] = editTileType;
         brickBits[editY][editX] = brickInitBits(editTileType);
-        editACycleTimer = 0;
-      } else {
-        editACycleTimer++;
-        if (editACycleTimer % 8 === 0) {
-          editTileType = (editTileType + 1) % 14;
-        }
+      } else if (editACycleTimer > 16 && editACycleTimer % 8 === 0) {
+        // Hold: cycle forward after initial delay
+        editTileType = (editTileType + 1) % 14;
       }
-    } else if (!aBtn) {
-      editAFirst = false;
+    } else {
+      editACycleTimer = 0;
     }
 
-    // B button (X/Shift): cycle type backward (every 8 frames while held)
-    const bBtn = !!(keys['KeyX'] || keys['ShiftLeft'] || keys['ShiftRight']);
-    if (bBtn && !aBtn && frameCount % 8 === 0) {
-      editTileType = (editTileType + 13) % 14; // -1 mod 14
+    // B button (X/B/Shift): cycle backward, hold to repeat every 8 frames
+    const bBtn = !!(keys['KeyX'] || keys['KeyB'] || keys['ShiftLeft'] || keys['ShiftRight']);
+    if (bBtn && !aBtn) {
+      editBHoldTimer++;
+      if (editBHoldTimer === 1 || (editBHoldTimer > 16 && editBHoldTimer % 8 === 0)) {
+        editTileType = (editTileType + 13) % 14;
+      }
+    } else {
+      editBHoldTimer = 0;
     }
 
     // Start (Enter): save and transition to play (edge-detect)
@@ -2715,7 +2718,7 @@ const HINTS = {
   gameover_tally: [],
   gameover:       [hb('Enter', 'Retry')],
   victory: [],
-  edit:    [hb('↑↓←→', 'Move'), hb('Space', 'Place'), hb('T', 'Tile'), hb('Enter', 'Play')],
+  edit:    [hb('↑↓←→', 'Move+Place'), hb('Space', 'Place (hold: ▶)'), hb('B/X', 'Tile ◀'), hb('Enter', 'Play')],
 };
 let _lastPhase = null;
 function updateControlsHint() {
