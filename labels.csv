@@ -48,7 +48,17 @@ bank,addr,name,type,comment
 0,D5FB,CalcNametableAddr,,
 0,D689,ReadControllers2,,ReadControllers mirror at $D689 = same code as $9689; reads $4016/$4017 (P1/P2), edge-detects into $06-$09; called from NMI ($D433) NOT a sound routine despite old label
 0,EA51,APUSoundInit,,APUSoundInit: STA $4015=$0F (enable sq1+sq2+tri+noise); STA $4017=$C0 (5-step frame counter no IRQ); zero 28 channel data blocks at $031C-$03FB (8B each) and $0300-$031B (status array); called at startup
-0,EA7E,SoundEngineTick,,SoundEngineTick: NMI-called each frame; $6D!=0→$F5=1 else $F5=28; pointer $F0/$F1=$031C (channel table); first pass scans active channels writes APU $4000+X*4; reads note seqs via $ECAF/ECBE; second pass silences idle channels
+0,EA7E,SoundEngineTick,,SoundEngineTick: NMI-called every frame. $6D=PAUSE flag (0=normal 1=paused); $6D!=0→$F5=1 else $F5=28. Pass 1 ($EA8C): APU write — lower slot wins via $F9 priority; byte0=1-4→write $4000+hwCh*4 then byte0+=4; byte0=5-8→just mark $F9. Silence pass ($EAF6): mute unclaimed hw channels. Pass 2 ($EB11): sequence processing — $0300[N]=1→init header; >=2→decrement byte7 duration then read commands. Notes decoded Pass 2 written to APU next frame Pass 1 (1-frame delay).
+0,EA8C,SoundEnginePass1,,Pass 1: APU register write. Clear $F9[0-3]; for each ch if byte0>=5 mark $F9; if byte0=1-4 and $F9 not set write 4 APU regs set byte0+=4
+0,EAF6,SoundEngineSilencePass,,Silence unclaimed: for hw ch 0-3 if $F9[X]=0 write $10 to $4000+X*4 (const-vol 0)
+0,EB11,SoundEnginePass2,,Pass 2: sequence processing. $0300[N]=0→skip; =1→init header; >=2→DEC byte7; if 0→read commands
+0,EB4F,SoundEngineInitSlot,,Init slot: read 4-5 header bytes from sequence into channel data bytes 0-4
+0,EB88,SoundEngineCmdLoop,,Command loop: ReadChannelByte; <$60=NOTE; $60=HOLD; $61-$E7=DURATION; >=$E8→dispatch via jump table $EBE6
+0,EB9E,SoundEngineNote,,NOTE: bits 5-3=semitone (NoteFreqTable); bits 2-0=octave (LSR period); if byte0>=5 sub 4 (trigger APU write next Pass 1)
+0,EBE1,SoundEngineCmdDispatch,,Special cmd dispatch: A-=$E8; JSR $ECD0 (jump-table); handlers: $E8=STOP $E9-$EB=volMod $EC=sweep $ED=timerHi $EE=dutyVol $EF=loopReset $F0-$F2=loop
+0,EC0A,SoundEngineCmdStop,,STOP ($E8): $0300[N]=0; byte0=0; DEC byte5
+0,EC75,SoundEngineCmdLoopReset,,LOOP-RESET ($EF): clear $F6/$F7/$F8 (3 loop counters)
+0,EC81,SoundEngineCmdLoop0,,LOOP $F0-$F2: INC counter; CMP repeat; if done clear+skip; else read restart-offset→byte5
 0,ECAF,GetChannelDataPtr,,GetChannelDataPtr: X=$F4*2; loads $F2/$F3 from ChannelPtrTable($ECFE); used to point at each channel's note sequence
 0,ECBE,ReadChannelByte,,ReadChannelByte: read next byte from note sequence at ($F2),$F3; advance pointer stored at ($F0),5
 0,ECE6,NoteFreqTable,,NoteFreqTable: 12 note values (C through B) → APU period hi byte; used to set $4002/$4006/$400A/$400E

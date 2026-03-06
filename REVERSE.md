@@ -98,7 +98,7 @@
 | $9A93–$9AAC | — | 26 | code | HideSpritePairs2: identical copy of $DA93 (NROM-128 mirror region duplicate). |
 | $E413 | — | — | code | ClearEntitySlots2: clears $A0-$A7 and $0103-$010A (8 entity slots) |
 | $EA51–$EA7D | — | ~45 | code | APUSoundInit: STA $4015=$0F (enable sq1+sq2+tri+noise); STA $4017=$C0 (5-step, no IRQ); zero 28 channel blocks at $031C–$03FB and $0300–$031B |
-| $EA7E–$ECAD | — | ~560 | code | SoundEngineTick: NMI-called; $6D→$F5 (1 channel if game active, else 28); pointer $F0/$F1→$031C; iterate channels; write APU $4000+X*4; call GetChannelDataPtr/ReadChannelByte |
+| $EA7E–$ECAD | — | ~560 | code | SoundEngineTick: NMI-called every frame. $6D=PAUSE flag (0=normal→28ch, 1=paused→1ch). Two-pass: Pass 1 ($EA8C) APU register write with priority ($F9 tracking, lower slot wins); Pass 2 ($EB11) sequence processing with 1-frame write delay. Command dispatch via jump table at $EBE6. |
 | $ECAF–$ECBD | — | ~15 | code | GetChannelDataPtr: loads $F2/$F3 from ChannelPtrTable[$ECFE + $F4*2] |
 | $ECBE–$ECCF | — | ~18 | code | ReadChannelByte: reads next byte from note sequence at ($F2/$F3); advances pointer |
 | $ECE6–$ECFD | — | 24 | data | NoteFreqTable: 12 note period-hi values (C through B one octave) for APU frequency registers |
@@ -226,7 +226,7 @@
 | $5A/$5B | (player slot) | Used during construction setup |
 | $60 | TileOffset | Added to sprite tile indices; $30 for highlighted mode, 0 normal |
 | $6C | MaxEntityScanIdx | Entity slot upper bound: 1P=5, 2P/Construction=7. Set at $CA76; reset to 5 at $C41A. Read by EnemySpawnTick ($DB48): scans $A0+$6C down to $A0+2 for free slot. 1P → 4 enemy slots (2–5); 2P → 6 scan positions (2–7). |
-| $6D | (game active) | Set to 1 at StagePlay |
+| $6D | PauseFlag | PAUSE flag: 0=normal gameplay, 1=paused. Toggled by Start button (EOR at $8214). When 1: GameTickMain ($C2E6) is skipped ($81FC); SoundEngineTick processes only 1 channel/frame ($EA7E). Set to 0 at stage setup ($8163); set to 1 at construction setup ($83B5). |
 | $7F | EnemiesRemaining | Enemies left to spawn this stage; DEC'd by EnemySpawnTick ($DB48) on each spawn; compared to 0 to stop spawning |
 | $83 | PlayerMode | 0=1P, 1=2P, 2=CONSTRUCTION; cycles via SELECT button |
 | $90 | (unknown) | Set to $48 in PlayerSelectLoop |
@@ -551,22 +551,44 @@ Zeros 28 channel data blocks at `$031C–$03FB` (8 bytes each) and status array 
 
 Called from NMI handler every frame (after ReadControllers and HideSpritePairs).
 
-**Channel count selection:** `$6D` (game-active flag) controls $F5:
-- `$6D = 0` (not in gameplay): `$F5 = $1C = 28` — process all channels
-- `$6D ≠ 0` (in gameplay): `$F5 = 1` — process only 1 channel
+**Channel count selection:** `$6D` (PAUSE flag) controls $F5:
+- `$6D = 0` (normal gameplay): `$F5 = $1C = 28` — process all 28 channels per frame
+- `$6D ≠ 0` (paused): `$F5 = 1` — process only 1 channel per frame
+
+**Two-pass architecture:**
+
+**Pass 1 ($EA8C): APU register write pass**
+- Clears `$F9[0-3]` (hw channel claimed flags)
+- Iterates channels 0..$F5-1, reading byte 0 of each channel's data block:
+  - byte0 = 0: skip (inactive)
+  - byte0 = 5–8: already written; mark `$F9[byte0-5] = 1`; skip APU write
+  - byte0 = 1–4: new note ready; if `$F9[byte0-1]` NOT set → claim it, write bytes 1-4 to `$4000+(byte0-1)*4`, set `byte0 += 4` (transitions to 5–8 state)
+  - **Priority:** lower slot number wins — if two slots share a hw channel, only the first one to claim `$F9` gets to write APU registers
+
+**Silence pass ($EAF6):** for each hw channel 0-3, if `$F9[X] = 0`, write `$10` to `$4000+X*4` (constant-vol mode, volume=0 → mute)
+
+**Pass 2 ($EB11): Sequence processing pass**
+- Iterates channels 0..$F5-1:
+  - `$0300[N] = 0`: skip (inactive)
+  - `$0300[N] = 1`: newly triggered → increment to 2, read 4–5 header bytes from sequence into channel data
+  - `$0300[N] ≥ 2`: active → decrement byte 7 (duration counter); when 0, read commands
+- **1-frame delay:** notes decoded in Pass 2 set byte0 = hwchan (1-4), which triggers APU write in the NEXT frame's Pass 1
 
 **Channel data layout** (8 bytes per channel at `$031C + N×8`):
 
 | Byte offset | Purpose |
 |-------------|---------|
-| 0 | Current command / note type |
-| 1–4 | APU register values (written to $4000+hwchan*4) |
-| 5 | Sequence byte position |
-| 6 | Duration / timer lo |
-| 7 | Duration counter |
+| 0 | State: 0=inactive, 1-4=pending APU write (hw channel), 5-8=written (hw channel+4) |
+| 1 | Duty/Volume register ($4000/$4004/$400C): bits 7-6=duty, bit5=envLoop, bit4=constVol, bits 3-0=vol/envPeriod |
+| 2 | Sweep register ($4001/$4005): bit7=enable, bits 6-4=period, bit3=negate, bits 2-0=shift |
+| 3 | Timer low byte ($4002/$4006/$400A/$400E) |
+| 4 | Timer high + length counter ($4003/$4007/$400B/$400F) |
+| 5 | Sequence byte position (offset into ROM sequence data) |
+| 6 | Duration value (set by DURATION command, copied to byte 7 on note) |
+| 7 | Duration counter (decremented each frame; 0 → read next command) |
 
-**Status array:** `$0300[N]` = active flag for channel N (0=inactive)
-**APU hardware mapping:** channel N → hardware channel `N mod 4` (sq1/sq2/tri/noise)
+**Status array:** `$0300[N]` = active flag for channel N (0=inactive, 1=init pending, ≥2=active)
+**APU hardware mapping:** determined by sequence header byte 0 (1=sq1, 2=sq2, 3=tri, 4=noise), NOT by `N mod 4`
 
 ### Helper routines
 

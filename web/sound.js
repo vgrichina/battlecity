@@ -1,8 +1,12 @@
 'use strict';
 /* ================================================================
  * Battle City — NES APU Sound Engine (Web Audio API)
- * Implements the ROM $EC23 SoundEngine sequence interpreter
- * using Web Audio oscillators to approximate NES APU channels.
+ * ROM-accurate reimplementation of $EA7E SoundEngineTick:
+ *   - Two-pass architecture (sequence processing → APU write)
+ *   - Channel priority: lower slot number wins per hw channel
+ *   - Volume envelope decay (NES APU quarter-frame clocked)
+ *   - Frequency sweep for pulse channels
+ *   - Called every frame from NMI (all game phases)
  * ================================================================ */
 
 // ─── NES APU constants ──────────────────────────────────────────
@@ -23,14 +27,19 @@ function periodToFreq(period, isTriangle) {
   return NES_CPU_CLOCK / (div * (period + 1));
 }
 
-// Decode note byte → frequency
-// bits 5-3 = semitone (0=A..11=G#), bits 2-0 = octave shift
-function noteToFreq(noteByte, isTriangle) {
-  const semi = (noteByte >> 3) & 0x0F;  // 0-11
-  const oct  = noteByte & 0x07;          // 0-7
-  if (semi >= 12) return 440;  // safety
+// Decode note byte → NES timer period
+function noteToPeriod(noteByte) {
+  const semi = (noteByte >> 3) & 0x0F;
+  const oct  = noteByte & 0x07;
+  if (semi >= 12) return 0;
   let period = NES_PITCH[semi];
   period >>= oct;
+  return period;
+}
+
+// Decode note byte → frequency
+function noteToFreq(noteByte, isTriangle) {
+  const period = noteToPeriod(noteByte);
   return periodToFreq(period, isTriangle);
 }
 
@@ -235,20 +244,51 @@ function createChannelNodes(chIdx) {
 }
 
 // ─── Sound slot state ───────────────────────────────────────────
-// Each slot: { active, channel, seq, pos, dur, durSaved, vol, volByte }
 const slots = [];
 for (let i = 0; i < 28; i++) {
   slots.push({
     active: false,
-    channel: 0,   // 0-3 mapped from NES ch 1-4
-    seq: null,     // reference to SOUND_SEQ[i]
-    pos: 0,        // current position in command stream
-    dur: 0,        // frames remaining for current note
-    durSaved: 0,   // saved duration for HOLD
-    vol: 0,        // volume 0-15
-    freq: 0,       // current frequency
+    channel: 0,       // 0-3 mapped from NES ch 1-4
+    seq: null,         // reference to SOUND_SEQ[i]
+    pos: 0,            // current position in command stream
+    dur: 0,            // frames remaining for current note
+    durSaved: 0,       // saved duration for HOLD
+    vol: 0,            // volume 0-15 (constant-volume mode)
+    freq: 0,           // current frequency Hz
+    period: 0,         // NES timer period (for sweep computation)
+    noisePeriodIdx: 0, // noise period index ($400E bits 3-0)
+    duty: 2,           // duty cycle index 0-3
+    volByte: 0,        // raw duty/vol register byte
     loopCtr: [0,0,0],  // 3-level loop counters
+    needsWrite: false,  // flag: new note ready, write to APU next pass
+    // Envelope state (NES APU hardware envelope simulation)
+    useEnvelope: false, // true when volByte bit4=0
+    envVol: 15,         // current envelope volume (15→0)
+    envDivider: 0,      // envelope divider counter
+    envPeriod: 0,       // envelope period (volByte bits 3-0)
+    envLoop: false,     // envelope loop flag (volByte bit5)
+    envStartFlag: false, // restart envelope on next clock
+    // Sweep state (NES APU sweep unit simulation, pulse channels only)
+    sweepEnabled: false,
+    sweepPeriod: 0,     // sweep divider reload
+    sweepNegate: false,
+    sweepShift: 0,
+    sweepDivider: 0,
   });
+}
+
+// ─── Helper: update vol/envelope state from volByte ─────────────
+function updateVolState(s) {
+  const constVol = !!(s.volByte & 0x10);
+  s.useEnvelope = !constVol;
+  s.duty = (s.volByte >> 6) & 3;
+  if (constVol) {
+    s.vol = s.volByte & 0x0F;
+  } else {
+    s.envPeriod = s.volByte & 0x0F;
+    s.envLoop = !!(s.volByte & 0x20);
+    // Don't reset envVol here — only on note start
+  }
 }
 
 // ─── Trigger a sound ────────────────────────────────────────────
@@ -267,22 +307,44 @@ function playSound(slotIdx) {
   const chSel = seq[0];  // 1=sq1, 2=sq2, 3=tri, 4=noise
   s.channel = (chSel >= 1 && chSel <= 4) ? chSel - 1 : 0;
   s.volByte = seq[1];    // duty/volume register
-  // NES $4000 bit4: 1=const-vol (bits 3-0 = volume), 0=envelope mode (bits 3-0 = decay period).
-  // Web port doesn't simulate envelope decay; treat envelope mode as max volume (15).
-  s.vol = (seq[1] & 0x10) ? (seq[1] & 0x0F) : 15;
-  // seq[2] = sweep (ignored in web port)
-  // seq[3] = timer hi template (ignored)
-  // seq[4] = noise reg (if ch=4)
+
+  // Initialize volume / envelope state
+  const constVol = !!(seq[1] & 0x10);
+  s.useEnvelope = !constVol;
+  s.duty = (seq[1] >> 6) & 3;
+  if (constVol) {
+    s.vol = seq[1] & 0x0F;
+  } else {
+    s.envPeriod = seq[1] & 0x0F;
+    s.envLoop = !!(seq[1] & 0x20);
+    s.envVol = 15;
+    s.envDivider = s.envPeriod;
+    s.envStartFlag = true;
+    s.vol = 15;
+  }
+
+  // Initialize sweep state (pulse channels only)
+  s.sweepEnabled = false;
+  if (s.channel < 2) {
+    const sweep = seq[2];
+    if (sweep & 0x80) {
+      s.sweepEnabled = true;
+      s.sweepPeriod = (sweep >> 4) & 7;
+      s.sweepNegate = !!(sweep & 0x08);
+      s.sweepShift = sweep & 7;
+      s.sweepDivider = s.sweepPeriod;
+    }
+  }
 
   const hdrSize = chSel === 4 ? 5 : 4;
   s.pos = hdrSize;
   s.dur = 0;
   s.durSaved = 0;
   s.freq = 0;
+  s.period = 0;
+  s.noisePeriodIdx = 0;
+  s.needsWrite = false;
   s.loopCtr = [0, 0, 0];
-
-  // Set initial volume on the channel
-  setChannelVol(s.channel, s.vol);
 }
 
 function stopSound(slotIdx) {
@@ -290,12 +352,12 @@ function stopSound(slotIdx) {
   const s = slots[slotIdx];
   if (s.active) {
     s.active = false;
-    setChannelVol(s.channel, 0);
   }
 }
 
 function stopAllSounds() {
   for (let i = 0; i < 28; i++) stopSound(i);
+  for (let c = 0; c < 4; c++) silenceChannel(c);
 }
 
 // ─── Channel helpers ────────────────────────────────────────────
@@ -303,7 +365,6 @@ function setChannelFreq(chIdx, freqOrPeriod) {
   if (!channels[chIdx] || !channels[chIdx].active) return;
   const ch = channels[chIdx];
   if (chIdx < 3 && ch.osc) {
-    // Clamp to audible range
     const freq = Math.max(20, Math.min(freqOrPeriod, 20000));
     ch.osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
   }
@@ -323,13 +384,11 @@ function setChannelDuty(chIdx, dutyIdx) {
 
 function setChannelVol(chIdx, vol4bit) {
   if (!channels[chIdx] || !channels[chIdx].gain) return;
-  // Map 4-bit volume (0-15) to gain (0.0-1.0), with triangle always at fixed vol
   let gain;
   if (chIdx === 2) {
     // Triangle has no volume control in NES — it's on or off
     gain = vol4bit > 0 ? 0.6 : 0;
   } else if (chIdx === 3) {
-    // Noise is loud; scale down
     gain = (vol4bit / 15) * 0.4;
   } else {
     gain = (vol4bit / 15) * 0.5;
@@ -341,18 +400,18 @@ function silenceChannel(chIdx) {
   setChannelVol(chIdx, 0);
 }
 
-// ─── Per-frame sound engine tick ────────────────────────────────
+// ─── Per-frame sound engine tick (ROM $EA7E) ────────────────────
+// Two-pass architecture matching the ROM:
+//   Pass 1 (processSequences): advance all active sequences
+//   Pass 2 (writeAudio): lower slot number wins per hw channel
+// Plus envelope/sweep ticking between passes.
 function soundTick() {
   if (!soundEnabled || !audioCtx) return;
 
-  // Track which channels are being driven this frame
-  const chActive = [false, false, false, false];
-
+  // ── Pass 1: Process sequences ──────────────────────────────────
   for (let i = 0; i < 28; i++) {
     const s = slots[i];
     if (!s.active) continue;
-
-    chActive[s.channel] = true;
 
     // Decrement duration
     if (s.dur > 0) {
@@ -363,24 +422,26 @@ function soundTick() {
 
     // Process command bytes
     const seq = s.seq;
-    let safety = 40;  // prevent infinite loop
+    let safety = 40;
     while (s.pos < seq.length && safety-- > 0) {
       const b = seq[s.pos++];
 
       if (b <= 0x5F) {
-        // NOTE: decode pitch and play
+        // NOTE: decode pitch
         if (s.channel < 2) {
-          setChannelDuty(s.channel, s.volByte >> 6);
-          s.freq = noteToFreq(b, false);
-          setChannelFreq(s.channel, s.freq);
+          s.period = noteToPeriod(b);
+          s.freq = periodToFreq(s.period, false);
         } else if (s.channel === 2) {
-          s.freq = noteToFreq(b, true);
-          setChannelFreq(s.channel, s.freq);
+          s.period = noteToPeriod(b);
+          s.freq = periodToFreq(s.period, true);
         } else {
-          // Noise: note byte contains period index in low nibble
-          setChannelFreq(3, b & 0x0F);
+          s.noisePeriodIdx = b & 0x0F;
         }
-        setChannelVol(s.channel, s.vol);
+        // Restart envelope on new note (ROM: writing $4003/$4007 restarts envelope)
+        s.envStartFlag = true;
+        // Reset sweep divider on new note
+        if (s.sweepEnabled) s.sweepDivider = s.sweepPeriod;
+        s.needsWrite = true;
         // Use saved duration if we have one
         if (s.durSaved > 0 && s.dur === 0) {
           s.dur = s.durSaved;
@@ -401,45 +462,49 @@ function soundTick() {
       } else if (b === 0xE8) {
         // STOP
         s.active = false;
-        silenceChannel(s.channel);
         break;
 
       } else if (b === 0xE9) {
-        // MODIFY VOL high-2 ($E9 in ROM at $EDC6 keeps low 6 bits $3F and ORs new byte)
+        // MODIFY VOL high-2 (ROM $EDC6: AND #$3F, ORA param)
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
           s.volByte = (s.volByte & 0x3F) | p;
-          s.vol = (s.volByte & 0x10) ? (s.volByte & 0x0F) : 15;
-          setChannelVol(s.channel, s.vol);
+          updateVolState(s);
         }
       } else if (b === 0xEA) {
-        // MODIFY VOL low-6 ($EA in ROM at $EDD8 keeps high 2 bits $C0 and ORs new byte)
+        // MODIFY VOL low-6 (ROM $EDD8: AND #$C0, ORA param)
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
           s.volByte = (s.volByte & 0xC0) | p;
-          s.vol = (s.volByte & 0x10) ? (s.volByte & 0x0F) : 15;
-          setChannelVol(s.channel, s.vol);
+          updateVolState(s);
         }
       } else if (b === 0xEB) {
-        // MODIFY VOL high-4 ($EB in ROM at $EDEA keeps low 4 bits $0F and ORs new byte)
+        // MODIFY VOL high-4 (ROM $EDEA: AND #$0F, ORA param)
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
           s.volByte = (s.volByte & 0x0F) | p;
-          s.vol = (s.volByte & 0x10) ? (s.volByte & 0x0F) : 15;
-          setChannelVol(s.channel, s.vol);
+          updateVolState(s);
         }
       } else if (b === 0xEC) {
-        // SET SWEEP (ignored in web port)
-        if (s.pos < seq.length) s.pos++;
+        // SET SWEEP
+        if (s.pos < seq.length) {
+          const sweep = seq[s.pos++];
+          if (s.channel < 2) {
+            s.sweepEnabled = !!(sweep & 0x80);
+            s.sweepPeriod = (sweep >> 4) & 7;
+            s.sweepNegate = !!(sweep & 0x08);
+            s.sweepShift = sweep & 7;
+            s.sweepDivider = s.sweepPeriod;
+          }
+        }
       } else if (b === 0xED) {
-        // SET TIMER-HI (ignored)
+        // SET TIMER-HI (ignored — period is computed from note)
         if (s.pos < seq.length) s.pos++;
       } else if (b === 0xEE) {
-        // SET DUTY/VOL
+        // SET DUTY/VOL (full replace)
         if (s.pos < seq.length) {
           s.volByte = seq[s.pos++];
-          s.vol = (s.volByte & 0x10) ? (s.volByte & 0x0F) : 15;
-          setChannelVol(s.channel, s.vol);
+          updateVolState(s);
         }
       } else if (b === 0xEF) {
         // LOOP-RESET
@@ -454,10 +519,7 @@ function soundTick() {
           s.loopCtr[level]++;
           if (s.loopCtr[level] >= repeatCount) {
             s.loopCtr[level] = 0;
-            // Fall through (loop done)
           } else {
-            // Jump back to restart offset in command stream
-            // restartOff is relative to start of command stream (after header)
             const hdrSize = (s.seq[0] === 4) ? 5 : 4;
             s.pos = hdrSize + restartOff;
           }
@@ -474,9 +536,99 @@ function soundTick() {
     }
   }
 
-  // Silence channels not driven by any active slot
+  // ── Tick envelopes (4 quarter-frame clocks per game frame) ─────
+  for (let i = 0; i < 28; i++) {
+    const s = slots[i];
+    if (!s.active) continue;
+    if (!s.useEnvelope) continue;
+
+    for (let q = 0; q < 4; q++) {
+      if (s.envStartFlag) {
+        // Restart: set vol to 15, reload divider
+        s.envStartFlag = false;
+        s.envVol = 15;
+        s.envDivider = s.envPeriod;
+        continue;  // this clock consumed by restart
+      }
+      if (s.envDivider > 0) {
+        s.envDivider--;
+      } else {
+        s.envDivider = s.envPeriod;
+        if (s.envVol > 0) {
+          s.envVol--;
+        } else if (s.envLoop) {
+          s.envVol = 15;
+        }
+      }
+    }
+  }
+
+  // ── Tick sweeps (2 half-frame clocks per game frame, pulse only)
+  for (let i = 0; i < 28; i++) {
+    const s = slots[i];
+    if (!s.active || !s.sweepEnabled || s.channel >= 2) continue;
+    if (s.period <= 0) continue;
+
+    for (let h = 0; h < 2; h++) {
+      if (s.sweepDivider > 0) {
+        s.sweepDivider--;
+      } else {
+        s.sweepDivider = s.sweepPeriod;
+        if (s.sweepShift > 0) {
+          const change = s.period >> s.sweepShift;
+          let newPeriod;
+          if (s.sweepNegate) {
+            // Pulse 1: ones' complement (subtract + extra -1)
+            // Pulse 2: two's complement (just subtract)
+            newPeriod = s.period - change - (s.channel === 0 ? 1 : 0);
+          } else {
+            newPeriod = s.period + change;
+          }
+          if (newPeriod > 0 && newPeriod < 0x800) {
+            s.period = newPeriod;
+            s.freq = periodToFreq(s.period, false);
+            s.needsWrite = true;
+          } else if (newPeriod >= 0x800) {
+            // Sweep overflow silences the channel (mute flag)
+            s.active = false;
+          }
+        }
+      }
+    }
+  }
+
+  // ── Pass 2: Write to audio (ROM priority: lower slot wins) ─────
+  const chClaimed = [false, false, false, false];
+
+  for (let i = 0; i < 28; i++) {
+    const s = slots[i];
+    if (!s.active) continue;
+
+    const ch = s.channel;
+    if (chClaimed[ch]) continue;  // lower-numbered slot already owns this hw channel
+    chClaimed[ch] = true;
+
+    // Set duty cycle (pulse channels only)
+    if (ch < 2) setChannelDuty(ch, s.duty);
+
+    // Write frequency when a new note was decoded or sweep changed it
+    if (s.needsWrite) {
+      if (ch < 3) {
+        setChannelFreq(ch, s.freq);
+      } else {
+        setChannelFreq(3, s.noisePeriodIdx);
+      }
+      s.needsWrite = false;
+    }
+
+    // Write volume (envelope or constant)
+    const vol = s.useEnvelope ? s.envVol : s.vol;
+    setChannelVol(ch, vol);
+  }
+
+  // Silence hw channels not claimed by any active slot
   for (let c = 0; c < 4; c++) {
-    if (!chActive[c]) silenceChannel(c);
+    if (!chClaimed[c]) silenceChannel(c);
   }
 }
 
@@ -501,7 +653,6 @@ function stopBGM() {
 // Re-trigger BGM slots each frame (like ROM $C18A GameLoopTop)
 function tickBGM() {
   if (!bgmPlaying) return;
-  // If any BGM slot has finished, restart it (the sequences naturally end with $E8)
   if (!slots[SND.BGM_SQ1].active) playSound(SND.BGM_SQ1);
   if (!slots[SND.BGM_TRI].active) playSound(SND.BGM_TRI);
   if (!slots[SND.BGM_SQ2].active) playSound(SND.BGM_SQ2);

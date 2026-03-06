@@ -1630,6 +1630,10 @@ function update() {
   frameCount++;
   updateMobileLabels();
 
+  // ROM NMI handler: SoundEngineTick runs every frame regardless of game phase
+  soundTick();
+  tickBGM();
+
   if (gamePhase === 'play') tickPaletteFlash(); // ROM $C31D PaletteFlashTick — water animation, in-game only
 
   if (demoMode && gamePhase === 'play') tickDemoAI();
@@ -1890,8 +1894,6 @@ function update() {
   }
 
   // ── Active gameplay subsystems  ROM $C2E6 GameTickMain order ──────────────
-  soundTick();                    // ROM $EA7E SoundEngineTick per-frame
-  tickBGM();                      // ROM $C18A re-trigger BGM channels
   tickTimers();                   // shield/freeze/spawn timers
   moveEntities();                 // ROM $DC7C EntityMovementAI
   moveBullets();                  // ROM $E604 BulletTerrainCollision
