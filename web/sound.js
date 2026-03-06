@@ -476,10 +476,10 @@ function soundTick() {
           updateVolState(s);
         }
       } else if (b === 0xEB) {
-        // MODIFY VOL high-4 (ROM $EDEA: AND #$0F, ORA param)
+        // MODIFY VOL low-4 (ROM $EC45: AND #$F0 keeps high nibble, ORA param sets low nibble)
         if (s.pos < seq.length) {
           const p = seq[s.pos++];
-          s.volByte = (s.volByte & 0x0F) | p;
+          s.volByte = (s.volByte & 0xF0) | p;
           updateVolState(s);
         }
       } else if (b === 0xEC) {
@@ -533,19 +533,22 @@ function soundTick() {
     }
   }
 
-  // ── Tick envelopes (4 quarter-frame clocks per game frame) ─────
+  // ── Tick envelopes (~3 quarter-frame clocks per game frame) ─────
+  // NES 5-step mode: 4 envelope clocks per 37282-cycle sequence,
+  // NMI fires every ~29830 cycles → ~3.2 clocks per frame. Use 3.
   for (let i = 0; i < 28; i++) {
     const s = slots[i];
     if (!s.active) continue;
     if (!s.useEnvelope) continue;
 
-    for (let q = 0; q < 4; q++) {
+    for (let q = 0; q < 3; q++) {
       if (s.envStartFlag) {
-        // Restart: set vol to 15, reload divider
+        // NES: start flag reloads divider + sets decay to 15, then clears flag.
+        // This happens AT the clock edge, not consuming a clock cycle.
         s.envStartFlag = false;
         s.envVol = 15;
         s.envDivider = s.envPeriod;
-        continue;  // this clock consumed by restart
+        // Fall through to normal tick (don't skip this clock)
       }
       if (s.envDivider > 0) {
         s.envDivider--;
