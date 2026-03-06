@@ -310,6 +310,33 @@
     #btn-record.recording .icon-rec-on { display: block !important; }
     @keyframes rec-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
     #btn-record.recording .icon-rec-on { animation: rec-pulse 1s infinite; }
+    #mobile-tools {
+      display: none;
+      justify-content: center;
+      gap: 16px;
+      padding: 4px 0;
+    }
+    .mtool-btn {
+      background: none;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      color: #555;
+      padding: 6px 12px;
+      cursor: pointer;
+      line-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .mtool-btn:active { background: #222; color: #ccc; }
+    #mbtn-sound .icon-mut { display: none; }
+    #mbtn-sound.muted .icon-snd { display: none; }
+    #mbtn-sound.muted .icon-mut { display: block; }
+    @media (max-width: 800px), (hover: none) and (pointer: coarse) {
+      #mobile-tools { display: flex; }
+    }
     @media (max-width: 800px) {
       #hint-row { display: none; }
     }
@@ -485,6 +512,31 @@
       <button class="vbtn" id="btn-fire">FIRE</button>
       <button class="vbtn" id="btn-b">B</button>
     </div>
+  </div>
+  <div id="mobile-tools">
+    <button class="mtool-btn" id="mbtn-fullscreen">
+      <svg width="14" height="14" viewBox="0 0 14 14" shape-rendering="crispEdges" fill="currentColor">
+        <rect x="0" y="0" width="4" height="2"/><rect x="0" y="0" width="2" height="4"/>
+        <rect x="10" y="0" width="4" height="2"/><rect x="12" y="0" width="2" height="4"/>
+        <rect x="0" y="10" width="2" height="4"/><rect x="0" y="12" width="4" height="2"/>
+        <rect x="12" y="10" width="2" height="4"/><rect x="10" y="12" width="4" height="2"/>
+      </svg>
+    </button>
+    <button class="mtool-btn" id="mbtn-sound">
+      <svg class="icon-snd" width="18" height="14" viewBox="0 0 22 14" shape-rendering="crispEdges" fill="currentColor">
+        <rect x="0" y="4" width="4" height="6"/><rect x="4" y="2" width="4" height="10"/>
+        <rect x="10" y="4" width="2" height="2"/><rect x="12" y="6" width="2" height="2"/><rect x="10" y="8" width="2" height="2"/>
+        <rect x="16" y="2" width="2" height="2"/><rect x="18" y="4" width="2" height="6"/><rect x="16" y="10" width="2" height="2"/>
+      </svg>
+      <svg class="icon-mut" width="18" height="14" viewBox="0 0 22 14" shape-rendering="crispEdges" fill="currentColor">
+        <rect x="0" y="4" width="4" height="6"/><rect x="4" y="2" width="4" height="10"/>
+        <rect x="12" y="2" width="2" height="2"/><rect x="20" y="2" width="2" height="2"/>
+        <rect x="14" y="4" width="2" height="2"/><rect x="18" y="4" width="2" height="2"/>
+        <rect x="16" y="6" width="2" height="2"/>
+        <rect x="14" y="8" width="2" height="2"/><rect x="18" y="8" width="2" height="2"/>
+        <rect x="12" y="10" width="2" height="2"/><rect x="20" y="10" width="2" height="2"/>
+      </svg>
+    </button>
   </div>
   <p class="about">
     Faithful web reimplementation of the 1985 Namco Famicom game,<br>

@@ -787,6 +787,11 @@ function toggleFullscreen() {
   if (btnSnd) btnSnd.addEventListener('click', () => { toggleSound(); updateSoundBtn(); });
   const btnRec = document.getElementById('btn-record');
   if (btnRec) btnRec.addEventListener('click', toggleRecording);
+  // Mobile toolbar buttons
+  const mbtnFS = document.getElementById('mbtn-fullscreen');
+  const mbtnSnd = document.getElementById('mbtn-sound');
+  if (mbtnFS) mbtnFS.addEventListener('click', toggleFullscreen);
+  if (mbtnSnd) mbtnSnd.addEventListener('click', () => { toggleSound(); updateSoundBtn(); });
 })();
 
 // ─── Video/audio recording ───────────────────────────────────────────────────
@@ -2946,7 +2951,9 @@ function quickStartDemo() {
 
 function updateSoundBtn() {
   const btn = document.getElementById('btn-sound');
+  const mbtn = document.getElementById('mbtn-sound');
   if (btn) btn.classList.toggle('muted', !soundEnabled);
+  if (mbtn) mbtn.classList.toggle('muted', !soundEnabled);
 }
 
 // ─── Title screen  ───────────────────────────────────────────────────────────
