@@ -770,12 +770,20 @@ window.addEventListener('keyup',   e => { keys[e.code] = false; });
 })();
 
 // ─── Fullscreen ───────────────────────────────────────────────────────────────
+let _softFullscreen = false;
 function toggleFullscreen() {
   const el = document.getElementById('screen');
-  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-    (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (fn) {
+    // Real Fullscreen API (Chrome, Android, desktop)
+    if (!fsEl) fn.call(el).catch(() => {});
+    else (document.exitFullscreen || document.webkitExitFullscreen).call(document);
   } else {
-    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    // iOS Safari fallback: soft fullscreen — hide UI, maximize canvas
+    _softFullscreen = !_softFullscreen;
+    document.body.classList.toggle('soft-fs', _softFullscreen);
+    window.scrollTo(0, 0);
   }
 }
 
@@ -790,8 +798,8 @@ function toggleFullscreen() {
   // Mobile toolbar buttons
   const mbtnFS = document.getElementById('mbtn-fullscreen');
   const mbtnSnd = document.getElementById('mbtn-sound');
-  if (mbtnFS) mbtnFS.addEventListener('click', toggleFullscreen);
-  if (mbtnSnd) mbtnSnd.addEventListener('click', () => { toggleSound(); updateSoundBtn(); });
+  if (mbtnFS) mbtnFS.addEventListener('click', () => { initAudio(); toggleFullscreen(); });
+  if (mbtnSnd) mbtnSnd.addEventListener('click', () => { initAudio(); toggleSound(); updateSoundBtn(); });
 })();
 
 // ─── Video/audio recording ───────────────────────────────────────────────────

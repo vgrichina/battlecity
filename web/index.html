@@ -312,16 +312,19 @@
     #btn-record.recording .icon-rec-on { animation: rec-pulse 1s infinite; }
     #mobile-tools {
       display: none;
-      justify-content: center;
-      gap: 16px;
-      padding: 4px 0;
+      position: fixed;
+      bottom: 12px;
+      right: 12px;
+      gap: 8px;
+      z-index: 100;
     }
     .mtool-btn {
-      background: none;
-      border: 1px solid #2a2a2a;
-      border-radius: 4px;
-      color: #555;
-      padding: 6px 12px;
+      background: rgba(26,26,26,0.85);
+      border: 1px solid #363636;
+      border-radius: 50%;
+      color: #888;
+      width: 40px;
+      height: 40px;
       cursor: pointer;
       line-height: 0;
       display: flex;
@@ -330,13 +333,26 @@
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
-    .mtool-btn:active { background: #222; color: #ccc; }
+    .mtool-btn:active { background: rgba(50,50,50,0.9); color: #ccc; }
     #mbtn-sound .icon-mut { display: none; }
     #mbtn-sound.muted .icon-snd { display: none; }
     #mbtn-sound.muted .icon-mut { display: block; }
     @media (max-width: 800px), (hover: none) and (pointer: coarse) {
       #mobile-tools { display: flex; }
     }
+    /* iOS Safari soft-fullscreen: hide chrome, maximize canvas */
+    body.soft-fs { padding: 0; justify-content: center; align-items: center; }
+    body.soft-fs h1,
+    body.soft-fs #sitenav,
+    body.soft-fs .about { display: none !important; }
+    body.soft-fs #screen { width: auto; border: none; }
+    body.soft-fs canvas {
+      /* fit to viewport preserving 256:224 aspect, no overscan margins */
+      width: min(100vw, calc(100vh * 256 / 224));
+      height: min(100vh, calc(100vw * 224 / 256));
+      margin: 0;
+    }
+    body.soft-fs #mobile-tools { bottom: 8px; }
     @media (max-width: 800px) {
       #hint-row { display: none; }
     }
