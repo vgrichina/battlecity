@@ -559,19 +559,24 @@
   // ─── SFX Catalog ────────────────────────────────────────────────
   // Each entry: { name, slotDesc, play: fn }
   const SFX_CATALOG = [
-    { name: "Coin Insert",   slotDesc: "slot 0",        play: () => { playSound(SND.COIN); } },
-    { name: "Player Fire",   slotDesc: "slot 8",        play: () => { playSound(SND.PLAYER_FIRE); } },
-    { name: "Enemy Fire",    slotDesc: "slot 16",       play: () => { playSound(SND.ENEMY_FIRE); } },
-    { name: "Brick Hit",     slotDesc: "slot 12",       play: () => { playSound(SND.BRICK_HIT); } },
-    { name: "Steel Hit",     slotDesc: "slot 13",       play: () => { playSound(SND.STEEL_HIT); } },
-    { name: "Armor Hit",     slotDesc: "slot 14",       play: () => { playSound(SND.ARMOR_HIT); } },
-    { name: "Entity Kill",   slotDesc: "slots 10+7",    play: () => { playSound(SND.ENTITY_KILL); playSound(SND.EXPLOSION); } },
-    { name: "Eagle Hit",     slotDesc: "slot 11",       play: () => { playSound(SND.EAGLE_HIT); } },
-    { name: "Power-Up",      slotDesc: "slot 9",        play: () => { playSound(SND.POWERUP_APPEAR); } },
-    { name: "Life Up",       slotDesc: "slot 4",        play: () => { playSound(SND.LIFE_UP_P1); } },
-    { name: "Stage Clear",   slotDesc: "slots 21+22+23",play: () => { playSound(SND.STAGE_CLEAR1); playSound(SND.STAGE_CLEAR2); playSound(SND.STAGE_CLEAR3); } },
-    { name: "Victory",       slotDesc: "slots 24+25+26",play: () => { playSound(SND.VICTORY1); playSound(SND.VICTORY2); playSound(SND.VICTORY3); } },
-    { name: "BGM",           slotDesc: "slots 1+2+3",   play: () => { playSound(SND.BGM_SQ1); playSound(SND.BGM_TRI); playSound(SND.BGM_SQ2); } },
+    { name: "Pause Toggle",   slotDesc: "slot 0 $EE2C",         play: () => { playSound(SND.PAUSE); } },
+    { name: "Player Fire",    slotDesc: "slot 15 $EE12 (sweep)", play: () => { playSound(SND.PLAYER_FIRE); } },
+    { name: "Enemy Fire",     slotDesc: "slot 16 $EE95",        play: () => { playSound(SND.ENEMY_FIRE); } },
+    { name: "Brick Hit",      slotDesc: "slot 12 $EE5E",        play: () => { playSound(SND.BRICK_HIT); } },
+    { name: "Steel Hit",      slotDesc: "slot 13 $EE56",        play: () => { playSound(SND.STEEL_HIT); } },
+    { name: "Armor Hit",      slotDesc: "slot 14 $EE67",        play: () => { playSound(SND.ARMOR_HIT); } },
+    { name: "Entity Kill",    slotDesc: "slots 10+7",           play: () => { playSound(SND.ENTITY_KILL); playSound(SND.EXPLOSION); } },
+    { name: "Eagle Hit",      slotDesc: "slot 11 $EDF4",        play: () => { playSound(SND.EAGLE_HIT); } },
+    { name: "Power-Up Appear",slotDesc: "slot 9 $EE48",         play: () => { playSound(SND.POWERUP_APPEAR); } },
+    { name: "Power-Up Collect",slotDesc:"slot 6 $EE19",         play: () => { playSound(SND.POWERUP_COLLECT); } },
+    { name: "Life Up",        slotDesc: "slot 4 $EE9F",         play: () => { playSound(SND.LIFE_UP_P1); } },
+    { name: "Tank Engine",    slotDesc: "slot 17 $EE8C (loops)", play: () => { playSound(SND.TANK_ENGINE); } },
+    { name: "Eagle Alarm",    slotDesc: "slot 18 $EE82 (loops)", play: () => { playSound(SND.EAGLE_ALARM); } },
+    { name: "Tally Tick",     slotDesc: "slots 19+20",          play: () => { playSound(SND.TALLY_TICK); playSound(SND.TALLY_TICK2); } },
+    { name: "Tally Done",     slotDesc: "slot 27 $EE3A",        play: () => { playSound(SND.TALLY_DONE); } },
+    { name: "Stage Clear",    slotDesc: "slots 21-23",          play: () => { playSound(SND.STAGE_CLEAR1); playSound(SND.STAGE_CLEAR2); playSound(SND.STAGE_CLEAR3); } },
+    { name: "Victory",        slotDesc: "slots 24-26",          play: () => { playSound(SND.VICTORY1); playSound(SND.VICTORY2); playSound(SND.VICTORY3); } },
+    { name: "BGM (one-shot)", slotDesc: "slots 1-3",            play: () => { playSound(SND.BGM_SQ1); playSound(SND.BGM_TRI); playSound(SND.BGM_SQ2); } },
   ];
 
   let sfxAudioInited = false;

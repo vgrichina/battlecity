@@ -1499,6 +1499,7 @@ function checkPowerUpCollision() {
     if (!e.alive || e.spawnAnim > 0) continue;
     // ROM $EB17: within 12 px of effect position ($86/$87)  (e.x/e.y are center coords)
     if (Math.abs(e.x - powerUp.x) < 12 && Math.abs(e.y - powerUp.y) < 12) {
+      sfxPowerUpCollect();  // ROM $A9C7: slot 6 powerup collect sound
       applyPowerUp(e, powerUp.type);
       // ROM $EB4D: STA $62 #$32 — start 50-frame flash at collect position
       puFlashPos = { x: powerUp.x, y: powerUp.y };
@@ -1633,6 +1634,14 @@ function update() {
   // ROM NMI handler: SoundEngineTick runs every frame regardless of game phase
   soundTick();
   tickBGM();
+
+  // ROM $9B24: tank engine sound — plays while any player is pressing d-pad and alive
+  if (gamePhase === 'play') {
+    const anyMoving = (entities[0] && entities[0].alive && p1Dir() !== -1) ||
+                      (numPlayers === 2 && entities[1] && entities[1].alive && p2Dir() !== -1);
+    if (anyMoving && !slots[SND.TANK_ENGINE].active) sfxStartEngine();
+    else if (!anyMoving && slots[SND.TANK_ENGINE].active) sfxStopEngine();
+  }
 
   if (gamePhase === 'play') tickPaletteFlash(); // ROM $C31D PaletteFlashTick — water animation, in-game only
 
@@ -1814,6 +1823,7 @@ function update() {
         ts.frameTimer--;
         if (ts.frameTimer <= 0) {
           ts.countsLeft[ts.row] = Math.max(0, ts.countsLeft[ts.row] - 1);
+          sfxTallyTick();  // ROM $8D2A/$8D2D: slots 19+20 per tick
           ts.frameTimer = 8;  // ROM $CDD8: LDX #$08 = 8 frames per kill tick
         }
         if (ts.countsLeft[ts.row] === 0) {
@@ -1822,6 +1832,7 @@ function update() {
         }
       }
     } else {
+      if (phaseTimer === 100) sfxTallyDone();  // ROM $8E7E: slot 27 tally complete jingle
       phaseTimer--;
       if (phaseTimer <= 0) {
         if (customMap && stageIdx === 0) {
@@ -1855,6 +1866,7 @@ function update() {
         ts.frameTimer--;
         if (ts.frameTimer <= 0) {
           ts.countsLeft[ts.row] = Math.max(0, ts.countsLeft[ts.row] - 1);
+          sfxTallyTick();  // ROM $8D48/$8D4B
           ts.frameTimer = 8;   // ROM $CDD8: LDX #$08
         }
         if (ts.countsLeft[ts.row] === 0) { ts.row++; ts.frameTimer = 20; } // ROM $CDEC: LDX #$14

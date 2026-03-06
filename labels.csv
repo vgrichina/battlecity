@@ -242,3 +242,8 @@ bank,addr,name,type,comment
 0,EA3E,ExtraLife,,ExtraLife: INC $51,X; STA $0304=$0305=1 (bonus-life indicator)
 0,ED36,SoundSequenceData,data,SoundSequenceData: 714 bytes of note/SFX sequence data for 28 APU channels; referenced by ChannelPtrTable($ECFE)
 0,FD45,ConstructionDefaultMap,data,ConstructionDefaultMap: $9D header + 9×$FF + ~513 bytes grid ($2E/$40 values) + $FF padding; unreferenced remnant
+0,81C5,TriggerBGM,,TriggerBGM: STA $0301/$0302/$0303=1 — starts BGM slots 1-3 (one-shot stage intro melody)
+0,9B24,CheckPlayerMoving,,CheckPlayerMoving: scans P1/P2 d-pad+alive; if moving→STA $0311=1(start tank engine slot 17); if not→STA $0311=0(stop)
+0,838C,TriggerEagleAlarm,,TriggerEagleAlarm: STA $0312=1 — starts eagle alarm slot 18 (looping via F9)
+0,EC99,SoundCmdF3F8,,F3-F8 handler: INC byte5 (sub-counter increment; no param byte consumed)
+0,ECA5,SoundCmdF9,,F9 handler: ReadChannelByte→STA byte5 (absolute jump within sequence; creates loop)
