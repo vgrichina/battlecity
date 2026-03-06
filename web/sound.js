@@ -139,6 +139,7 @@ const SND = {
 // ─── Audio context and channels ─────────────────────────────────
 let audioCtx = null;
 let masterGain = null;
+let recordDest = null;
 let soundEnabled = true;
 let audioInited = false;
 
@@ -193,6 +194,10 @@ function initAudio() {
   masterGain = audioCtx.createGain();
   masterGain.gain.value = 0.15;  // NES-appropriate volume
   masterGain.connect(audioCtx.destination);
+
+  // Recording tap: parallel audio destination for MediaRecorder
+  recordDest = audioCtx.createMediaStreamDestination();
+  masterGain.connect(recordDest);
 
   // Initialize 4 channels
   for (let i = 0; i < 4; i++) {

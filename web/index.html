@@ -305,6 +305,11 @@
     #btn-sound .icon-mut { display: none; }
     #btn-sound.muted .icon-snd { display: none; }
     #btn-sound.muted .icon-mut { display: block; }
+    #btn-record.recording { border-color: #e44; }
+    #btn-record.recording .icon-rec-idle { display: none; }
+    #btn-record.recording .icon-rec-on { display: block !important; }
+    @keyframes rec-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    #btn-record.recording .icon-rec-on { animation: rec-pulse 1s infinite; }
     @media (max-width: 800px) {
       #hint-row { display: none; }
     }
@@ -407,6 +412,15 @@
           <rect x="10" y="0" width="4" height="2"/><rect x="12" y="0" width="2" height="4"/>
           <rect x="0" y="10" width="2" height="4"/><rect x="0" y="12" width="4" height="2"/>
           <rect x="12" y="10" width="2" height="4"/><rect x="10" y="12" width="4" height="2"/>
+        </svg>
+      </button>
+      <!-- Record: circle (idle) / square (recording) -->
+      <button class="tool-btn" id="btn-record" title="Record video (R)">
+        <svg class="icon-rec-idle" width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+          <circle cx="7" cy="7" r="5"/>
+        </svg>
+        <svg class="icon-rec-on" width="14" height="14" viewBox="0 0 14 14" fill="#e44" style="display:none">
+          <rect x="3" y="3" width="8" height="8" rx="1"/>
         </svg>
       </button>
       <!-- Sound: side-view speaker + wave arcs / X -->

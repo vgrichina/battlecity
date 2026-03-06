@@ -685,9 +685,14 @@ function spawnEnemy() {
 const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (e.code === 'KeyM') toggleSound();  // M = mute/unmute
-  // KeyC: no-op (VS arcade coin insert removed — Famicom has no coin slot)
-  if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && gamePhase !== 'play') toggleFullscreen();
+  if (e.code === 'KeyM') { toggleSound(); updateSoundBtn(); }
+  if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey) toggleFullscreen();
+  if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) toggleRecording();
+  // Quick-start shortcuts (work from title screen)
+  if (e.code === 'Digit1' && gamePhase === 'title') { quickStart(0); }   // 1P
+  if (e.code === 'Digit2' && gamePhase === 'title') { quickStart(1); }   // 2P
+  if (e.code === 'Digit3' && gamePhase === 'title') { quickStart(2); }   // Construction
+  if (e.code === 'KeyD'   && gamePhase === 'title') { quickStartDemo(); } // Demo
   e.preventDefault();
 });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
@@ -779,11 +784,59 @@ function toggleFullscreen() {
   const btnFS = document.getElementById('btn-fullscreen');
   const btnSnd = document.getElementById('btn-sound');
   if (btnFS) btnFS.addEventListener('click', toggleFullscreen);
-  if (btnSnd) btnSnd.addEventListener('click', () => {
-    const on = toggleSound();
-    btnSnd.classList.toggle('muted', !on);
-  });
+  if (btnSnd) btnSnd.addEventListener('click', () => { toggleSound(); updateSoundBtn(); });
+  const btnRec = document.getElementById('btn-record');
+  if (btnRec) btnRec.addEventListener('click', toggleRecording);
 })();
+
+// ─── Video/audio recording ───────────────────────────────────────────────────
+let _recorder = null;
+let _recChunks = [];
+
+function toggleRecording() {
+  if (_recorder && _recorder.state === 'recording') {
+    _recorder.stop();
+    return;
+  }
+  initAudio();
+  if (!audioCtx || !recordDest) return;
+
+  const videoStream = canvas.captureStream(60);
+  const combined = new MediaStream([
+    ...videoStream.getTracks(),
+    ...recordDest.stream.getTracks()
+  ]);
+
+  // Pick best available codec
+  const mimeTypes = [
+    'video/webm; codecs=vp9,opus',
+    'video/webm; codecs=vp8,opus',
+    'video/webm',
+    'video/mp4',
+  ];
+  let mime = '';
+  for (const m of mimeTypes) {
+    if (MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+  }
+
+  _recChunks = [];
+  _recorder = new MediaRecorder(combined, mime ? { mimeType: mime } : {});
+  _recorder.ondataavailable = e => { if (e.data.size > 0) _recChunks.push(e.data); };
+  _recorder.onstop = () => {
+    const ext = _recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const blob = new Blob(_recChunks, { type: _recorder.mimeType });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `battlecity-${Date.now()}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    const btn = document.getElementById('btn-record');
+    if (btn) btn.classList.remove('recording');
+  };
+  _recorder.start();
+  const btn = document.getElementById('btn-record');
+  if (btn) btn.classList.add('recording');
+}
 
 // ─── Dynamic mobile button labels ─────────────────────────────────────────────
 const TILE_NAMES = ['BRICK R','BRICK B','BRICK L','BRICK T','BRICK',
@@ -1654,8 +1707,7 @@ function update() {
     titleTimer++;
 
     // Reset demo timer on any input
-    if (keys['ArrowUp'] || keys['ArrowDown'] || keys['Space'] || keys['Enter'] ||
-        keys['Digit1'] || keys['Digit2']) titleTimer = 0;
+    if (keys['ArrowUp'] || keys['ArrowDown'] || keys['Space'] || keys['Enter']) titleTimer = 0;
 
     // D-pad up/down (SELECT in ROM cycles $83: 0→1→2→0) — throttle to once per 8 frames
     if (titleFrame % 8 === 1) {
@@ -2654,16 +2706,16 @@ function drawStageClear() {
 const _hint = document.getElementById('controls-hint');
 function hb(key, label) { return `<span class="hb"><kbd>${key}</kbd>${label}</span>`; }
 const HINTS = {
-  title:   [hb('↑ ↓', 'Select'), hb('Enter', 'Confirm'), hb('1 / 2', 'Players')],
+  title:   [hb('↑ ↓', 'Select'), hb('Enter', 'Start'), hb('1', '1P'), hb('2', '2P'), hb('3', 'Build'), hb('D', 'Demo')],
   select:  [hb('↑ ↓', 'Stage'), hb('Enter', 'Start')],
   curtain: [],
-  start:   [hb('↑↓←→', 'Move'), hb('Space', 'Fire'), hb('M', 'Mute')],
-  play:    [hb('↑↓←→', 'Move'), hb('Space', 'Fire'), hb('M', 'Mute')],
+  start:   [hb('↑↓←→', 'Move'), hb('Space', 'Fire'), hb('M', 'Sound'), hb('R', 'Record'), hb('F', 'Full')],
+  play:    [hb('↑↓←→', 'Move'), hb('Space', 'Fire'), hb('M', 'Sound'), hb('R', 'Record'), hb('F', 'Full')],
   clear:          [],
   gameover_tally: [],
   gameover:       [hb('Enter', 'Retry')],
   victory: [],
-  edit:    [hb('↑↓←→', 'Move'), hb('Space', 'Place'), hb('T', 'Cycle tile'), hb('Enter', 'Save')],
+  edit:    [hb('↑↓←→', 'Move'), hb('Space', 'Place'), hb('T', 'Tile'), hb('Enter', 'Play')],
 };
 let _lastPhase = null;
 function updateControlsHint() {
@@ -2849,6 +2901,49 @@ function drawVictoryScreen() {
       drawNesText('PRESS START', 76, 160, 3);
     }
   }
+}
+
+// ─── Quick-start helpers (keyboard shortcuts 1/2/3/D) ────────────────────────
+function quickStart(cursor) {
+  initAudio();
+  titleCursor = cursor;
+  // Simulate pressing Start on the selected menu item
+  if (cursor === 2) {
+    initLevel(0);
+    gamePhase = 'edit';
+    grid.forEach(r => r.fill(T.EMPTY));
+    brickBits.forEach(r => r.fill(0));
+    editX = 6; editY = 6;
+    editTileType = T.BRICK;
+    editHoldCount = 0;
+    editAFirst = false;
+    editACycleTimer = 0;
+    editStartHeld = true;
+  } else {
+    numPlayers = cursor === 1 ? 2 : 1;
+    p1Score = 0; p1Lives = 2; p1NextLifeScore = 20000;
+    p2Score = 0; p2Lives = 2; p2NextLifeScore = 20000;
+    newHiScorePlayer = 0;
+    gamePhase = 'curtain';
+    curtainTarget = 'select';
+    curtainRow = 0;
+    selectedStage = 0;
+    setBGPaletteSet(4);
+  }
+}
+
+function quickStartDemo() {
+  initAudio();
+  demoMode = true;
+  numPlayers = 2;
+  p1Score = 0; p1Lives = 2;
+  p2Score = 0; p2Lives = 2;
+  initLevel(34);
+}
+
+function updateSoundBtn() {
+  const btn = document.getElementById('btn-sound');
+  if (btn) btn.classList.toggle('muted', !soundEnabled);
 }
 
 // ─── Title screen  ───────────────────────────────────────────────────────────
