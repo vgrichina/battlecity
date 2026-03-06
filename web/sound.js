@@ -349,10 +349,7 @@ function playSound(slotIdx) {
 
 function stopSound(slotIdx) {
   if (slotIdx < 0 || slotIdx >= 28) return;
-  const s = slots[slotIdx];
-  if (s.active) {
-    s.active = false;
-  }
+  slots[slotIdx].active = false;
 }
 
 function stopAllSounds() {
