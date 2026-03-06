@@ -781,22 +781,118 @@ function toggleFullscreen() {
   if (btnFS) btnFS.addEventListener('click', toggleFullscreen);
   if (btnSnd) btnSnd.addEventListener('click', () => {
     const on = toggleSound();
-    btnSnd.textContent = on ? '🔊' : '🔇';
+    btnSnd.classList.toggle('muted', !on);
   });
 })();
 
 // ─── Dynamic mobile button labels ─────────────────────────────────────────────
+const TILE_NAMES = ['BRICK R','BRICK B','BRICK L','BRICK T','BRICK',
+                    'STEEL R','STEEL B','STEEL L','STEEL T','STEEL',
+                    'WATER','TREES','ICE','EMPTY'];
+
+let _lastMobilePhase = null;
+
 function updateMobileLabels() {
-  const btnFire = document.getElementById('btn-fire');
-  const btnB    = document.getElementById('btn-b');
+  const btnFire  = document.getElementById('btn-fire');
+  const btnStart = document.getElementById('btn-start');
+  const btnB     = document.getElementById('btn-b');
   if (!btnFire) return;
-  if (gamePhase === 'edit') {
-    btnFire.textContent = 'A';
-    if (btnB) btnB.style.display = '';
-  } else {
-    btnFire.textContent = 'FIRE';
-    if (btnB) btnB.style.display = 'none';
+
+  const ctxStage = document.getElementById('ctx-stage');
+  const ctxTile  = document.getElementById('ctx-tile');
+
+  // Show/hide context panels
+  const showStage = gamePhase === 'select';
+  const showTile  = gamePhase === 'edit';
+  if (ctxStage) ctxStage.classList.toggle('active', showStage);
+  if (ctxTile)  ctxTile.classList.toggle('active', showTile);
+
+  // Update stage number live
+  if (showStage) {
+    const el = document.getElementById('ctx-stage-num');
+    if (el) el.textContent = selectedStage + 1;
   }
+
+  // Update tile name live
+  if (showTile) {
+    const el = document.getElementById('ctx-tile-name');
+    if (el) el.textContent = TILE_NAMES[editTileType] || 'TILE';
+  }
+
+  // Only update button labels on phase change
+  if (gamePhase === _lastMobilePhase) return;
+  _lastMobilePhase = gamePhase;
+
+  switch (gamePhase) {
+    case 'title':
+      btnFire.textContent  = 'SEL';
+      btnStart.textContent = 'START';
+      if (btnB) btnB.style.display = 'none';
+      break;
+    case 'select':
+      btnFire.textContent  = 'GO';
+      btnStart.textContent = 'GO';
+      if (btnB) btnB.style.display = 'none';
+      break;
+    case 'edit':
+      btnFire.textContent  = 'PLACE';
+      btnStart.textContent = 'PLAY';
+      if (btnB) btnB.style.display = 'none'; // tile nav handled by ctx-tile buttons
+      break;
+    case 'play':
+    case 'start':
+      btnFire.textContent  = 'FIRE';
+      btnStart.textContent = 'START';
+      if (btnB) btnB.style.display = 'none';
+      break;
+    case 'clear':
+    case 'gameover_tally':
+    case 'gameover':
+    case 'victory':
+      btnFire.textContent  = 'OK';
+      btnStart.textContent = 'OK';
+      if (btnB) btnB.style.display = 'none';
+      break;
+    default:
+      btnFire.textContent  = 'FIRE';
+      btnStart.textContent = 'START';
+      if (btnB) btnB.style.display = 'none';
+  }
+}
+
+// Wire up context panel buttons (called once after DOM ready)
+function initCtxButtons() {
+  // Stage prev/next
+  const stagePrev = document.getElementById('ctx-stage-prev');
+  const stageNext = document.getElementById('ctx-stage-next');
+  if (stagePrev) stagePrev.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    selectedStage = (selectedStage + 34) % 35;
+    const el = document.getElementById('ctx-stage-num');
+    if (el) el.textContent = selectedStage + 1;
+  });
+  if (stageNext) stageNext.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    selectedStage = (selectedStage + 1) % 35;
+    const el = document.getElementById('ctx-stage-num');
+    if (el) el.textContent = selectedStage + 1;
+  });
+
+  // Tile prev/next
+  const tilePrev = document.getElementById('ctx-tile-prev');
+  const tileNext = document.getElementById('ctx-tile-next');
+  if (tilePrev) tilePrev.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    editTileType = (editTileType + 13) % 14;
+    const el = document.getElementById('ctx-tile-name');
+    if (el) el.textContent = TILE_NAMES[editTileType] || 'TILE';
+  });
+  if (tileNext) tileNext.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    editTileType = (editTileType + 1) % 14;
+    const el = document.getElementById('ctx-tile-name');
+    if (el) el.textContent = TILE_NAMES[editTileType] || 'TILE';
+  });
 }
 
 // Returns direction (0-3) or -1 if no d-pad held
@@ -2826,6 +2922,7 @@ newHiScorePlayer = 0;
 frameCount = 0;
 enterTitle();
 initCHR();     // load single Famicom CHR ROM sheet (chr_all.png)
+initCtxButtons();
 
 // ROM $C09C MainLoop — fixed 60 fps physics, skip render if no tick elapsed
 const FRAME_MS = 1000 / 60;

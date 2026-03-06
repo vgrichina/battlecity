@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>Battle City — Web Port</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -18,7 +18,7 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       color: #888;
       padding: 24px 20px;
     }
@@ -71,7 +71,7 @@
     }
     .about a:hover { text-decoration: underline; }
     #sitenav {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 11px;
       color: #444;
       margin-bottom: 10px;
@@ -79,15 +79,6 @@
     }
     #sitenav a { color: #f8e800; text-decoration: none; }
     #sitenav a:hover { text-decoration: underline; }
-    #controls-hint {
-      display: flex;
-      gap: 12px;
-      margin-top: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      justify-content: center;
-      min-height: 22px;
-    }
     .hb { display: flex; align-items: center; gap: 5px; color: #666; font-size: 11px; }
     .hb kbd {
       display: inline-block;
@@ -237,10 +228,10 @@
     .vbtn.pressed { background: #282828; }
 
     #btn-start {
-      width: 46px;
-      height: 46px;
-      font-size: 9px;
-      letter-spacing: 0.5px;
+      width: 52px;
+      height: 52px;
+      font-size: 5px;
+      letter-spacing: 0px;
     }
     #btn-start.pressed { border-color: #555; color: #aaa; }
 
@@ -249,8 +240,8 @@
       height: 80px;
       color: #f8e800;
       border-color: #555;
-      font-size: 13px;
-      letter-spacing: 1px;
+      font-size: 7px;
+      letter-spacing: 0px;
       flex-shrink: 0;
     }
     #btn-fire.pressed { background: #2a2600; border-color: #f8e800; }
@@ -265,35 +256,137 @@
     #btn-b {
       width: 54px;
       height: 54px;
-      font-size: 13px;
+      font-size: 6px;
       color: #888;
       display: none; /* shown only in edit mode */
     }
     #btn-b.pressed { background: #282828; border-color: #555; }
 
-    /* ── Toolbar (fullscreen + sound) ────────────────────────────────────── */
+    /* ── Toolbar + controls hint row ─────────────────────────────────────── */
+    #hint-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 10px;
+      min-height: 22px;
+      flex-wrap: wrap;
+      max-width: 600px;
+    }
+    #controls-hint {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
     #toolbar {
       display: flex;
-      gap: 8px;
-      margin-top: 6px;
+      gap: 4px;
       align-items: center;
+      border-left: 1px solid #2a2a2a;
+      padding-left: 12px;
+      margin-left: 4px;
     }
     .tool-btn {
       background: none;
-      border: 1px solid #333;
+      border: 1px solid #2a2a2a;
       border-radius: 4px;
-      color: #888;
-      font-size: 16px;
+      color: #555;
       padding: 4px 8px;
       cursor: pointer;
-      font-family: monospace;
-      line-height: 1;
+      line-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .tool-btn:hover { border-color: #666; color: #ccc; }
+    .tool-btn:hover { border-color: #555; color: #ccc; }
     .tool-btn:active { background: #222; }
+    #btn-sound .icon-mut { display: none; }
+    #btn-sound.muted .icon-snd { display: none; }
+    #btn-sound.muted .icon-mut { display: block; }
     @media (max-width: 800px) {
-      #toolbar { margin-top: 2px; }
+      #hint-row { display: none; }
     }
+
+    /* ── Context panels (shown in vpad-mid based on phase) ───────────────── */
+    #vpad-mid { position: relative; }
+
+    .ctx-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .ctx-panel.active { display: flex; }
+
+    /* Stage selector */
+    #ctx-stage {
+      align-items: center;
+      gap: 4px;
+    }
+    #ctx-stage .ctx-label {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 6px;
+      color: #555;
+      letter-spacing: 1px;
+    }
+    #ctx-stage .ctx-value {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 16px;
+      color: #f8e800;
+      min-width: 40px;
+      text-align: center;
+    }
+    #ctx-stage .ctx-arrow {
+      background: #1a1a1a;
+      border: 2px solid #363636;
+      border-radius: 6px;
+      color: #f8e800;
+      font-size: 14px;
+      width: 44px;
+      height: 28px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #ctx-stage .ctx-arrow:active { background: #2a2600; border-color: #f8e800; }
+
+    /* Tile selector */
+    #ctx-tile {
+      align-items: center;
+      gap: 4px;
+    }
+    #ctx-tile .ctx-tile-name {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 5px;
+      color: #f8e800;
+      letter-spacing: 0.5px;
+      text-align: center;
+      max-width: 80px;
+      line-height: 1.6;
+    }
+    #ctx-tile .ctx-arrow {
+      background: #1a1a1a;
+      border: 2px solid #363636;
+      border-radius: 6px;
+      color: #aaa;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      width: 72px;
+      height: 26px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      gap: 4px;
+    }
+    #ctx-tile .ctx-arrow:active { background: #222; border-color: #555; }
   </style>
 </head>
 <body>
@@ -304,11 +397,49 @@
     <a href="catalog.html">catalog</a>
   </nav>
   <div id="screen"><canvas id="game"></canvas></div>
-  <div id="toolbar">
-    <button class="tool-btn" id="btn-fullscreen" title="Fullscreen (F)">⛶</button>
-    <button class="tool-btn" id="btn-sound" title="Sound on/off (M)">🔊</button>
+  <div id="hint-row">
+    <div id="controls-hint"></div>
+    <div id="toolbar">
+      <!-- Fullscreen: four corner brackets -->
+      <button class="tool-btn" id="btn-fullscreen" title="Fullscreen (F)">
+        <svg width="14" height="14" viewBox="0 0 14 14" shape-rendering="crispEdges" fill="currentColor">
+          <rect x="0" y="0" width="4" height="2"/><rect x="0" y="0" width="2" height="4"/>
+          <rect x="10" y="0" width="4" height="2"/><rect x="12" y="0" width="2" height="4"/>
+          <rect x="0" y="10" width="2" height="4"/><rect x="0" y="12" width="4" height="2"/>
+          <rect x="12" y="10" width="2" height="4"/><rect x="10" y="12" width="4" height="2"/>
+        </svg>
+      </button>
+      <!-- Sound: side-view speaker + wave arcs / X -->
+      <button class="tool-btn" id="btn-sound" title="Sound on/off (M)">
+        <svg class="icon-snd" width="22" height="14" viewBox="0 0 22 14" shape-rendering="crispEdges" fill="currentColor">
+          <!-- speaker back plate -->
+          <rect x="0" y="4" width="4" height="6"/>
+          <!-- speaker cone -->
+          <rect x="4" y="2" width="4" height="10"/>
+          <!-- small wave ) -->
+          <rect x="10" y="4" width="2" height="2"/>
+          <rect x="12" y="6" width="2" height="2"/>
+          <rect x="10" y="8" width="2" height="2"/>
+          <!-- large wave ) -->
+          <rect x="16" y="2" width="2" height="2"/>
+          <rect x="18" y="4" width="2" height="6"/>
+          <rect x="16" y="10" width="2" height="2"/>
+        </svg>
+        <svg class="icon-mut" width="22" height="14" viewBox="0 0 22 14" shape-rendering="crispEdges" fill="currentColor">
+          <!-- speaker back plate -->
+          <rect x="0" y="4" width="4" height="6"/>
+          <!-- speaker cone -->
+          <rect x="4" y="2" width="4" height="10"/>
+          <!-- X -->
+          <rect x="12" y="2" width="2" height="2"/><rect x="20" y="2" width="2" height="2"/>
+          <rect x="14" y="4" width="2" height="2"/><rect x="18" y="4" width="2" height="2"/>
+          <rect x="16" y="6" width="2" height="2"/>
+          <rect x="14" y="8" width="2" height="2"/><rect x="18" y="8" width="2" height="2"/>
+          <rect x="12" y="10" width="2" height="2"/><rect x="20" y="10" width="2" height="2"/>
+        </svg>
+      </button>
+    </div>
   </div>
-  <div id="controls-hint"></div>
   <div id="vpad">
     <div id="dpad">
       <span class="dpad-arr up">▲</span>
@@ -318,6 +449,23 @@
     </div>
     <div id="vpad-mid">
       <button class="vbtn" id="btn-start">START</button>
+
+      <!-- Stage selector (shown in 'select' phase) -->
+      <div class="ctx-panel" id="ctx-stage">
+        <span class="ctx-label">STAGE</span>
+        <span class="ctx-value" id="ctx-stage-num">1</span>
+        <div style="display:flex;gap:6px">
+          <button class="ctx-arrow" id="ctx-stage-prev">◀</button>
+          <button class="ctx-arrow" id="ctx-stage-next">▶</button>
+        </div>
+      </div>
+
+      <!-- Tile selector (shown in 'edit' phase) -->
+      <div class="ctx-panel" id="ctx-tile">
+        <span class="ctx-tile-name" id="ctx-tile-name">BRICK</span>
+        <button class="ctx-arrow" id="ctx-tile-prev">◀ PREV</button>
+        <button class="ctx-arrow" id="ctx-tile-next">NEXT ▶</button>
+      </div>
     </div>
     <div id="vpad-right">
       <button class="vbtn" id="btn-fire">FIRE</button>
